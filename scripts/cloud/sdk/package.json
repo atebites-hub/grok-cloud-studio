@@ -2,7 +2,7 @@
   "name": "grok-cloud-studio-sdk",
   "private": true,
   "version": "1.0.0",
-  "description": "Grok Cloud Studio Cursor Cloud Extra High control plane via @cursor/sdk",
+  "description": "Director-facing Cursor Cloud Extra High control plane via @cursor/sdk",
   "type": "module",
   "engines": {
     "node": ">=22.13"
@@ -14,6 +14,7 @@
     "watch": "tsx watch.ts",
     "followup": "tsx followup.ts",
     "result": "tsx result.ts",
+    "wait-notify": "tsx wait-notify.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
