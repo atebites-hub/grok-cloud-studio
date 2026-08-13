@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start/stop/status for local Grok Cloud Studio A2A hub + inbox dispatch + fleet shepherd.
+# Start/stop/status for local Grok Cloud Studio A2A hub + inbox dispatch + bot-bridge + fleet shepherd.
 # Seat ACP daemons are opt-in: GCS_START_SEAT_DAEMONS=1 or `start --daemons`.
 # Usage:
 #   start-studio-bus.sh          # start hub+dispatch+shepherd (idempotent)
@@ -17,10 +17,13 @@ export GCS_ROOT="$ROOT"
 STATE_DIR="${GCS_A2A_STATE:-$ROOT/.a2a-state}"
 HUB_PY="$SCRIPT_DIR/hub.py"
 DISPATCH_PY="$SCRIPT_DIR/dispatch.py"
+BOT_BRIDGE_PY="$SCRIPT_DIR/bot-bridge.py"
 HUB_PID_FILE="$STATE_DIR/hub.pid"
 DISPATCH_PID_FILE="$STATE_DIR/dispatch.pid"
+BOT_BRIDGE_PID_FILE="$STATE_DIR/bot-bridge.pid"
 HUB_LOG="$STATE_DIR/hub.log"
 DISPATCH_LOG="$STATE_DIR/dispatch.log"
+BOT_BRIDGE_LOG="$STATE_DIR/bot-bridge.log"
 SHEPHERD_PY="$ROOT/scripts/directors/fleet-shepherd.py"
 SHEPHERD_PID_FILE="$STATE_DIR/fleet-shepherd.pid"
 SHEPHERD_LOG="$STATE_DIR/fleet-shepherd.log"
@@ -209,19 +212,55 @@ case "$cmd" in
       fi
     fi
 
+    bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
+    if pid_alive "$bridge_pid"; then
+      echo "STUDIO_BUS_BOT_BRIDGE_ALREADY pid=$bridge_pid"
+    else
+      rm -f "$BOT_BRIDGE_PID_FILE"
+      if [[ -f "$BOT_BRIDGE_PY" ]]; then
+        nohup python3 "$BOT_BRIDGE_PY" >>"$BOT_BRIDGE_LOG" 2>&1 &
+        echo $! >"$BOT_BRIDGE_PID_FILE"
+        bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
+        sleep 0.2
+        if ! pid_alive "$bridge_pid"; then
+          echo "STUDIO_BUS_FAIL bot-bridge did not stay up; see $BOT_BRIDGE_LOG" >&2
+        else
+          echo "STUDIO_BUS_BOT_BRIDGE_START pid=$bridge_pid log=$BOT_BRIDGE_LOG"
+        fi
+      else
+        echo "STUDIO_BUS_BOT_BRIDGE_SKIP missing $BOT_BRIDGE_PY"
+        bridge_pid=""
+      fi
+    fi
+
     if want_daemons; then
       start_seat_daemons
     else
       echo "STUDIO_BUS_DAEMONS_SKIP (pass --daemons or GCS_START_SEAT_DAEMONS=1)"
     fi
 
-    echo "STUDIO_BUS_READY hub_pid=$hub_pid dispatch_pid=$disp_pid shepherd_pid=$shep_pid state=$STATE_DIR"
+    echo "STUDIO_BUS_READY hub_pid=$hub_pid dispatch_pid=$disp_pid shepherd_pid=$shep_pid bot_bridge_pid=${bridge_pid:-none} state=$STATE_DIR"
     ;;
 
   stop)
     hub_pid="$(read_pid "$HUB_PID_FILE")"
     disp_pid="$(read_pid "$DISPATCH_PID_FILE")"
     shep_pid="$(read_pid "$SHEPHERD_PID_FILE")"
+    bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
+    if pid_alive "$bridge_pid"; then
+      kill "$bridge_pid" 2>/dev/null || true
+      for _ in 1 2 3 4 5; do
+        pid_alive "$bridge_pid" || break
+        sleep 0.2
+      done
+      if pid_alive "$bridge_pid"; then
+        kill -9 "$bridge_pid" 2>/dev/null || true
+      fi
+      echo "STUDIO_BUS_BOT_BRIDGE_STOP pid=$bridge_pid"
+    else
+      echo "STUDIO_BUS_BOT_BRIDGE_NOT_RUNNING"
+    fi
+    rm -f "$BOT_BRIDGE_PID_FILE"
     if pid_alive "$shep_pid"; then
       kill "$shep_pid" 2>/dev/null || true
       for _ in 1 2 3 4 5; do
@@ -283,9 +322,12 @@ case "$cmd" in
     shep_pid="$(read_pid "$SHEPHERD_PID_FILE")"
     shep_state="down"
     if pid_alive "$shep_pid"; then shep_state="up"; fi
+    bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
+    bridge_state="down"
+    if pid_alive "$bridge_pid"; then bridge_state="up"; fi
     daemon_flag="off"
     [[ -f "$DAEMONS_FLAG" ]] && daemon_flag="on"
-    echo "STUDIO_BUS_STATUS hub=$hub_state pid=${hub_pid:-none} dispatch=$disp_state pid=${disp_pid:-none} shepherd=$shep_state pid=${shep_pid:-none} daemons=$daemon_flag state=$STATE_DIR"
+    echo "STUDIO_BUS_STATUS hub=$hub_state pid=${hub_pid:-none} dispatch=$disp_state pid=${disp_pid:-none} shepherd=$shep_state pid=${shep_pid:-none} bot_bridge=$bridge_state pid=${bridge_pid:-none} daemons=$daemon_flag state=$STATE_DIR"
     if [[ "$daemon_flag" == "on" ]] || want_daemons; then
       status_seat_daemons || true
     fi

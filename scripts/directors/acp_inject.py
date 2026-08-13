@@ -27,7 +27,7 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
-DEFAULT_TIMEOUT = float(os.environ.get("GCS_ACP_INJECT_TIMEOUT", "900"))
+DEFAULT_TIMEOUT = float(os.environ.get("GCS_ACP_INJECT_TIMEOUT", "180"))
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
 if str(_LIB_DIR) not in sys.path:
@@ -340,6 +340,26 @@ class AcpClient:
             timeout=120.0,
         )
 
+    async def session_cancel(self, session_id: str) -> None:
+        """Best-effort cancel; tolerate missing/unsupported cancel on older daemons."""
+        try:
+            await self.request(
+                "session/cancel",
+                {"sessionId": session_id},
+                timeout=5.0,
+            )
+        except Exception:
+            try:
+                await self._send_raw(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "session/cancel",
+                        "params": {"sessionId": session_id},
+                    }
+                )
+            except Exception:
+                pass
+
     async def session_prompt(self, session_id: str, text: str, timeout: float) -> str:
         self._chunks = []
         self._echo_chunks = True
@@ -375,13 +395,18 @@ async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = Fa
     url = _ensure_url(seat)
     sd = _seat_dir(seat)
     session_path = sd / "acp.session"
+    stale_path = sd / "acp.inject.stale"
     cwd = str(ROOT)
+
+    if stale_path.is_file() and not force_new:
+        force_new = True
+        print(f"ACP_INJECT_STALE seat={seat} forcing new session", flush=True)
 
     client = AcpClient(url, cwd)
     await client.connect()
+    session_id: Optional[str] = None
     try:
         await client.initialize()
-        session_id: Optional[str] = None
         reused = False
         if not force_new and session_path.is_file():
             prior = _read_text(session_path)
@@ -408,10 +433,41 @@ async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = Fa
             "=== EXTRA TURN INSTRUCTIONS (ACP inject / persistent seat) ===\n"
             f"{prompt.rstrip()}\n"
         )
-        reply = await client.session_prompt(session_id, full, timeout=timeout)
+        try:
+            reply = await client.session_prompt(session_id, full, timeout=timeout)
+        except asyncio.TimeoutError:
+            print(
+                f"ACP_INJECT_TIMEOUT seat={seat} session={session_id} timeout={timeout}",
+                file=sys.stderr,
+                flush=True,
+            )
+            _write_text(stale_path, f"timeout={timeout}\n")
+            print(
+                f"ACP_INJECT_CANCEL seat={seat} session={session_id}",
+                file=sys.stderr,
+                flush=True,
+            )
+            await client.session_cancel(session_id)
+            return 1
+        except Exception as e:
+            print(f"ACP_INJECT_FAIL seat={seat} session={session_id} err={e}", file=sys.stderr)
+            print(
+                f"ACP_INJECT_CANCEL seat={seat} session={session_id}",
+                file=sys.stderr,
+                flush=True,
+            )
+            try:
+                await client.session_cancel(session_id)
+            except Exception:
+                pass
+            return 1
         if reply and not reply.endswith("\n"):
             sys.stdout.write("\n")
             sys.stdout.flush()
+        try:
+            stale_path.unlink(missing_ok=True)
+        except OSError:
+            pass
         print(
             f"ACP_INJECT_OK seat={seat} session={session_id} reused={int(reused)} chars={len(reply)}",
             flush=True,
@@ -459,6 +515,9 @@ def main() -> int:
         )
     except KeyboardInterrupt:
         return 130
+    except asyncio.TimeoutError:
+        print(f"ACP_INJECT_TIMEOUT seat={seat} timeout={args.timeout}", file=sys.stderr)
+        return 1
     except Exception as e:
         print(f"ACP_INJECT_FAIL seat={seat} err={e}", file=sys.stderr)
         return 1
