@@ -24,4 +24,6 @@ Grok **Bot** agents are not `grok agent serve` / ACP inject targets. Put Bot sea
 
 `start-studio-bus.sh` starts `scripts/a2a/bot-bridge.py`, which polls Bot inboxes and writes `.a2a-state/<seat>/bot-wake.jsonl` + latest `bot-wake.txt` (offset: `bot-bridge.offset`). Logs `BOT_BRIDGE_WAKE seat=… task=…` (never secrets). Optional `BOT_BRIDGE_HOOK` for a local wake command.
 
+Optional **Agent Kanban** fleet-bridge (sync-only, never `ak start`) starts when `AGENT_KANBAN_API_KEY` / `GCS_AGENT_KANBAN_API_KEY` is set or `.a2a-state/agent-kanban/configured` exists. See `docs/studio/AGENT_KANBAN.md`. The local HTML dashboard under `scripts/studio/dashboard/` is LEGACY.
+
 Standing Bot routines on the shared box poll `bot-wake` / inbox and act. Directors use `scripts/a2a/send.sh donald "…"` like any seat. Do not launch Bot CloudAgent for this path.

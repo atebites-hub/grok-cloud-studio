@@ -23,6 +23,8 @@ for p in \
   scripts/directors/acp_inject.py \
   scripts/directors/start-seat-daemon.sh \
   scripts/directors/fleet-shepherd.py \
+  scripts/studio/agent-kanban/fleet-bridge.py \
+  docs/studio/AGENT_KANBAN.md \
   scripts/launch-cloud-extra-high.sh \
   scripts/cloud/spawn-waiter.sh \
   scripts/cloud/sdk/wait-notify.ts \

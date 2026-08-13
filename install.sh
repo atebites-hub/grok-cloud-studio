@@ -43,9 +43,10 @@ chmod +x \
   "$ROOT"/scripts/cloud/sdk/*.sh \
   "$ROOT"/scripts/directors/*.sh \
   "$ROOT"/scripts/webhook/*.sh \
+  "$ROOT"/scripts/studio/agent-kanban/*.sh \
   2>/dev/null || true
 
-chmod +x "$ROOT/scripts/a2a/bot-bridge.py" 2>/dev/null || true
+chmod +x "$ROOT/scripts/a2a/bot-bridge.py" "$ROOT/scripts/studio/agent-kanban/fleet-bridge.py" 2>/dev/null || true
 mkdir -p "$ROOT/.a2a-state"
 
 echo "install ok — run ./doctor.sh then .venv/bin/pytest -q"
