@@ -1,34 +1,56 @@
-# Grok Cloud Studio — Architecture
+# Architecture
 
-Public control plane for multi-seat Grok Build Directors + Cursor Cloud Extra High coding grunts.
+Grok Cloud Studio is a **local control plane**:
 
-## Surfaces
+1. **Directors** are Grok Build CLI seats (`floor`, `ops`, `cloud`, `qa-a`, `qa-b` by default). They assign work and collect PRs. They do not implement large diffs locally.
+2. **Extra High grunts** are Cursor Cloud agents (`grok-4.6`, `effort=xhigh`) that open PRs against `GCS_CLOUD_REPO` / `CLOUD_REPO_URL`.
+3. **A2A** is seat-to-seat. **MCP** is agent-to-tool.
 
-| Surface | Role |
+```
+send.sh → hub.py (ack + inbox JSONL)
+            ↓
+        dispatch.py  → acp_inject.py (persistent grok agent serve)
+                     → launch-director.sh  (one-shot -p fallback)
+
+launch-cloud-extra-high.sh → @cursor/sdk Agent.create
+                           → spawn-waiter.sh → wait-notify.ts (run.wait)
+                           → A2A ping owning seat (FLEET_DONE / PR_READY)
+
+fleet-shepherd.py = orphan-only safety net (no live waiter_pid)
+webhook_receiver.py = optional signed completion path
+```
+
+## A2A hub
+
+Stdlib HTTP+JSON (`scripts/a2a/hub.py`):
+
+- `GET /health` `GET /registry`
+- `GET /a2a/{seat}/.well-known/agent-card.json`
+- `POST /a2a/{seat}/message:send` — appends `.a2a-state/<seat>/inbox.jsonl`, returns `TASK_STATE_COMPLETED` + receipt
+- tasks get/list/cancel
+
+Default bind `127.0.0.1:8732`. Cards live in `docs/a2a/cards/`. Seats and ACP ports live in `docs/a2a/registry.json` (`scripts/a2a/lib.py` is the source of truth).
+
+`scripts/a2a/start-studio-bus.sh` starts hub + dispatch + fleet-shepherd. Pass `--daemons` (or `GCS_START_SEAT_DAEMONS=1`) to also start per-seat `grok agent serve`. Daemons are **opt-in** so a bus start does not surprise-spawn five grok processes.
+
+## ACP
+
+`scripts/directors/start-seat-daemon.sh <seat>` runs `grok agent serve` on the registry ACP port (8740+). Secrets stay in `.a2a-state/<seat>/acp.secret` (gitignored). `acp_inject.py` opens a WebSocket session and injects EXTRA TURN text.
+
+## Extra High
+
+See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / `CLOUD_REPO_URL`. Auth is `CURSOR_API_KEY` (never printed). SDK-first; REST curl when `CURSOR_API_BASE` is set, `CLOUD_FORCE_REST=1`, or SDK bootstrap exits 75.
+
+## Completion paths
+
+| Path | When |
 |---|---|
-| **A2A hub** (`scripts/a2a/`) | Agent-to-agent messaging between Director seats |
-| **ACP seat daemons** (`scripts/directors/`) | Persistent `grok agent serve` sessions; A2A injects work |
-| **Cloud Extra High SDK** (`scripts/cloud/`) | Launch/status/watch/followup/result for Cursor Cloud Agents |
-| **Fleet shepherd** | Slow-poll safety net; A2A `FLEET_DONE` / `PR_READY` when runs go terminal |
-| **Webhook harness** (`scripts/webhook/`) | Optional signed FINISHED/ERROR → A2A ping (+ local simulate) |
-| **MCP plugins** (`plugins/`) | Thin stdio wrappers: `a2a_*`, `cloud_*` |
+| Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`) |
+| Webhook | `GCS_WEBHOOK_SECRET` set and `webhook-harness.sh serve` |
+| Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook) |
 
-## Data flow
+Do not double-notify a live waiter.
 
-1. Ops / Director decides work.
-2. `scripts/launch-cloud-extra-high.sh` creates an Extra High grunt (`GCS_CLOUD_REPO` required).
-3. bc-id is recorded on the seat fleet ledger under `.a2a-state/<seat>/` (runtime only; not shipped).
-4. Waiter / webhook / fleet-shepherd notifies the owning seat via A2A.
-5. Seat collects `result-cloud-agent.sh`, hands PR to QA.
+## Prompts
 
-## Env prefix
-
-Prefer `GCS_*`. Some scripts historically used `PALEMON_*`; this public extract uses `GCS_*`.
-
-## Security
-
-- Never commit `.env`, `agent.env`, `auth.json`, `acp.secret`, `.a2a-state`, or API keys.
-- Ship `.env.example` placeholders only.
-- Scripts must never print secret values.
-
-Repo: https://github.com/atebites-hub/grok-cloud-studio
+Generic seat prompts in `prompts/`. Common Director footer: `scripts/directors/common_footer.txt`.
