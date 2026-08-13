@@ -46,8 +46,16 @@ chmod +x \
   "$ROOT"/scripts/studio/agent-kanban/*.sh \
   2>/dev/null || true
 
-chmod +x "$ROOT/scripts/a2a/bot-bridge.py" "$ROOT/scripts/studio/agent-kanban/fleet-bridge.py" 2>/dev/null || true
+chmod +x "$ROOT/scripts/a2a/bot-bridge.py" "$ROOT/scripts/a2a/bind-bot-agent.sh" "$ROOT/scripts/studio/agent-kanban/fleet-bridge.py" 2>/dev/null || true
 mkdir -p "$ROOT/.a2a-state"
+
+if [[ -n "${GCS_BOT_AGENT_ID:-}" ]]; then
+  bash "$ROOT/scripts/a2a/bind-bot-agent.sh"
+else
+  echo "WARN GCS_BOT_AGENT_ID unset — Bot orchestrator is not bound to A2A."
+  echo "     Set GCS_BOT_AGENT_ID and re-run ./install.sh or scripts/a2a/bind-bot-agent.sh."
+  echo "     doctor fails on placeholder agentId unless GCS_BOT_BIND_OPTIONAL=1 (CI clone checks)."
+fi
 
 echo "install ok — run ./doctor.sh then .venv/bin/pytest -q"
 echo "A2A: scripts/a2a/start-studio-bus.sh (hub+dispatch+bot-bridge+shepherd); Bot seats: docs/a2a/bot-agents.json"
