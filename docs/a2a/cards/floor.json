@@ -1,6 +1,6 @@
 {
-  "name": "QA B",
-  "description": "Review and squash-merge even-numbered PRs. Rebase Extra High only — no feature clouds.",
+  "name": "Floor",
+  "description": "Queue, deconflict, and assign outcomes across seats. Does not implement feature diffs.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -22,18 +22,18 @@
   ],
   "skills": [
     {
-      "id": "merge-even",
-      "name": "Even PR merge",
-      "description": "gh squash-merge even PRs; conflict rebase Extra High only",
+      "id": "queue",
+      "name": "Queue & Partition",
+      "description": "Assign scopes; track bc-ids to PR URLs",
       "tags": [
-        "qa",
-        "merge"
+        "floor",
+        "queue"
       ]
     }
   ],
   "supportedInterfaces": [
     {
-      "url": "http://127.0.0.1:8732/a2a/qa-b",
+      "url": "http://127.0.0.1:8732/a2a/floor",
       "protocolBinding": "HTTP+JSON",
       "protocolVersion": "1.0"
     }

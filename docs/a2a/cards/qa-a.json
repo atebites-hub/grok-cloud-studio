@@ -1,6 +1,6 @@
 {
   "name": "QA A",
-  "description": "Odd-numbered PR squash-merge + conflict rebase Extra High only.",
+  "description": "Review and squash-merge odd-numbered PRs. Rebase Extra High only — no feature clouds.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -22,13 +22,12 @@
   ],
   "skills": [
     {
-      "id": "qa-a",
-      "name": "QA A",
-      "description": "Odd-numbered PR squash-merge + conflict rebase Extra High only.",
+      "id": "merge-odd",
+      "name": "Odd PR merge",
+      "description": "gh squash-merge odd PRs; conflict rebase Extra High only",
       "tags": [
-        "qa-a",
-        "gcs",
-        "a2a"
+        "qa",
+        "merge"
       ]
     }
   ],

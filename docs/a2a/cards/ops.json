@@ -1,6 +1,6 @@
 {
-  "name": "Ops Lead",
-  "description": "Top-level orchestrator seat (optional). Keeps bus healthy and wakes Directors.",
+  "name": "Ops",
+  "description": "Keep the local bus, seat daemons, and watchdog healthy. Activate daemons only when opted in.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -22,13 +22,12 @@
   ],
   "skills": [
     {
-      "id": "ops",
-      "name": "Ops Lead",
-      "description": "Top-level orchestrator seat (optional). Keeps bus healthy and wakes Directors.",
+      "id": "bus",
+      "name": "Studio bus",
+      "description": "Start/stop/status hub, dispatch, shepherd, optional ACP daemons",
       "tags": [
         "ops",
-        "gcs",
-        "a2a"
+        "bus"
       ]
     }
   ],

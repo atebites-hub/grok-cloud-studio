@@ -1,6 +1,6 @@
 {
-  "name": "QA B",
-  "description": "Review and squash-merge even-numbered PRs. Rebase Extra High only — no feature clouds.",
+  "name": "Cloud",
+  "description": "Own Extra High launch, waiter, webhook, and SDK wrappers. Never print API keys.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -22,18 +22,18 @@
   ],
   "skills": [
     {
-      "id": "merge-even",
-      "name": "Even PR merge",
-      "description": "gh squash-merge even PRs; conflict rebase Extra High only",
+      "id": "extra-high",
+      "name": "Extra High control plane",
+      "description": "Launch, wait, result, follow-up via @cursor/sdk",
       "tags": [
-        "qa",
-        "merge"
+        "cloud",
+        "sdk"
       ]
     }
   ],
   "supportedInterfaces": [
     {
-      "url": "http://127.0.0.1:8732/a2a/qa-b",
+      "url": "http://127.0.0.1:8732/a2a/cloud",
       "protocolBinding": "HTTP+JSON",
       "protocolVersion": "1.0"
     }
