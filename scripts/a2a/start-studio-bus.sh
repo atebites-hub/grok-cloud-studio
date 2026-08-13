@@ -38,8 +38,19 @@ STOP_DAEMON="$ROOT/scripts/directors/stop-seat-daemon.sh"
 STATUS_DAEMON="$ROOT/scripts/directors/status-seat-daemon.sh"
 DAEMONS_FLAG="$STATE_DIR/daemons.enabled"
 LIB_PY="$SCRIPT_DIR/lib.py"
+# Comma-separated seats to keep as ACP daemons.
+# Default floor+ops (studio-ops on product floors) — full registry OOMs ~15GB VMs.
+DEFAULT_ACP_SEATS="floor,studio-ops"
 
 mkdir -p "$STATE_DIR"
+
+# Crash-safe overrides (seat cap, GROK_USE_LEADER). Not committed.
+if [[ -f "$STATE_DIR/studio.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$STATE_DIR/studio.env"
+  set +a
+fi
 
 usage() {
   cat <<'EOF'
@@ -77,7 +88,19 @@ read_pid() {
 }
 
 acp_seats() {
-  python3 "$LIB_PY" launch-seats
+  local raw="${GCS_ACP_SEATS:-$DEFAULT_ACP_SEATS}"
+  local s known
+  known="$(python3 "$LIB_PY" launch-seats 2>/dev/null || true)"
+  IFS=',' read -r -a parts <<<"$raw"
+  for s in "${parts[@]}"; do
+    s="$(echo "$s" | tr -d '[:space:]')"
+    [[ -n "$s" ]] || continue
+    if printf '%s\n' "$known" | grep -qx "$s"; then
+      echo "$s"
+    elif [[ "$s" == "studio-ops" ]] && printf '%s\n' "$known" | grep -qx "ops"; then
+      echo "ops"
+    fi
+  done
 }
 
 want_daemons() {
@@ -144,6 +167,11 @@ start_ak_bridge() {
 
 start_seat_daemons() {
   local seat
+  if [[ "${GROK_USE_LEADER:-0}" == "1" || "${GROK_USE_LEADER:-}" == "true" ]]; then
+    if [[ -f "$ROOT/scripts/directors/start-grok-leader.sh" ]]; then
+      bash "$ROOT/scripts/directors/start-grok-leader.sh" || echo "STUDIO_BUS_LEADER_FAIL" >&2
+    fi
+  fi
   if [[ ! -f "$START_DAEMON" ]]; then
     echo "STUDIO_BUS_DAEMONS_SKIP missing $START_DAEMON"
     return 0

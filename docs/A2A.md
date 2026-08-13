@@ -2,7 +2,7 @@
 
 ```bash
 scripts/a2a/start-studio-bus.sh                 # hub + dispatch + bot-bridge + fleet-shepherd
-scripts/a2a/start-studio-bus.sh start --daemons # also ACP daemons (opt-in)
+scripts/a2a/start-studio-bus.sh start --daemons # ACP daemons for GCS_ACP_SEATS (opt-in)
 scripts/a2a/send.sh ops "ping: hello"
 scripts/a2a/start-studio-bus.sh status
 ```
@@ -13,6 +13,7 @@ Cards/registry: `docs/a2a/`. Runtime state lives in `.a2a-state/` (gitignored).
 
 Hub default: `http://127.0.0.1:8732` (`GCS_A2A_HUB` / `GCS_A2A_PORT`).
 Example seats: `floor`, `ops`, `cloud`, `qa-a`, `qa-b`.
+ACP daemon cap: `GCS_ACP_SEATS` (default `floor,studio-ops`). Mail cannot auto-start seats outside that allowlist. `skipSeats` stay skipped. See `docs/studio/GROK_LEADER.md`.
 
 ## Inject timeout + dispatch lock TTL
 

@@ -160,10 +160,12 @@ async function sdkWait(agentId: string, runId: string, apiKey: string): Promise<
       const remaining = deadline - Date.now();
       if (remaining <= 0) break;
       try {
+        // timeout=0 => remaining is Infinity; sleep(Infinity) hung FLEET_DONE.
+        const slice = Math.min(pollSec * 1000, Number.isFinite(remaining) ? remaining : pollSec * 1000);
         await Promise.race([
           run.wait(),
-          sleep(remaining).then(() => {
-            throw new Error("wait-timeout");
+          sleep(slice).then(() => {
+            throw new Error("wait-poll");
           }),
         ]);
         continue;
