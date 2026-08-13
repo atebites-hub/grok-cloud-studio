@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Send an A2A text message to a Grok Cloud Studio Director seat via the local hub.
+# Send an A2A text message to a Grok Cloud Studio seat via the local hub.
 # Usage: send.sh <seat> "<text>" [optional-data-json]
 # Env: GCS_A2A_HUB (default http://127.0.0.1:8732)
 set -euo pipefail
@@ -7,10 +7,13 @@ SEAT="${1:-}"
 TEXT="${2:-}"
 DATA_JSON="${3:-}"
 HUB="${GCS_A2A_HUB:-http://127.0.0.1:8732}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "${GCS_ROOT:-$SCRIPT_DIR/../..}" && pwd)"
 
 if [[ -z "$SEAT" || -z "$TEXT" ]]; then
   echo "usage: $0 <seat> \"<text>\" [optional-data-json]" >&2
-  echo "seats: ops studio-ops cloud-env qa-a qa-b systems client content live-ops" >&2
+  echo "seats:" >&2
+  python3 "$ROOT/scripts/a2a/lib.py" launch-seats >&2 || true
   exit 2
 fi
 
