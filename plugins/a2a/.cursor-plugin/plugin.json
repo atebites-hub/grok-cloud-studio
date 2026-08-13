@@ -1,0 +1,17 @@
+{
+  "name": "gcs-a2a",
+  "displayName": "Grok Cloud Studio A2A",
+  "version": "1.0.0",
+  "description": "MCP tools to list A2A seats and send hub pings (a2a_list_seats, a2a_send).",
+  "author": {
+    "name": "atebites-hub"
+  },
+  "homepage": "https://github.com/atebites-hub/grok-cloud-studio",
+  "repository": "https://github.com/atebites-hub/grok-cloud-studio",
+  "license": "MIT",
+  "keywords": ["a2a", "mcp", "grok-cloud-studio"],
+  "category": "developer-tools",
+  "tags": ["a2a", "mcp"],
+  "mcpServers": "./mcp.json",
+  "rules": "./rules/"
+}

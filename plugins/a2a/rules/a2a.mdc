@@ -1,0 +1,8 @@
+---
+description: Use A2A hub tools to ping seats instead of ad-hoc curl.
+alwaysApply: false
+---
+
+# A2A seats
+
+Prefer MCP `a2a_list_seats` and `a2a_send` (or `scripts/a2a/send.sh`) for Director-to-Director pings. The local hub is protocol-ack; dispatch wakes seats. Never print hub secrets or ACP tokens.

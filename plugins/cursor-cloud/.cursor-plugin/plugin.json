@@ -1,0 +1,17 @@
+{
+  "name": "gcs-cursor-cloud",
+  "displayName": "Grok Cloud Studio Cursor Cloud",
+  "version": "1.0.0",
+  "description": "MCP tools for Extra High launch/status/result. Target repo is GCS_CLOUD_REPO / CLOUD_REPO_URL.",
+  "author": {
+    "name": "atebites-hub"
+  },
+  "homepage": "https://github.com/atebites-hub/grok-cloud-studio",
+  "repository": "https://github.com/atebites-hub/grok-cloud-studio",
+  "license": "MIT",
+  "keywords": ["cursor-cloud", "mcp", "extra-high"],
+  "category": "developer-tools",
+  "tags": ["cursor-cloud", "mcp"],
+  "mcpServers": "./mcp.json",
+  "rules": "./rules/"
+}
