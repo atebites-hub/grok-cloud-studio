@@ -16,22 +16,28 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 | MCP plugins | `plugins/a2a`, `plugins/cursor-cloud` |
 | Webhook harness | `scripts/cloud/webhook_receiver.py`, `webhook-harness.sh` |
 
-Example seats (edit `docs/a2a/registry.json`): `floor`, `ops`, `cloud`, `qa-a`, `qa-b`. Hub: `127.0.0.1:8732`. ACP ports: `8740+`.
+Example seats (edit `docs/a2a/registry.json`): `orchestrator` (Grok Bot, ACP-skipped), `floor`, `ops`, `cloud`, `qa-a`, `qa-b`. Hub: `127.0.0.1:8732`. ACP ports: `8740+`.
 
 ## Quick start
 
 ```bash
 git clone https://github.com/atebites-hub/grok-cloud-studio
 cd grok-cloud-studio
-./install.sh
-cp .env.example .env   # fill GCS_CLOUD_REPO; never commit .env
+export GCS_BOT_AGENT_ID='your-grok-bot-agent-id'   # from Grok Bot settings
+./install.sh                                       # binds the Bot seat into A2A
 ./doctor.sh
+```
 
-# Local bus (hub + dispatch + orphan shepherd). ACP daemons are opt-in.
+`./install.sh` without `GCS_BOT_AGENT_ID` still bootstraps Python, then **WARN**s. Re-run install or `scripts/a2a/bind-bot-agent.sh` after setting the id. `./doctor.sh` **FAIL**s while `docs/a2a/bot-agents.json` still has an empty or `REPLACE_WITH_YOUR_GROK_BOT_AGENT_ID` agentId. Pure CI clone checks may set `GCS_BOT_BIND_OPTIONAL=1`.
+
+```bash
+cp .env.example .env   # fill GCS_CLOUD_REPO + GCS_BOT_AGENT_ID; never commit .env
+
+# Local bus (hub + dispatch + bot-bridge + orphan shepherd). ACP daemons are opt-in.
 scripts/a2a/start-studio-bus.sh start
 # scripts/a2a/start-studio-bus.sh start --daemons   # grok agent serve per seat
 
-scripts/a2a/send.sh floor "hello from ops"
+scripts/a2a/send.sh orchestrator "hello from ops"
 ```
 
 Launch Extra High (requires `CURSOR_API_KEY` in the environment or `~/.config/cursor/agent.env`):
@@ -47,10 +53,27 @@ scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." 
 See `.env.example`. Prefix is **`GCS_*`**. Important:
 
 - `GCS_CLOUD_REPO` / `CLOUD_REPO_URL` — **required** for Extra High create (fail closed)
+- `GCS_BOT_AGENT_ID` — Grok Bot orchestrator id (binds into A2A on install)
+- `GCS_BOT_SEAT` — default `orchestrator` (`donald` still works; kept in `skipSeats` for back-compat)
+- `GCS_BOT_BIND_OPTIONAL=1` — doctor will not FAIL on placeholder agentId (CI clones only)
 - `GCS_CLOUD_REF` — default `main`
 - `GCS_SPAWN_WAITER=0` — disable the detached waiter (tests)
 - `GCS_WEBHOOK_SECRET` — enable signed webhook receiver
 - `CURSOR_API_KEY` — never print; never commit
+
+## Grok Bot orchestrator (A2A)
+
+Bot seats are **not** ACP inject targets. `install.sh` writes `docs/a2a/bot-agents.json` + `registry.json` `skipSeats` when `GCS_BOT_AGENT_ID` is set. Standing Bot routine on the shared box:
+
+```text
+Poll `.a2a-state/orchestrator/bot-wake.txt` (latest) and
+`.a2a-state/orchestrator/bot-wake.jsonl` (append log). When a new wake
+appears, read the task text and act as the studio orchestrator. Reply
+with `scripts/a2a/send.sh <director-seat> "…"`. Do not use acp_inject
+or grok agent serve for this seat.
+```
+
+Bind later without reinstall: `GCS_BOT_AGENT_ID=… scripts/a2a/bind-bot-agent.sh`
 
 ## MCP plugins
 

@@ -31,7 +31,9 @@ Stdlib HTTP+JSON (`scripts/a2a/hub.py`):
 
 Default bind `127.0.0.1:8732`. Cards live in `docs/a2a/cards/`. Seats and ACP ports live in `docs/a2a/registry.json` (`scripts/a2a/lib.py` is the source of truth).
 
-`scripts/a2a/start-studio-bus.sh` starts hub + dispatch + fleet-shepherd. Pass `--daemons` (or `GCS_START_SEAT_DAEMONS=1`) to also start per-seat `grok agent serve`. Daemons are **opt-in** so a bus start does not surprise-spawn five grok processes.
+`scripts/a2a/start-studio-bus.sh` starts hub + dispatch + bot-bridge + fleet-shepherd. Pass `--daemons` (or `GCS_START_SEAT_DAEMONS=1`) to also start per-seat `grok agent serve`. Daemons are **opt-in** so a bus start does not surprise-spawn five grok processes.
+
+Grok Bot orchestrator seats (`docs/a2a/bot-agents.json`, default seat `orchestrator`) are listed in registry `skipSeats` and are **not** ACP inject targets. Bind with `GCS_BOT_AGENT_ID` + `scripts/a2a/bind-bot-agent.sh` (also run from `install.sh`). Standing Bot routines poll `.a2a-state/<seat>/bot-wake.txt` / `bot-wake.jsonl`.
 
 ## ACP
 
