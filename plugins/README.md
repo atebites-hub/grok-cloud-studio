@@ -1,6 +1,18 @@
 # Plugins
 
-- gcs-a2a
-- gcs-cursor-cloud
+Primary (Python stdio MCP + Cursor plugin manifests):
 
-npm install in each dir. Never commit tokens.
+- `plugins/a2a`
+- `plugins/cursor-cloud`
+
+```bash
+grok plugin install ./plugins/a2a --trust
+grok plugin install ./plugins/cursor-cloud --trust
+```
+
+Optional Node MCP servers (same tools, npm install in each dir):
+
+- `plugins/gcs-a2a`
+- `plugins/gcs-cursor-cloud`
+
+Never commit tokens.

@@ -42,6 +42,7 @@ chmod +x \
   "$ROOT"/scripts/cloud/*.sh \
   "$ROOT"/scripts/cloud/sdk/*.sh \
   "$ROOT"/scripts/directors/*.sh \
+  "$ROOT"/scripts/webhook/*.sh \
   2>/dev/null || true
 
 echo "install ok — run ./doctor.sh then .venv/bin/pytest -q"

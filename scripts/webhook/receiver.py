@@ -10,7 +10,7 @@ SECRET = os.environ.get('GCS_WEBHOOK_SECRET', '')
 INSECURE = os.environ.get('GCS_WEBHOOK_INSECURE', '0') == '1'
 HOST = os.environ.get('GCS_WEBHOOK_HOST', '127.0.0.1')
 PORT = int(os.environ.get('GCS_WEBHOOK_PORT', '8788'))
-DEFAULT_SEAT = os.environ.get('GCS_DEFAULT_SEAT', 'studio-ops')
+DEFAULT_SEAT = os.environ.get('GCS_DEFAULT_SEAT', 'ops')
 
 def verify(sig_header: str, body: bytes) -> bool:
     if INSECURE and not SECRET:

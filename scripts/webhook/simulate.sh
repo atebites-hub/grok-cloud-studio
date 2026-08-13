@@ -3,7 +3,7 @@ set -euo pipefail
 HOST="${GCS_WEBHOOK_HOST:-127.0.0.1}"
 PORT="${GCS_WEBHOOK_PORT:-8788}"
 SECRET="${GCS_WEBHOOK_SECRET:-dev-only-not-for-prod}"
-SEAT="${1:-studio-ops}"
+SEAT="${1:-ops}"
 BC_ID="${2:-bc-example000}"
 STATUS="${3:-FINISHED}"
 PR="${4:-https://github.com/example/repo/pull/1}"
