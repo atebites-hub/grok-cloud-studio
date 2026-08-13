@@ -6,6 +6,17 @@ Upstream CLI/source: [github.com/saltbo/agent-kanban](https://github.com/saltbo/
 
 The local HTML dashboard under `scripts/studio/dashboard/` is **LEGACY**. Use this board instead.
 
+## Cloud agents on the board
+
+Fleet cards on the Agent Kanban board **are** Extra High cloud agents (observer mirror).
+
+- Cards come from `.a2a-state/*/fleet.jsonl` (+ events) via **board-writer** → `fleet-bridge.py`.
+- The cloud grunt environment does **not** need `ak` inside the grunt for board visibility.
+- Optional future: grunt posts status notes via webhook; today the local observer + waiter events drive the board.
+- **`ak start` machine runner is optional** UI “connected” state. Observer sync works with **leader identity alone** (`exec -a cursor-agent` + `CURSOR_AGENT=1` + `ak auth login --leader-agent`).
+- Machine runner must **not** be required for card sync.
+- **Warn:** an AMA / AK runner left online may try to **claim Todo cards**. Prefer observer-only or unassigned cards so Extra High remains the only worker.
+
 ## Why board-writer (ancestry)
 
 `ak create task` / `ak auth login --leader-agent` require:
@@ -19,7 +30,7 @@ Machine API keys alone get **403** on task create (`agent:leader or agent:worker
 
 Do **not** clobber a real `cursor-agent` under `~/.local/share/cursor-agent/versions/*/cursor-agent`. Prefer `exec -a`. Optional: `cursor-agent-shim.sh --install` (skips if a real binary exists).
 
-**`ak start` is unsupported as a studio default** (RAM / fights Extra High). Never wire it into `start-studio-bus.sh`.
+**`ak start` is unsupported as a studio default** (RAM / fights Extra High). Never wire it into `start-studio-bus.sh`. Observer sync does **not** require `ak start`.
 
 ## Sync-only (do not `ak start` by default)
 
@@ -59,8 +70,25 @@ Key resolution for `configure-ak.sh`: `AGENT_KANBAN_API_KEY`, then `GCS_AGENT_KA
 | `board-writer.sh` | `start|stop|status|once` light writer (argv0=`cursor-agent`) |
 | `board-writer-loop.sh` / `board-writer-once.sh` | Inner loop / one-shot |
 | `cursor-agent-shim.sh` | Optional PATH shim; prefer `exec -a` |
-| `fleet-bridge.py` | Upsert tasks; `--force` recreates `dry-*`; label `extra-high` only |
+| `fleet-bridge.py` | Upsert tasks; label-free create; `--force` recreates `dry-*`; skips `bc-smoke-handoff-*` |
 | `notify-event.sh` | Observer events |
+
+### Status mapping
+
+| Extra High / ledger | AK column |
+|---|---|
+| `ACTIVE` / open / launched | `in_progress` |
+| PR URL / review event | `in_review` |
+| `FINISHED` / `MERGED` / closed / done | `done` |
+| `ERROR` / `CANCELLED` | `cancelled` |
+
+### Hardening behavior (fleet-bridge)
+
+- Create tasks **label-free** (never fail sync on missing `extra-high` label).
+- `parse_created_id` tolerates Node `ExperimentalWarning` + truncated pretty JSON (`raw_decode` + `"id"` regex).
+- `dry-*` placeholders treated as missing (`--force` / `is_placeholder`) and recreated.
+- Skip synthetic `bc-smoke-handoff-*` fleet rows.
+- Crash recovery checklist: `docs/studio/directors/HARDENING.md`.
 
 ### board-writer usage
 

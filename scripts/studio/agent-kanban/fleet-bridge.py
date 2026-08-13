@@ -77,6 +77,11 @@ def normalize_bc(raw: Any) -> str:
     return text
 
 
+def is_synthetic_bc(bc_id: str) -> bool:
+    """Skip local smoke/fleet placeholders (not real Extra High agents)."""
+    return normalize_bc(bc_id).startswith("bc-smoke-handoff")
+
+
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         return []
@@ -104,8 +109,9 @@ def atomic_write_json(path: Path, payload: Any) -> None:
 def desired_ak_status(record: dict[str, Any]) -> str:
     """Map Extra High ledger / observer event → AK column.
 
-    launch/open → todo; ACTIVE → in_progress; PR → in_review;
-    FINISHED/MERGED → done; ERROR/CANCELLED → cancelled (when supported).
+    ACTIVE → in_progress; PR → in_review; FINISHED/MERGED → done;
+    ERROR/CANCELLED → cancelled. Ledger open/active/running → in_progress;
+    closed/done/finished/merged → done.
     """
     event = str(record.get("event") or "").strip().lower()
     run_status = str(
@@ -123,7 +129,11 @@ def desired_ak_status(record: dict[str, Any]) -> str:
         "expired",
     }:
         return AK_CANCELLED
-    if run_status in {"FINISHED", "MERGED"} or event in {"finished", "merged", "done"}:
+    if (
+        run_status in {"FINISHED", "MERGED"}
+        or event in {"finished", "merged", "done"}
+        or ledger in {"closed", "done", "finished", "merged"}
+    ):
         return AK_DONE
     if pr_url or event in {"pr", "in_review", "review"}:
         return AK_IN_REVIEW
@@ -143,7 +153,7 @@ def collect_records(state_dir: Path) -> dict[str, dict[str, Any]]:
             continue
         for entry in load_jsonl(fleet):
             bc_id = normalize_bc(entry.get("bc_id"))
-            if not bc_id:
+            if not bc_id or is_synthetic_bc(bc_id):
                 continue
             rec = dict(entry)
             rec["bc_id"] = bc_id
@@ -161,7 +171,7 @@ def collect_records(state_dir: Path) -> dict[str, dict[str, Any]]:
         seen_paths.add(key)
         for event in load_jsonl(ep):
             bc_id = normalize_bc(event.get("bc_id"))
-            if not bc_id:
+            if not bc_id or is_synthetic_bc(bc_id):
                 continue
             rec = dict(by_id.get(bc_id) or {"bc_id": bc_id})
             for key_name, value in event.items():
@@ -238,15 +248,30 @@ def ak_bin() -> str:
 
 def parse_created_id(stdout: str) -> str:
     text = (stdout or "").strip()
+    # ak often prints node ExperimentalWarning lines before JSON / truncates pretty JSON.
     for line in reversed(text.splitlines()):
         line = line.strip()
-        if line.startswith("{"):
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(rec, dict) and rec.get("id"):
-                return str(rec["id"])
+        if not line.startswith("{"):
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(rec, dict) and rec.get("id"):
+            return str(rec["id"])
+    decoder = json.JSONDecoder()
+    for i, ch in enumerate(text):
+        if ch != "{":
+            continue
+        try:
+            rec, _ = decoder.raw_decode(text[i:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(rec, dict) and rec.get("id"):
+            return str(rec["id"])
+    id_m = re.search(r"\"id\"\s*:\s*\"([A-Za-z0-9_-]+)\"", text)
+    if id_m:
+        return id_m.group(1)
     match = CREATED_ID_RE.search(text)
     if match:
         return match.group(1).rstrip(":")
@@ -314,7 +339,11 @@ def redact_ak_text(blob: str) -> str:
 
 
 def create_task(board_id: str, record: dict[str, Any]) -> str:
-    seat = str(record.get("seat") or "fleet")
+    # Label-free create: missing board labels (e.g. extra-high) must never fail sync.
+    bc = normalize_bc(record.get("bc_id"))
+    if is_synthetic_bc(bc):
+        print(f"AK_BRIDGE_SKIP synthetic id={bc}")
+        return ""
     if DRY_RUN:
         fake = f"dry-{normalize_bc(record.get('bc_id'))[:24]}"
         print(f"AK_BRIDGE_DRY create board={board_id} title={task_title(record)!r} -> {fake}")
@@ -328,9 +357,6 @@ def create_task(board_id: str, record: dict[str, Any]) -> str:
         task_title(record),
         "--description",
         task_description(record),
-        # Only well-known labels — seat names (e.g. studio-ops) are not board labels.
-        "--labels",
-        "extra-high",
         "-o",
         "json",
     ]
@@ -411,10 +437,11 @@ def sync_once(state_dir: Path | None = None) -> dict[str, dict[str, Any]]:
         row = dict(task_map.get(bc_id) or {})
         task_id = str(row.get("task_id") or "")
         current = str(row.get("ak_status") or "")
-        # dry-* placeholders are not real; recreate unless DRY_RUN.
+        # dry-* / empty placeholders are not real board tasks; recreate unless DRY_RUN.
         if is_placeholder_task_id(task_id) and not DRY_RUN:
-            if FORCE or str(task_id).startswith("dry-"):
-                print(f"AK_BRIDGE_RECREATE placeholder task_id={task_id!r} bc_id={bc_id}")
+            if FORCE or not task_id or str(task_id).startswith("dry-"):
+                if task_id:
+                    print(f"AK_BRIDGE_RECREATE placeholder task_id={task_id!r} bc_id={bc_id}")
                 task_id = ""
                 current = ""
         if not task_id:

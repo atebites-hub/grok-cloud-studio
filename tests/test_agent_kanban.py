@@ -126,7 +126,13 @@ def test_docs_cover_aliases_sync_only_and_fsl() -> None:
     assert "scripts/studio/dashboard" in text
     assert "GCS_AK_BRIDGE" in text
     assert "seat-lifecycle" in text
+    assert "Cloud agents on the board" in text
+    assert "observer" in text.lower()
     assert HARDENING.is_file()
+    hard = HARDENING.read_text(encoding="utf-8")
+    assert "180" in hard
+    assert "MemAvailable" in hard or "MemAvailable" in text
+    assert "lock TTL" in hard.lower() or "LOCK_TTL" in hard or "lock ttl" in hard.lower()
 
 
 def test_legacy_dashboard_points_at_agent_kanban_docs() -> None:
@@ -234,6 +240,7 @@ def test_fleet_bridge_creates_task_and_writes_task_map(tmp_path: Path) -> None:
     assert FAKE_KEY not in proc.stdout + proc.stderr
     argv = log.read_text(encoding="utf-8")
     assert "create task" in argv
+    assert "--labels" not in argv
     assert "task claim" in argv
     assert "start" not in argv
     task_map = json.loads((state / "kanban" / "task-map.json").read_text(encoding="utf-8"))
@@ -313,3 +320,58 @@ def test_seat_lifecycle_and_smoke_scripts_exist() -> None:
     assert SMOKE.is_file()
     assert "SEAT_UP" in SEAT_LC.read_text(encoding="utf-8")
     assert "CLOUD_SMOKE" in SMOKE.read_text(encoding="utf-8")
+
+def test_parse_created_id_tolerates_node_warnings_and_truncation() -> None:
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("fleet_bridge", BRIDGE)
+    mod = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(mod)
+    warn = "(node:1) ExperimentalWarning: The Fetch API is an experimental feature.\n"
+    assert mod.parse_created_id(warn + '{"id":"tsk-json","title":"x"}\n') == "tsk-json"
+    assert mod.parse_created_id('{"id": "tsk-trunc", "title": "partial') == "tsk-trunc"
+    assert mod.parse_created_id("Created task tsk-plain: demo") == "tsk-plain"
+    assert mod.is_placeholder_task_id("dry-bc-aaa")
+    assert mod.is_synthetic_bc("bc-smoke-handoff-xyz")
+    assert mod.desired_ak_status({"run_status": "ACTIVE"}) == "in_progress"
+    assert mod.desired_ak_status({"pr_url": "https://example.com/pr/1"}) == "in_review"
+    assert mod.desired_ak_status({"run_status": "FINISHED"}) == "done"
+    assert mod.desired_ak_status({"run_status": "MERGED"}) == "done"
+
+
+def test_fleet_bridge_skips_smoke_and_recreates_dry_placeholder(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    state = tmp_path / "state"
+    seat = state / "ops"
+    seat.mkdir(parents=True)
+    (seat / "fleet.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps({"bc_id": "bc-smoke-handoff-1", "seat": "ops", "name": "smoke", "status": "open"}),
+                json.dumps({"bc_id": "bc-real", "seat": "ops", "name": "real", "status": "open"}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    ak_dir = state / "agent-kanban"
+    ak_dir.mkdir(parents=True)
+    (ak_dir / "board.id").write_text("brd-studio\n", encoding="utf-8")
+    kanban = state / "kanban"
+    kanban.mkdir(parents=True)
+    (kanban / "task-map.json").write_text(
+        json.dumps({"bc-real": {"task_id": "dry-bc-real", "ak_status": "todo"}}),
+        encoding="utf-8",
+    )
+    log = _fake_ak(home)
+    proc = _run(BRIDGE, _env(home, state), args=["--once", "--force"])
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "AK_BRIDGE_SKIP" in proc.stdout or "bc-smoke-handoff" not in (kanban / "task-map.json").read_text(encoding="utf-8")
+    task_map = json.loads((kanban / "task-map.json").read_text(encoding="utf-8"))
+    assert "bc-smoke-handoff-1" not in task_map
+    assert task_map["bc-real"]["task_id"] == "tsk-1"
+    argv = log.read_text(encoding="utf-8")
+    assert "create task" in argv
+    assert "--labels" not in argv
+
