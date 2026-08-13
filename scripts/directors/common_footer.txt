@@ -17,8 +17,8 @@ Hard rules:
 - List: scripts/cloud/list-cloud-agents.sh [limit]
 - How-to: scripts/cloud/README.md
 - Prefer MCP tools from plugins/a2a and plugins/cursor-cloud when connected (a2a_send, cloud_launch, cloud_status, cloud_result).
-- Peer seats: scripts/a2a/send.sh <seat> "<message>" (local A2A hub). MCP = agent-to-tool; A2A = agent-to-agent.
-- If woken by A2A dispatch (ACP inject or -p fallback): EXTRA TURN INSTRUCTIONS include A2A_TASK_ID / A2A_CONTEXT / MESSAGE — prioritize that ping, act, then print RESULT. On a persistent ACP daemon, idle for the next inject.
+- Peer seats: scripts/a2a/send.sh [--from SEAT] <seat> "<message>" (local A2A hub). MCP = agent-to-tool; A2A = agent-to-agent. Use send.sh / a2a_send for new work pings, not to ack the caller of this wakeup.
+- If woken by A2A dispatch (ACP inject or -p fallback): EXTRA TURN INSTRUCTIONS include A2A_TASK_ID / A2A_CONTEXT / MESSAGE — prioritize that ping, act, then print RESULT (or PARK_ACK / QA_*_RESULT). Do not call send.sh or a2a_send to ack the caller — duplex writes that RESULT onto the A2A task and notifies the caller seat. On a persistent ACP daemon, idle for the next inject.
 - QA parity (example): A merges odd PR numbers, B even. Squash-merge only. Never force-push the target repo main.
 - Prefer gh CLI for GitHub PR ops; CURSOR_API_KEY comes from ~/.config/cursor/agent.env for the cloud launcher.
 

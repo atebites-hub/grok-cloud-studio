@@ -181,6 +181,8 @@ def compose_extra(task_id: str | None, context: str | None, message: str | None)
     return (
         f"A2A_TASK_ID={task_id or 'none'}\n"
         f"A2A_CONTEXT={context or 'none'}\n"
+        "Print RESULT (or PARK_ACK / QA_*_RESULT). Do not send.sh / a2a_send to ack "
+        "the caller — duplex notifies.\n"
         f"MESSAGE:\n{message or ''}\n"
     )
 

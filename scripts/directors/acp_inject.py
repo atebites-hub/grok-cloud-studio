@@ -16,8 +16,10 @@ import argparse
 import asyncio
 import base64
 import hashlib
+import importlib.util
 import json
 import os
+import re
 import secrets
 import struct
 import sys
@@ -41,6 +43,50 @@ try:
     _HAS_WEBSOCKETS = True
 except ImportError:
     _HAS_WEBSOCKETS = False
+
+RESULT_LINE_RE = re.compile(
+    r"^(RESULT|QA_A_RESULT|QA_B_RESULT|PARK_ACK)\b.*$",
+    re.MULTILINE,
+)
+
+
+def extract_result_line(text: str) -> str | None:
+    """Return the last Director contract line, if any."""
+    if not text:
+        return None
+    found: str | None = None
+    for match in RESULT_LINE_RE.finditer(text):
+        found = match.group(0).strip()
+    return found
+
+
+def _duplex_after_inject(seat: str, prompt: str, reply: str) -> None:
+    path = ROOT / "scripts" / "a2a" / "duplex.py"
+    if not path.is_file():
+        return
+    spec = importlib.util.spec_from_file_location("gcs_a2a_duplex", path)
+    if spec is None or spec.loader is None:
+        return
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    record = mod.record_from_env(prompt)
+    if not record.get("taskId"):
+        return
+    try:
+        result = mod.duplex_from_output(
+            state_dir=STATE_DIR,
+            seat=seat,
+            record=record,
+            output_text=reply,
+        )
+        if result.get("ok"):
+            print(
+                f"ACP_INJECT_DUPLEX seat={seat} task={result.get('taskId')} "
+                f"caller={result.get('caller') or 'none'}",
+                flush=True,
+            )
+    except Exception as e:  # noqa: BLE001 — inject succeeded even if duplex fails
+        print(f"ACP_INJECT_DUPLEX_ERR seat={seat} err={e}", file=sys.stderr)
 
 
 def _seat_dir(seat: str) -> Path:
@@ -194,6 +240,8 @@ class AcpClient:
         self._reader_task: Optional[asyncio.Task] = None
         self._chunks: list[str] = []
         self._prompt_done: Optional[asyncio.Future] = None
+        self._harvested: Optional[asyncio.Future] = None
+        self.harvested_early = False
         self._use_stdlib = not _HAS_WEBSOCKETS
         self._echo_chunks = False
 
@@ -249,6 +297,7 @@ class AcpClient:
                             self._chunks.append(t)
                             sys.stdout.write(t)
                             sys.stdout.flush()
+                            self._maybe_complete_harvest()
                 elif method in ("_x.ai/session/prompt_complete",):
                     # sometimes arrives before JSON-RPC result
                     pass
@@ -283,6 +332,16 @@ class AcpClient:
             self._pending.clear()
             if self._prompt_done and not self._prompt_done.done():
                 self._prompt_done.set_exception(e)
+            if self._harvested and not self._harvested.done():
+                self._harvested.set_exception(e)
+
+    def _maybe_complete_harvest(self) -> None:
+        fut = self._harvested
+        if fut is None or fut.done():
+            return
+        line = extract_result_line("".join(self._chunks))
+        if line:
+            fut.set_result(line)
 
     async def request(self, method: str, params: dict[str, Any], timeout: float = 60.0) -> dict[str, Any]:
         rid = self._next_id
@@ -363,11 +422,14 @@ class AcpClient:
     async def session_prompt(self, session_id: str, text: str, timeout: float) -> str:
         self._chunks = []
         self._echo_chunks = True
+        self.harvested_early = False
         rid = self._next_id
         self._next_id += 1
-        loop = asyncio.get_event_loop()
-        fut: asyncio.Future = loop.create_future()
-        self._pending[rid] = fut
+        loop = asyncio.get_running_loop()
+        rpc_fut: asyncio.Future = loop.create_future()
+        harvest_fut: asyncio.Future = loop.create_future()
+        self._pending[rid] = rpc_fut
+        self._harvested = harvest_fut
         await self._send_raw(
             {
                 "jsonrpc": "2.0",
@@ -380,15 +442,30 @@ class AcpClient:
             }
         )
         try:
-            msg = await asyncio.wait_for(fut, timeout=timeout)
-        except Exception:
+            done, _pending_futs = await asyncio.wait(
+                {rpc_fut, harvest_fut},
+                timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            reply = "".join(self._chunks)
+            if harvest_fut in done and not harvest_fut.cancelled() and harvest_fut.exception() is None:
+                self.harvested_early = True
+                return reply
+            if rpc_fut in done and not rpc_fut.cancelled():
+                exc = rpc_fut.exception()
+                if exc is not None:
+                    raise exc
+                msg = rpc_fut.result()
+                if "error" in msg:
+                    raise RuntimeError(f"session/prompt error: {msg['error']}")
+                return reply
             self._pending.pop(rid, None)
-            raise
-        if "error" in msg:
+            if extract_result_line(reply):
+                self.harvested_early = True
+                return reply
+            raise asyncio.TimeoutError
+        finally:
             self._echo_chunks = False
-            raise RuntimeError(f"session/prompt error: {msg['error']}")
-        self._echo_chunks = False
-        return "".join(self._chunks)
 
 
 async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = False) -> int:
@@ -428,27 +505,35 @@ async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = Fa
             f"ACP_INJECT_BEGIN seat={seat} session={session_id} reused={int(reused)} url={url.split('?')[0]}",
             flush=True,
         )
+        # Mark in-flight before prompt so dispatch lock-TTL SIGKILL still force-news.
+        _write_text(stale_path, f"in-flight timeout={timeout}\n")
         # Wrap as EXTRA TURN so Directors match footer expectations
         full = (
             "=== EXTRA TURN INSTRUCTIONS (ACP inject / persistent seat) ===\n"
             f"{prompt.rstrip()}\n"
         )
+        harvested = False
         try:
             reply = await client.session_prompt(session_id, full, timeout=timeout)
+            harvested = bool(client.harvested_early)
         except asyncio.TimeoutError:
-            print(
-                f"ACP_INJECT_TIMEOUT seat={seat} session={session_id} timeout={timeout}",
-                file=sys.stderr,
-                flush=True,
-            )
-            _write_text(stale_path, f"timeout={timeout}\n")
-            print(
-                f"ACP_INJECT_CANCEL seat={seat} session={session_id}",
-                file=sys.stderr,
-                flush=True,
-            )
-            await client.session_cancel(session_id)
-            return 1
+            reply = "".join(client._chunks)
+            if extract_result_line(reply):
+                harvested = True
+            else:
+                print(
+                    f"ACP_INJECT_TIMEOUT seat={seat} session={session_id} timeout={timeout}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                _write_text(stale_path, f"timeout={timeout}\n")
+                print(
+                    f"ACP_INJECT_CANCEL seat={seat} session={session_id}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                await client.session_cancel(session_id)
+                return 1
         except Exception as e:
             print(f"ACP_INJECT_FAIL seat={seat} session={session_id} err={e}", file=sys.stderr)
             print(
@@ -461,6 +546,7 @@ async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = Fa
             except Exception:
                 pass
             return 1
+        _duplex_after_inject(seat, prompt, reply)
         if reply and not reply.endswith("\n"):
             sys.stdout.write("\n")
             sys.stdout.flush()
@@ -468,10 +554,17 @@ async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = Fa
             stale_path.unlink(missing_ok=True)
         except OSError:
             pass
+        if harvested:
+            print(
+                f"ACP_INJECT_HARVEST seat={seat} session={session_id}",
+                flush=True,
+            )
         print(
             f"ACP_INJECT_OK seat={seat} session={session_id} reused={int(reused)} chars={len(reply)}",
             flush=True,
         )
+        if harvested:
+            await client.session_cancel(session_id)
         return 0
     finally:
         await client.close()

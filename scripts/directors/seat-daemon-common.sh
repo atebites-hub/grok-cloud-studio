@@ -106,6 +106,7 @@ FRONT
 You are a long-lived Grok agent serve process for seat "${seat}".
 A2A wakeups arrive as session/prompt EXTRA TURN messages (not a fresh grok -p process).
 After each wakeup: act on the MESSAGE, print exactly one RESULT (or PARK_ACK / QA_*_RESULT) line, then idle for the next inject.
+Do not send.sh / a2a_send to ack the caller; duplex notifies.
 Do not exit the daemon process. Do not wait for interactive chat.
 Export awareness: GCS_DIRECTOR_SEAT=${seat}
 PERSIST

@@ -84,3 +84,22 @@ def test_hub_health_and_send_ack(hub: dict) -> None:
     assert inbox.is_file()
     record = json.loads(inbox.read_text(encoding="utf-8").splitlines()[-1])
     assert record["parts"][0]["text"] == "ping from test"
+
+
+def test_hub_send_from_seat(hub: dict) -> None:
+    proc = subprocess.run(
+        ["bash", str(SEND), "--from", "ops", "floor", "ack via from"],
+        cwd=str(ROOT),
+        env=hub["env"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    inbox = Path(hub["state"]) / "floor" / "inbox.jsonl"
+    record = json.loads(inbox.read_text(encoding="utf-8").splitlines()[-1])
+    assert record["parts"][0]["text"] == "ack via from"
+    data_parts = [p for p in record["parts"] if p.get("kind") == "data" or "data" in p]
+    assert data_parts
+    assert data_parts[0]["data"]["from"] == "ops"
+    assert record.get("from") == "ops"

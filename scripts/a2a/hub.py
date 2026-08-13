@@ -293,6 +293,7 @@ class A2AHandler(BaseHTTPRequestHandler):
                 "messageId": message_id,
                 "role": role,
                 "parts": parts,
+                "from": body.get("from") or (msg.get("metadata") or {}).get("from"),
                 "raw": body,
             }
             with _lock:
