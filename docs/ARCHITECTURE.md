@@ -31,7 +31,7 @@ Stdlib HTTP+JSON (`scripts/a2a/hub.py`):
 
 Default bind `127.0.0.1:8732`. Cards live in `docs/a2a/cards/`. Seats and ACP ports live in `docs/a2a/registry.json` (`scripts/a2a/lib.py` is the source of truth).
 
-`scripts/a2a/start-studio-bus.sh` starts hub + dispatch + fleet-shepherd. Pass `--daemons` (or `GCS_START_SEAT_DAEMONS=1`) to also start per-seat `grok agent serve`. Daemons are **opt-in** so a bus start does not surprise-spawn five grok processes.
+`scripts/a2a/start-studio-bus.sh` starts hub + dispatch + fleet-shepherd. Pass `--daemons` (or `GCS_START_SEAT_DAEMONS=1`) to also start per-seat `grok agent serve`. Daemons are **opt-in** so a bus start does not surprise-spawn five grok processes. Optional Agent Kanban `ak-bridge` (sync-only fleet mirror) starts when configured; it never runs `ak start`. See `docs/studio/AGENT_KANBAN.md`.
 
 ## ACP
 

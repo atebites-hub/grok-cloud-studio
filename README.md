@@ -15,6 +15,7 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 | Orphan fleet-shepherd | `scripts/directors/fleet-shepherd.py` |
 | MCP plugins | `plugins/a2a`, `plugins/cursor-cloud` |
 | Webhook harness | `scripts/cloud/webhook_receiver.py`, `webhook-harness.sh` |
+| Agent Kanban (sync-only) | `docs/studio/AGENT_KANBAN.md`, `scripts/studio/agent-kanban/` |
 
 Example seats (edit `docs/a2a/registry.json`): `floor`, `ops`, `cloud`, `qa-a`, `qa-b`. Hub: `127.0.0.1:8732`. ACP ports: `8740+`.
 
