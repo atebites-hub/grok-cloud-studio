@@ -9,9 +9,16 @@ import type {
   SDKAgentInfo,
 } from "@cursor/sdk";
 
-export const DEFAULT_REPO = ""; // set GCS_CLOUD_REPO / CLOUD_REPO_URL / CURSOR_CLOUD_REPO
 export const DEFAULT_REF = "main";
 export const AGENT_URL_PREFIX = "https://cursor.com/agents";
+
+function envFirst(...names: string[]): string {
+  for (const name of names) {
+    const value = (process.env[name] || "").trim();
+    if (value) return value;
+  }
+  return "";
+}
 
 export function extraHighModel(): ModelSelection {
   return {
@@ -23,22 +30,19 @@ export function extraHighModel(): ModelSelection {
   };
 }
 
+/** Target git repo for Extra High creates. Fail closed if unset. */
 export function cloudRepo(): string {
-  const repo =
-    process.env.GCS_CLOUD_REPO ||
-    process.env.CLOUD_REPO_URL ||
-    process.env.CURSOR_CLOUD_REPO ||
-    DEFAULT_REPO;
-  if (!repo) {
+  const url = envFirst("GCS_CLOUD_REPO", "CLOUD_REPO_URL", "CURSOR_CLOUD_REPO");
+  if (!url) {
     throw new Error(
-      "CLOUD_BLOCKED: set GCS_CLOUD_REPO (or CLOUD_REPO_URL / CURSOR_CLOUD_REPO) to the target GitHub repo URL",
+      "CLOUD_BLOCKED: set GCS_CLOUD_REPO or CLOUD_REPO_URL (git URL Extra High should open PRs against)",
     );
   }
-  return repo;
+  return url;
 }
 
 export function cloudRef(): string {
-  return process.env.GCS_CLOUD_REF || process.env.CURSOR_CLOUD_REF || DEFAULT_REF;
+  return envFirst("GCS_CLOUD_REF", "CLOUD_REPO_REF", "CURSOR_CLOUD_REF") || DEFAULT_REF;
 }
 
 /**

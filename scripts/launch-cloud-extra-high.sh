@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Launch a Cursor Cloud Extra High grunt (grok-4.6, effort=xhigh, fast=false)
-# Target repo: GCS_CLOUD_REPO / CLOUD_REPO_URL / CURSOR_CLOUD_REPO (required).
-# Ref: GCS_CLOUD_REF / CURSOR_CLOUD_REF (default main). autoCreatePR=true.
-# Canonical: @cursor/sdk (scripts/cloud/sdk/launch.ts). REST curl is fallback.
+# against GCS_CLOUD_REPO / CLOUD_REPO_URL (required) from GCS_CLOUD_REF (default main)
+# with autoCreatePR. Canonical: @cursor/sdk (scripts/cloud/sdk/launch.ts). REST curl is fallback.
 # Prints CLOUD_LAUNCH_OK only on HTTP 200/201 (REST) or SDK create success.
 # Otherwise CLOUD_LAUNCH_ERR. Never prints API keys.
 set -euo pipefail
@@ -19,7 +18,8 @@ Usage: launch-cloud-extra-high.sh [--name NAME] [PROMPT]
 
 Creates a Cursor Cloud Extra High agent (SDK-first):
   model grok-4.6, params effort=xhigh and fast=false
-  repo $GCS_CLOUD_REPO (required) startingRef=${GCS_CLOUD_REF:-main}
+  repo from GCS_CLOUD_REPO or CLOUD_REPO_URL (required)
+  startingRef from GCS_CLOUD_REF (default main)
   autoCreatePR=true
 
 REST fallback (CLOUD_FORCE_REST=1, GCS_CLOUD_BACKEND=rest,
@@ -96,12 +96,12 @@ if ! cloud_load_auth; then
   fail_launch "error: CURSOR_API_KEY is not set (export it or add it to ~/.config/cursor/agent.env)"
 fi
 
-repo="${GCS_CLOUD_REPO:-${CLOUD_REPO_URL:-${CURSOR_CLOUD_REPO:-}}}"
-ref="${GCS_CLOUD_REF:-${CURSOR_CLOUD_REF:-main}}"
-if [[ -z "$repo" ]]; then
-  fail_launch "error: set GCS_CLOUD_REPO (or CLOUD_REPO_URL / CURSOR_CLOUD_REPO) to the target GitHub repo URL"
-fi
-export GCS_CLOUD_REPO="$repo" GCS_CLOUD_REF="$ref" CURSOR_CLOUD_REPO="$repo" CURSOR_CLOUD_REF="$ref"
+CLOUD_REPO="$(python3 "${SCRIPT_DIR}/a2a/lib.py" cloud-repo)" || fail_launch "error: GCS_CLOUD_REPO or CLOUD_REPO_URL is required"
+CLOUD_REF="$(python3 "${SCRIPT_DIR}/a2a/lib.py" cloud-ref)"
+export GCS_CLOUD_REPO="$CLOUD_REPO"
+export GCS_CLOUD_REF="$CLOUD_REF"
+export CURSOR_CLOUD_REPO="${CURSOR_CLOUD_REPO:-$CLOUD_REPO}"
+export CURSOR_CLOUD_REF="${CURSOR_CLOUD_REF:-$CLOUD_REF}"
 
 if cloud_sdk_exec launch "$prompt" "$name"; then
   exit "$CLOUD_SDK_RC"
@@ -111,12 +111,14 @@ payload="$(mktemp "${TMPDIR:-/tmp}/cloud-launch.XXXXXX")"
 cleanup() { rm -f "$payload"; }
 trap cleanup EXIT
 
-CLOUD_PROMPT_TEXT="$prompt" CLOUD_AGENT_NAME="$name" CLOUD_REPO_URL_RESOLVED="$repo" CLOUD_REF_RESOLVED="$ref" python3 -c '
+CLOUD_PROMPT_TEXT="$prompt" CLOUD_AGENT_NAME="$name" GCS_CLOUD_REPO="$CLOUD_REPO" GCS_CLOUD_REF="$CLOUD_REF" python3 -c '
 import json, os
 prompt = os.environ.get("CLOUD_PROMPT_TEXT") or ""
 name = os.environ.get("CLOUD_AGENT_NAME") or ""
-repo = os.environ.get("CLOUD_REPO_URL_RESOLVED") or ""
-ref = os.environ.get("CLOUD_REF_RESOLVED") or "main"
+repo = os.environ.get("GCS_CLOUD_REPO") or ""
+ref = os.environ.get("GCS_CLOUD_REF") or "main"
+if not repo:
+    raise SystemExit("GCS_CLOUD_REPO missing")
 body = {
     "prompt": {"text": prompt},
     "model": {
@@ -126,7 +128,12 @@ body = {
             {"id": "fast", "value": "false"},
         ],
     },
-    "repos": [{"url": repo, "startingRef": ref}],
+    "repos": [
+        {
+            "url": repo,
+            "startingRef": ref,
+        }
+    ],
     "autoCreatePR": True,
 }
 if name:
@@ -155,3 +162,6 @@ run_id="$(cloud_json_get "$CLOUD_HTTP_BODY" run.id)"
 [[ -n "$id" ]] && printf 'id=%s\n' "$id"
 [[ -n "$url" ]] && printf 'url=%s\n' "$url"
 [[ -n "$run_id" ]] && printf 'run_id=%s\n' "$run_id"
+if [[ -n "$id" ]]; then
+  bash "${SCRIPT_DIR}/cloud/spawn-waiter.sh" --id "$id" ${run_id:+--run "$run_id"} ${name:+--name "$name"} || true
+fi
