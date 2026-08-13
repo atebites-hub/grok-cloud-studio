@@ -28,7 +28,6 @@ if daemon_healthy "$SEAT"; then
   exit 0
 fi
 
-# Stale pid / port cleanup
 old_pid="$(read_pid_file "$PID_FILE")"
 if pid_alive "$old_pid"; then
   echo "SEAT_DAEMON_STALE_KILL seat=$SEAT pid=$old_pid" >&2
@@ -67,13 +66,12 @@ printf '%s\n' "$URL" >"$URL_FILE"
 export GCS_ROOT="$ROOT"
 export GCS_A2A_STATE="$STATE_DIR"
 export GCS_DIRECTOR_SEAT="$SEAT"
-export PATH="/home/box/.grok/bin:${PATH:-}"
+export PATH="${HOME}/.grok/bin:/home/box/.grok/bin:${PATH:-}"
 
 {
   echo "===== $(date -u +%Y-%m-%dT%H:%M:%SZ) START seat=$SEAT port=$PORT ====="
 } >>"$LOG_FILE"
 
-# Top-level flags (cwd/trust/permission) + agent serve. --no-leader = one process per seat.
 nohup grok \
   --permission-mode bypassPermissions \
   --always-approve \
@@ -90,7 +88,6 @@ nohup grok \
 echo $! >"$PID_FILE"
 pid="$(read_pid_file "$PID_FILE")"
 
-# Wait for listen
 ok=0
 for _ in $(seq 1 40); do
   if ! pid_alive "$pid"; then

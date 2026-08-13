@@ -19,7 +19,7 @@ Usage: $(basename "$0") [a|b|both] [--dry-run] [extra...]
   both       Launch A then B (default; live runs in parallel)
 
 Always uses: grok --permission-mode bypassPermissions --always-approve
-See docs/studio/GROK_DIRECTORS.md and docs/studio/directors/PLUGINS.md
+See docs/ARCHITECTURE.md and docs/PLUGINS.md
 USAGE
 }
 

@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
-"""Fleet shepherd — Bot-style completion callback for Grok Build Directors.
+"""Orphan-only Extra High completion safety net.
 
-Grok Bot Directors stayed alive and were revived when CloudAgent finished.
-Grok Build seats are one-shot (wake → RESULT → exit), so nothing receives the
-completion. This process fills that gap:
-
-  1. Scan .a2a-state/<seat>/fleet.jsonl for open bc-ids (registered on launch).
-  2. Poll run status via scripts/cloud/result-cloud-agent.sh.
-  3. On terminal run: A2A-ping the owning seat with PR_READY / FLEET_DONE + prUrl.
-  4. Mark the ledger entry notified/closed.
-
-Local studio only. Stdlib + existing cloud scripts.
+The per-launch waiter (scripts/cloud/sdk/wait-notify.ts) is the primary path.
+This process only notifies when a ledger row has no live waiter_pid and was
+never closed by waiter/webhook. Local studio. Stdlib + existing cloud scripts.
 """
 from __future__ import annotations
 
@@ -23,9 +16,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+_CLOUD = Path(__file__).resolve().parents[1] / "cloud"
+if str(_CLOUD) not in sys.path:
+    sys.path.insert(0, str(_CLOUD))
+from fleet_ledger import (
+    is_orphan,
+    load_entries,
+    notify_owner,
+    write_entries,
+)
+
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
-SEND = ROOT / "scripts" / "a2a" / "send.sh"
 RESULT = ROOT / "scripts" / "cloud" / "result-cloud-agent.sh"
 POLL_SEC = float(os.environ.get("GCS_FLEET_POLL_SEC", "45"))
 LOG = STATE_DIR / "fleet-shepherd.log"
@@ -43,31 +45,6 @@ def _log(msg: str) -> None:
     with LOG.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
     print(line, flush=True)
-
-
-def _load_entries(path: Path) -> list[dict[str, Any]]:
-    if not path.is_file():
-        return []
-    out: list[dict[str, Any]] = []
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        raw = raw.strip()
-        if not raw:
-            continue
-        try:
-            rec = json.loads(raw)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(rec, dict) and rec.get("bc_id"):
-            out.append(rec)
-    return out
-
-
-def _write_entries(path: Path, entries: list[dict[str, Any]]) -> None:
-    tmp = path.with_suffix(".tmp")
-    with tmp.open("w", encoding="utf-8") as f:
-        for e in entries:
-            f.write(json.dumps(e, ensure_ascii=False) + "\n")
-    tmp.replace(path)
 
 
 def _probe(bc_id: str) -> dict[str, Any] | None:
@@ -89,7 +66,6 @@ def _probe(bc_id: str) -> dict[str, Any] | None:
     if not text:
         _log(f"PROBE_EMPTY id={bc_id} rc={proc.returncode} err={(proc.stderr or '')[:160]}")
         return None
-    # last JSON line
     for line in reversed(text.splitlines()):
         line = line.strip()
         if line.startswith("{"):
@@ -100,47 +76,11 @@ def _probe(bc_id: str) -> dict[str, Any] | None:
     return None
 
 
-def _notify(seat: str, bc_id: str, payload: dict[str, Any]) -> bool:
-    if not SEND.is_file():
-        _log(f"NOTIFY_FAIL missing send.sh")
-        return False
-    run_status = str(payload.get("runStatus") or payload.get("status") or "unknown")
-    pr = payload.get("prUrl") or "none"
-    name = payload.get("name") or ""
-    url = payload.get("url") or f"https://cursor.com/agents/{bc_id}"
-    if run_status == "FINISHED":
-        msg = (
-            f"FLEET_DONE / PR_READY: your Extra High {bc_id} ({name}) "
-            f"runStatus=FINISHED pr={pr} url={url}. "
-            f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
-            f"If pr is a URL: ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST; "
-            f"do not launch a twin. RESULT with bc-id + pr."
-        )
-    else:
-        msg = (
-            f"FLEET_DONE: your Extra High {bc_id} ({name}) "
-            f"runStatus={run_status} pr={pr} url={url}. "
-            f"Inspect with scripts/cloud/result-cloud-agent.sh {bc_id}; "
-            f"follow-up or close; do not ignore. RESULT."
-        )
-    try:
-        proc = subprocess.run(
-            ["bash", str(SEND), seat, msg],
-            cwd=str(ROOT),
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as e:
-        _log(f"NOTIFY_ERR seat={seat} id={bc_id} {e}")
-        return False
-    ok = proc.returncode == 0
-    _log(
-        f"NOTIFY {'OK' if ok else 'FAIL'} seat={seat} id={bc_id} "
-        f"runStatus={run_status} pr={pr} rc={proc.returncode}"
-    )
-    return ok
+def _reload_entry(seat: str, bc_id: str) -> dict[str, Any] | None:
+    for entry in load_entries(STATE_DIR / seat / "fleet.jsonl"):
+        if entry.get("bc_id") == bc_id:
+            return entry
+    return None
 
 
 def _cycle() -> int:
@@ -151,30 +91,25 @@ def _cycle() -> int:
         if not seat_dir.is_dir() or seat_dir.name.startswith("."):
             continue
         fleet_path = seat_dir / "fleet.jsonl"
-        entries = _load_entries(fleet_path)
+        entries = load_entries(fleet_path)
         if not entries:
             continue
         dirty = False
         for e in entries:
-            if e.get("status") == "closed" and e.get("notified"):
-                continue
-            if e.get("notified") and e.get("status") == "closed":
+            if not is_orphan(e):
                 continue
             bc_id = str(e.get("bc_id") or "")
             if not bc_id:
                 continue
-            # Still open or never notified
-            if e.get("notified") and str(e.get("run_status") or "") in TERMINAL:
+            fresh = _reload_entry(seat_dir.name, bc_id)
+            if fresh is None or not is_orphan(fresh):
                 continue
             payload = _probe(bc_id)
             if not payload:
-                e["status"] = "closed"
-                e["notified"] = True
-                e["run_status"] = "GONE"
-                e["closed_reason"] = "probe_empty"
-                e["notified_at"] = _now()
+                e["last_probe"] = _now()
+                e["probe_empty"] = True
                 dirty = True
-                _log(f"FLEET_CLOSE_GONE seat={seat_dir.name} id={bc_id}")
+                _log(f"SHEPHERD_ORPHAN_EMPTY seat={seat_dir.name} id={bc_id}")
                 continue
             run_status = str(payload.get("runStatus") or payload.get("status") or "")
             e["run_status"] = run_status
@@ -184,18 +119,30 @@ def _cycle() -> int:
             if run_status not in TERMINAL:
                 continue
             seat = str(e.get("seat") or seat_dir.name)
-            if _notify(seat, bc_id, payload):
-                e["notified"] = True
-                e["status"] = "closed"
-                e["notified_at"] = _now()
-                notified += 1
-                dirty = True
-            else:
-                # leave open for retry
+            try:
+                notify_owner(bc_id, payload, notified_by="shepherd", seat=seat)
+            except RuntimeError as exc:
                 e["notify_fail_at"] = _now()
+                e["notify_fail"] = str(exc)
                 dirty = True
+                _log(f"NOTIFY_FAIL seat={seat} id={bc_id} {exc}")
+                continue
+            notified += 1
+            _log(f"NOTIFY_OK seat={seat} id={bc_id} runStatus={run_status} via=shepherd")
         if dirty:
-            _write_entries(fleet_path, entries)
+            latest = {row.get("bc_id"): row for row in load_entries(fleet_path)}
+            merged: list[dict[str, Any]] = []
+            for e in entries:
+                bc = e.get("bc_id")
+                live = latest.get(bc)
+                if live is None:
+                    merged.append(e)
+                    continue
+                if live.get("status") == "closed":
+                    merged.append(live)
+                    continue
+                merged.append({**live, **{k: e[k] for k in e if k in ("last_probe", "probe_empty", "run_status", "pr_url", "notify_fail_at", "notify_fail") and k in e}})
+            write_entries(fleet_path, merged)
     return notified
 
 
@@ -203,7 +150,10 @@ def main() -> int:
     once = "--once" in sys.argv
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     PID_FILE.write_text(str(os.getpid()) + "\n", encoding="utf-8")
-    _log(f"SHEPHERD_START root={ROOT} state={STATE_DIR} poll={POLL_SEC}s once={int(once)}")
+    _log(
+        f"SHEPHERD_START root={ROOT} state={STATE_DIR} poll={POLL_SEC}s "
+        f"once={int(once)} orphan_only=1"
+    )
     if once:
         n = _cycle()
         _log(f"SHEPHERD_ONCE notified={n}")
@@ -213,7 +163,7 @@ def main() -> int:
             n = _cycle()
             if n:
                 _log(f"SHEPHERD_CYCLE notified={n}")
-        except Exception as e:  # noqa: BLE001 — keep loop alive
+        except Exception as e:
             _log(f"SHEPHERD_ERR {e}")
         time.sleep(POLL_SEC)
 
