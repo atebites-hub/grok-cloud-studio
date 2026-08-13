@@ -31,6 +31,8 @@ for p in \
   plugins/a2a/.cursor-plugin/plugin.json \
   plugins/cursor-cloud/.cursor-plugin/plugin.json \
   docs/a2a/registry.json \
+  docs/a2a/bot-agents.json \
+  scripts/a2a/bind-bot-agent.sh \
   README.md LICENSE .gitignore .env.example
  do
   if [[ -e "$ROOT/$p" ]]; then
@@ -44,6 +46,17 @@ if python3 "$ROOT/scripts/a2a/lib.py" launch-seats >/dev/null; then
   ok "registry seats: $(python3 "$ROOT/scripts/a2a/lib.py" launch-seats | tr '\n' ' ')"
 else
   bad "lib.py launch-seats failed"
+fi
+
+# Bot bind: FAIL on empty/placeholder agentId unless GCS_BOT_BIND_OPTIONAL=1 (CI clones).
+if [[ -x "$ROOT/scripts/a2a/bind-bot-agent.sh" || -f "$ROOT/scripts/a2a/bind-bot-agent.sh" ]]; then
+  if bash "$ROOT/scripts/a2a/bind-bot-agent.sh" --check; then
+    ok "bot-bind check"
+  else
+    bad "bot-bind unbound (set GCS_BOT_AGENT_ID and run scripts/a2a/bind-bot-agent.sh; CI clones may set GCS_BOT_BIND_OPTIONAL=1)"
+  fi
+else
+  bad "missing scripts/a2a/bind-bot-agent.sh"
 fi
 
 if [[ -n "${GCS_CLOUD_REPO:-${CLOUD_REPO_URL:-}}" ]]; then
