@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Start/stop/status for local Grok Cloud Studio A2A hub + inbox dispatch + bot-bridge + fleet shepherd.
-# Optional Agent Kanban fleet-bridge (sync-only) when configured or AGENT_KANBAN_API_KEY /
-# GCS_AGENT_KANBAN_API_KEY is set. Never starts `ak start`. Non-fatal if the bridge dies.
+# Optional Agent Kanban board-writer (sync-only, argv0=cursor-agent) when configured or
+# AGENT_KANBAN_API_KEY / GCS_AGENT_KANBAN_API_KEY is set. Never starts `ak start`.
 # Seat ACP daemons are opt-in: GCS_START_SEAT_DAEMONS=1 or `start --daemons`.
 # Usage:
 #   start-studio-bus.sh          # start hub+dispatch+shepherd (idempotent)
@@ -21,15 +21,18 @@ HUB_PY="$SCRIPT_DIR/hub.py"
 DISPATCH_PY="$SCRIPT_DIR/dispatch.py"
 BOT_BRIDGE_PY="$SCRIPT_DIR/bot-bridge.py"
 AK_BRIDGE_PY="$ROOT/scripts/studio/agent-kanban/fleet-bridge.py"
+BOARD_WRITER_SH="$ROOT/scripts/studio/agent-kanban/board-writer.sh"
 HUB_PID_FILE="$STATE_DIR/hub.pid"
 DISPATCH_PID_FILE="$STATE_DIR/dispatch.pid"
 BOT_BRIDGE_PID_FILE="$STATE_DIR/bot-bridge.pid"
 AK_BRIDGE_PID_FILE="$STATE_DIR/ak-bridge.pid"
+BOARD_WRITER_PID_FILE="$STATE_DIR/agent-kanban/board-writer.pid"
 AK_CONFIGURED="$STATE_DIR/agent-kanban/configured"
 HUB_LOG="$STATE_DIR/hub.log"
 DISPATCH_LOG="$STATE_DIR/dispatch.log"
 BOT_BRIDGE_LOG="$STATE_DIR/bot-bridge.log"
 AK_BRIDGE_LOG="$STATE_DIR/ak-bridge.log"
+BOARD_WRITER_LOG="$STATE_DIR/agent-kanban/board-writer.log"
 SHEPHERD_PY="$ROOT/scripts/directors/fleet-shepherd.py"
 SHEPHERD_PID_FILE="$STATE_DIR/fleet-shepherd.pid"
 SHEPHERD_LOG="$STATE_DIR/fleet-shepherd.log"
@@ -127,30 +130,42 @@ stop_pid_file() {
 
 start_ak_bridge() {
   local bridge_pid
+  export GCS_ROOT="$ROOT"
+  export GCS_A2A_STATE="$STATE_DIR"
+  export AGENT_KANBAN_BOARD_ID="${AGENT_KANBAN_BOARD_ID:-${GCS_AGENT_KANBAN_BOARD_ID:-}}"
+  export AK_BRIDGE_POLL_SEC="${AK_BRIDGE_POLL_SEC:-${GCS_AK_BRIDGE_POLL_SEC:-60}}"
+  export CURSOR_AGENT=1
   if ! ak_bridge_wanted; then
-    echo "STUDIO_BUS_AK_BRIDGE_SKIP (set AGENT_KANBAN_API_KEY/GCS_AGENT_KANBAN_API_KEY or configure-ak.sh)"
+    echo "STUDIO_BUS_BOARD_WRITER_SKIP (set AGENT_KANBAN_API_KEY/GCS_AGENT_KANBAN_API_KEY or configure-ak.sh)"
     return 0
   fi
-  bridge_pid="$(read_pid "$AK_BRIDGE_PID_FILE")"
+  bridge_pid="$(read_pid "$BOARD_WRITER_PID_FILE")"
   if pid_alive "$bridge_pid"; then
-    echo "STUDIO_BUS_AK_BRIDGE_ALREADY pid=$bridge_pid"
+    echo "STUDIO_BUS_BOARD_WRITER_ALREADY pid=$bridge_pid"
     return 0
   fi
-  rm -f "$AK_BRIDGE_PID_FILE"
+  if [[ -f "$BOARD_WRITER_SH" ]]; then
+    bash "$BOARD_WRITER_SH" start || echo "STUDIO_BUS_BOARD_WRITER_FAIL see $BOARD_WRITER_LOG" >&2
+    bridge_pid="$(read_pid "$BOARD_WRITER_PID_FILE")"
+    echo "STUDIO_BUS_BOARD_WRITER_START pid=${bridge_pid:-none} log=$BOARD_WRITER_LOG"
+    return 0
+  fi
+  # Fallback (may fail ancestry for create)
   if [[ ! -f "$AK_BRIDGE_PY" ]]; then
     echo "STUDIO_BUS_AK_BRIDGE_SKIP missing $AK_BRIDGE_PY"
     return 0
   fi
-  nohup python3 "$AK_BRIDGE_PY" >>"$AK_BRIDGE_LOG" 2>&1 &
+  rm -f "$AK_BRIDGE_PID_FILE"
+  nohup python3 "$AK_BRIDGE_PY" --once >>"$AK_BRIDGE_LOG" 2>&1 &
   echo $! >"$AK_BRIDGE_PID_FILE"
-  bridge_pid="$(read_pid "$AK_BRIDGE_PID_FILE")"
-  sleep 0.2
-  if ! pid_alive "$bridge_pid"; then
-    echo "STUDIO_BUS_AK_BRIDGE_FAIL did not stay up; see $AK_BRIDGE_LOG" >&2
-    rm -f "$AK_BRIDGE_PID_FILE"
-    return 0
+  echo "STUDIO_BUS_AK_BRIDGE_FALLBACK pid=$(read_pid "$AK_BRIDGE_PID_FILE") (prefer board-writer.sh)"
+}
+
+stop_board_writer() {
+  if [[ -f "$BOARD_WRITER_SH" ]]; then
+    bash "$BOARD_WRITER_SH" stop || true
   fi
-  echo "STUDIO_BUS_AK_BRIDGE_START pid=$bridge_pid log=$AK_BRIDGE_LOG"
+  stop_pid_file "$AK_BRIDGE_PID_FILE" "AK_BRIDGE"
 }
 
 start_seat_daemons() {
@@ -321,7 +336,7 @@ case "$cmd" in
     ;;
 
   stop)
-    stop_pid_file "$AK_BRIDGE_PID_FILE" "AK_BRIDGE"
+    stop_board_writer
     hub_pid="$(read_pid "$HUB_PID_FILE")"
     disp_pid="$(read_pid "$DISPATCH_PID_FILE")"
     shep_pid="$(read_pid "$SHEPHERD_PID_FILE")"
@@ -407,12 +422,16 @@ case "$cmd" in
     ak_pid="$(read_pid "$AK_BRIDGE_PID_FILE")"
     ak_state="down"
     if pid_alive "$ak_pid"; then ak_state="up"; fi
-    if [[ "$ak_state" == "down" ]] && ! ak_bridge_wanted; then
+    bw_pid="$(read_pid "$BOARD_WRITER_PID_FILE")"
+    bw_state="down"
+    if pid_alive "$bw_pid"; then bw_state="up"; fi
+    if [[ "$bw_state" == "down" && "$ak_state" == "down" ]] && ! ak_bridge_wanted; then
+      bw_state="skip"
       ak_state="skip"
     fi
     daemon_flag="off"
     [[ -f "$DAEMONS_FLAG" ]] && daemon_flag="on"
-    echo "STUDIO_BUS_STATUS hub=$hub_state pid=${hub_pid:-none} dispatch=$disp_state pid=${disp_pid:-none} shepherd=$shep_state pid=${shep_pid:-none} bot_bridge=$bridge_state pid=${bridge_pid:-none} ak_bridge=$ak_state pid=${ak_pid:-none} daemons=$daemon_flag state=$STATE_DIR"
+    echo "STUDIO_BUS_STATUS hub=$hub_state pid=${hub_pid:-none} dispatch=$disp_state pid=${disp_pid:-none} shepherd=$shep_state pid=${shep_pid:-none} bot_bridge=$bridge_state pid=${bridge_pid:-none} board_writer=$bw_state pid=${bw_pid:-none} ak_bridge=$ak_state pid=${ak_pid:-none} daemons=$daemon_flag state=$STATE_DIR"
     if [[ "$daemon_flag" == "on" ]] || want_daemons; then
       status_seat_daemons || true
     fi

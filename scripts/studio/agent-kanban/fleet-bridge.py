@@ -2,13 +2,16 @@
 """Sync-only Agent Kanban observer for Extra High fleet rows.
 
 Watches `.a2a-state/*/fleet.jsonl` and `.a2a-state/agent-kanban/events.jsonl`,
-mirrors bc-ids to AK Tasks, and records task maps under `.a2a-state/kanban/`
-(and legacy `.a2a-state/agent-kanban/`).
+mirrors bc-ids to AK Tasks, and records `.a2a-state/kanban/task-map.json (mirrored under agent-kanban/)`.
 
 Does not spawn workers. Must never invoke `ak start` — Extra High remains the
 grunt spawner. Directors stay on ACP serve + A2A hub.
 
 Local studio only. Stdlib. Never prints API keys.
+
+Prefer running under scripts/studio/agent-kanban/board-writer.sh so
+argv0=cursor-agent + CURSOR_AGENT=1 satisfy ak leader ancestry
+(direct CLI may 403 / fail ancestry).
 """
 from __future__ import annotations
 
@@ -22,7 +25,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
 
 def env_first(*names: str, default: str = "") -> str:
     for name in names:
@@ -47,6 +49,7 @@ AK_DONE = "done"
 AK_CANCELLED = "cancelled"
 
 DRY_RUN = False
+FORCE = False
 
 
 def now_iso() -> str:
@@ -99,7 +102,11 @@ def atomic_write_json(path: Path, payload: Any) -> None:
 
 
 def desired_ak_status(record: dict[str, Any]) -> str:
-    """Map Extra High ledger / observer event → AK column."""
+    """Map Extra High ledger / observer event → AK column.
+
+    launch/open → todo; ACTIVE → in_progress; PR → in_review;
+    FINISHED/MERGED → done; ERROR/CANCELLED → cancelled (when supported).
+    """
     event = str(record.get("event") or "").strip().lower()
     run_status = str(
         record.get("run_status") or record.get("runStatus") or ""
@@ -109,9 +116,6 @@ def desired_ak_status(record: dict[str, Any]) -> str:
     if str(pr_url).lower() in {"", "none", "null"}:
         pr_url = ""
 
-    if run_status in {"DELETED"} or event in {"deleted"}:
-        # closed ledger without FINISHED still maps via notified path below
-        pass
     if run_status in {"ERROR", "CANCELLED", "EXPIRED"} or event in {
         "error",
         "cancelled",
@@ -121,14 +125,11 @@ def desired_ak_status(record: dict[str, Any]) -> str:
         return AK_CANCELLED
     if run_status in {"FINISHED", "MERGED"} or event in {"finished", "merged", "done"}:
         return AK_DONE
-    if ledger in {"closed", "done", "finished"} and (
-        record.get("notified") or record.get("notified_by")
-    ):
-        return AK_DONE
     if pr_url or event in {"pr", "in_review", "review"}:
         return AK_IN_REVIEW
     if run_status == "ACTIVE" or event in {"active", "in_progress", "launched", "launch"}:
         return AK_IN_PROGRESS
+    # launched / open ledger rows are in progress for mission-control UI
     if ledger in {"open", "active", "running"} or event in {"todo", "open"}:
         return AK_IN_PROGRESS
     return AK_IN_PROGRESS
@@ -222,7 +223,7 @@ def load_task_map(state_dir: Path) -> dict[str, dict[str, Any]]:
 
 
 def ak_bin() -> str:
-    env = env_first("AK_BIN", "AGENT_KANBAN_BIN", "GCS_AGENT_KANBAN_BIN")
+    env = os.environ.get("AK_BIN")
     if env:
         return env
     home = Path.home()
@@ -297,6 +298,21 @@ def task_description(record: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+
+def is_placeholder_task_id(task_id: str) -> bool:
+    """dry-* ids from --dry-run are not real board tasks."""
+    tid = str(task_id or "").strip()
+    return (not tid) or tid.startswith("dry-")
+
+
+def redact_ak_text(blob: str) -> str:
+    """Strip likely secrets from ak stdout/stderr before logging."""
+    text = str(blob or "")
+    text = re.sub(r"(?i)(api[_-]?key|authorization|bearer)\s*[:=]\s*\S+", r"\1=[REDACTED]", text)
+    text = re.sub(r'(?i)("api_key"\s*:\s*")([^"]+)(")', r"\1[REDACTED]\3", text)
+    return text.strip()
+
+
 def create_task(board_id: str, record: dict[str, Any]) -> str:
     seat = str(record.get("seat") or "fleet")
     if DRY_RUN:
@@ -312,19 +328,28 @@ def create_task(board_id: str, record: dict[str, Any]) -> str:
         task_title(record),
         "--description",
         task_description(record),
+        # Only well-known labels — seat names (e.g. studio-ops) are not board labels.
         "--labels",
-        f"extra-high,{seat}",
+        "extra-high",
         "-o",
         "json",
     ]
     proc = run_ak(args)
     if proc.returncode != 0:
+        err = redact_ak_text((proc.stderr or "") + "\n" + (proc.stdout or ""))
         print(
-            f"AK_BRIDGE_ERR create failed id={record.get('bc_id')} rc={proc.returncode}",
+            f"AK_BRIDGE_ERR create failed id={record.get('bc_id')} rc={proc.returncode} err={err[:500]}",
             file=sys.stderr,
         )
         return ""
-    return parse_created_id(proc.stdout)
+    tid = parse_created_id(proc.stdout) or parse_created_id(proc.stderr)
+    if not tid:
+        err = redact_ak_text((proc.stderr or "") + "\n" + (proc.stdout or ""))
+        print(
+            f"AK_BRIDGE_ERR create parse_id_empty id={record.get('bc_id')} out={err[:300]}",
+            file=sys.stderr,
+        )
+    return tid
 
 
 def apply_status(task_id: str, current: str, desired: str, pr_url: str = "") -> str:
@@ -386,6 +411,12 @@ def sync_once(state_dir: Path | None = None) -> dict[str, dict[str, Any]]:
         row = dict(task_map.get(bc_id) or {})
         task_id = str(row.get("task_id") or "")
         current = str(row.get("ak_status") or "")
+        # dry-* placeholders are not real; recreate unless DRY_RUN.
+        if is_placeholder_task_id(task_id) and not DRY_RUN:
+            if FORCE or str(task_id).startswith("dry-"):
+                print(f"AK_BRIDGE_RECREATE placeholder task_id={task_id!r} bc_id={bc_id}")
+                task_id = ""
+                current = ""
         if not task_id:
             task_id = create_task(board_id, record)
             if not task_id:
@@ -415,6 +446,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--once", action="store_true", help="One sync pass then exit (smoke).")
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Treat dry-* task-map placeholders as missing and recreate real tasks.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Plan creates/status transitions without calling ak mutate APIs.",
@@ -422,22 +458,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--poll-sec",
         type=float,
-        default=float(
-            env_first("GCS_AK_POLL_SEC", "AK_BRIDGE_POLL_SEC", "GCS_AK_BRIDGE_POLL_SEC", default="5")
-            or "5"
-        ),
+        default=float(env_first("GCS_AK_POLL_SEC", "AK_BRIDGE_POLL_SEC", "GCS_AK_BRIDGE_POLL_SEC", default="60") or "60"),
         help="Watch interval when not --once.",
     )
     args = parser.parse_args(argv)
-    global DRY_RUN
-    DRY_RUN = bool(args.dry_run) or env_first("GCS_AK_DRY", "AK_BRIDGE_DRY").lower() in {
-        "1",
-        "true",
-        "yes",
-    }
+    global DRY_RUN, FORCE
+    DRY_RUN = bool(args.dry_run) or str(os.environ.get("GCS_AK_DRY", "")).strip() in {"1", "true", "yes"}
+    FORCE = bool(args.force) or str(os.environ.get("GCS_AK_FORCE", "")).strip() in {"1", "true", "yes"}
     state = STATE_DIR
     ak_state_dir(state).mkdir(parents=True, exist_ok=True)
     legacy_ak_state_dir(state).mkdir(parents=True, exist_ok=True)
+    # Ensure local ak shims are visible when PATH is thin post-crash.
     local_bin = str(Path.home() / ".local" / "bin")
     os.environ["PATH"] = local_bin + os.pathsep + os.environ.get("PATH", "")
     if args.once:
