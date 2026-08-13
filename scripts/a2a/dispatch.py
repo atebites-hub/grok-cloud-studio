@@ -3,7 +3,8 @@
 
 Watches per-seat inbox.jsonl under STATE_DIR. Prefer persistent ACP inject
 into per-seat `grok agent serve` daemons (scripts/directors/acp_inject.py).
-If the daemon is down, try start-seat-daemon.sh then inject. Fall back to
+If the daemon is down, start it only when the seat is in GCS_ACP_SEATS
+(default floor,studio-ops). skipSeats never auto-start. Fall back to
 one-shot launch-director.sh (-p) only when inject is impossible.
 
 Hub remains protocol-ack; this process wakes seats so pings actually run work.
@@ -344,10 +345,48 @@ def _daemon_healthy(seat: str) -> bool:
     return _pid_alive(pid)
 
 
+def _studio_env() -> dict[str, str]:
+    """Crash-safe overrides from .a2a-state/studio.env (GCS_* / GROK_USE_LEADER only)."""
+    out: dict[str, str] = {}
+    env_file = STATE_DIR / "studio.env"
+    if not env_file.is_file():
+        return out
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        k = k.strip()
+        if k in {"GCS_ACP_SEATS", "GROK_USE_LEADER"}:
+            out[k] = v.strip().strip('"').strip("'")
+    return out
+
+
+def _acp_seat_allowlist() -> frozenset[str]:
+    """Seats dispatch may auto-start. Default floor+ops (never the full registry)."""
+    raw = os.environ.get("GCS_ACP_SEATS")
+    if raw is None or not str(raw).strip():
+        raw = _studio_env().get("GCS_ACP_SEATS", "floor,studio-ops")
+    seats = {s.strip() for s in raw.split(",") if s.strip()}
+    # GCS example registry names the ops seat "ops"; product floors use studio-ops.
+    if "studio-ops" in seats:
+        seats.add("ops")
+    if "ops" in seats:
+        seats.add("studio-ops")
+    return frozenset(seats) - _skip_seats()
+
+
 def _ensure_daemon(seat: str) -> bool:
     """Start seat daemon if needed. Returns True if healthy afterward."""
     if _daemon_healthy(seat):
         return True
+    allow = _acp_seat_allowlist()
+    if seat not in allow:
+        print(
+            f"DISPATCH_DAEMON_SKIP seat={seat} reason=not-in-GCS_ACP_SEATS",
+            file=sys.stderr,
+        )
+        return False
     if not START_DAEMON.is_file():
         return False
     try:
@@ -471,7 +510,7 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
         env["GCS_ROOT"] = str(ROOT)
         env["GCS_A2A_STATE"] = str(STATE_DIR)
         env["GCS_DIRECTOR_SEAT"] = seat
-        env["PATH"] = str(Path.home() / ".grok" / "bin") + ":/home/box/.grok/bin:" + env.get("PATH", "")
+        env["PATH"] = str(Path.home() / ".grok" / "bin") + ":" + env.get("PATH", "")
 
         try:
             log_f = log_path.open("w", encoding="utf-8")

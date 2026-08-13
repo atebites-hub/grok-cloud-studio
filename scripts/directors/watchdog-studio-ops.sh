@@ -3,7 +3,7 @@
 # Loop every 10 minutes. Logs under .a2a-state/ops/.
 set -euo pipefail
 
-export PATH="${HOME}/.grok/bin:/home/box/.grok/bin:${PATH:-}"
+export PATH="${HOME}/.grok/bin:${PATH:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${GCS_ROOT:-$SCRIPT_DIR/../..}" && pwd)"
@@ -18,6 +18,13 @@ BUS="$ROOT/scripts/a2a/start-studio-bus.sh"
 LIB_PY="$ROOT/scripts/a2a/lib.py"
 
 mkdir -p "$LOG_DIR" "$STATE_DIR/$SEAT"
+
+if [[ -f "$STATE_DIR/studio.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$STATE_DIR/studio.env"
+  set +a
+fi
 
 echo $$ >"$PIDFILE"
 
@@ -89,7 +96,19 @@ while true; do
           log "DAEMON_START_FAIL seat=$_seat"
         fi
       fi
-    done < <(python3 "$LIB_PY" launch-seats)
+    done < <(
+      known="$(python3 "$LIB_PY" launch-seats 2>/dev/null || true)"
+      IFS=','
+      for s in ${GCS_ACP_SEATS:-floor,studio-ops}; do
+        s="$(echo "$s" | tr -d '[:space:]')"
+        [[ -n "$s" ]] || continue
+        if printf '%s\n' "$known" | grep -qx "$s"; then
+          echo "$s"
+        elif [[ "$s" == "studio-ops" ]] && printf '%s\n' "$known" | grep -qx "ops"; then
+          echo "ops"
+        fi
+      done
+    )
   fi
 
   if seat_alive; then
@@ -98,7 +117,7 @@ while true; do
     log "SEAT_DOWN ensuring $SEAT ACP daemon + wake"
     bash "$ROOT/scripts/directors/start-seat-daemon.sh" "$SEAT" >>"$LOG" 2>&1 || true
     (
-      export PATH="${HOME}/.grok/bin:/home/box/.grok/bin:${PATH:-}"
+      export PATH="${HOME}/.grok/bin:${PATH:-}"
       export GCS_ROOT="$ROOT"
       cd "$ROOT"
       if bash "$ROOT/scripts/directors/status-seat-daemon.sh" "$SEAT" >/dev/null 2>&1; then

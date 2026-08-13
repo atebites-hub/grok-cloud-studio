@@ -7,6 +7,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=seat-daemon-common.sh
 source "$SCRIPT_DIR/seat-daemon-common.sh"
 
+if [[ -f "$STATE_DIR/studio.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$STATE_DIR/studio.env"
+  set +a
+fi
+
 SEAT_RAW="${1:-}"
 if [[ -z "$SEAT_RAW" || "$SEAT_RAW" == "-h" || "$SEAT_RAW" == "--help" ]]; then
   echo "Usage: $(basename "$0") <seat>" >&2
@@ -24,7 +31,7 @@ SECRET_FILE="$SD/acp.secret"
 
 if daemon_healthy "$SEAT"; then
   pid="$(read_pid_file "$PID_FILE")"
-  echo "SEAT_DAEMON_ALREADY seat=$SEAT pid=$pid port=$PORT url=$(cat "$URL_FILE")"
+  echo "SEAT_DAEMON_ALREADY seat=$SEAT pid=$pid port=$PORT url=ws://127.0.0.1:${PORT}/ws"
   exit 0
 fi
 
@@ -66,11 +73,18 @@ printf '%s\n' "$URL" >"$URL_FILE"
 export GCS_ROOT="$ROOT"
 export GCS_A2A_STATE="$STATE_DIR"
 export GCS_DIRECTOR_SEAT="$SEAT"
-export PATH="${HOME}/.grok/bin:/home/box/.grok/bin:${PATH:-}"
+export PATH="${HOME}/.grok/bin:${PATH:-}"
 
 {
   echo "===== $(date -u +%Y-%m-%dT%H:%M:%SZ) START seat=$SEAT port=$PORT ====="
 } >>"$LOG_FILE"
+
+# ACP serve cannot attach to grok agent leader (CLI exits on --leader serve).
+# Always --no-leader for serve. GROK_USE_LEADER=1 only starts the shared leader
+# so one-shot grok -p fallbacks can attach instead of forking more backends.
+if [[ "${GROK_USE_LEADER:-0}" == "1" || "${GROK_USE_LEADER:-}" == "true" ]]; then
+  bash "$SCRIPT_DIR/start-grok-leader.sh" || true
+fi
 
 nohup grok \
   --permission-mode bypassPermissions \
@@ -85,6 +99,7 @@ nohup grok \
   --bind "127.0.0.1:${PORT}" \
   --secret "$SECRET" \
   >>"$LOG_FILE" 2>&1 &
+# grok agent serve currently requires --secret on argv (ps leak). Never print it.
 echo $! >"$PID_FILE"
 pid="$(read_pid_file "$PID_FILE")"
 
@@ -106,4 +121,4 @@ if [[ "$ok" != "1" ]]; then
   exit 1
 fi
 
-echo "SEAT_DAEMON_START seat=$SEAT pid=$pid port=$PORT url=$URL profile=$PROFILE log=$LOG_FILE"
+echo "SEAT_DAEMON_START seat=$SEAT pid=$pid port=$PORT url=ws://127.0.0.1:${PORT}/ws profile=$PROFILE log=$LOG_FILE"

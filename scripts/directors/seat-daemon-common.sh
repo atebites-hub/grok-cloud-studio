@@ -3,7 +3,7 @@
 # Seats and ports come from docs/a2a/registry.json (see scripts/a2a/lib.py).
 # shellcheck disable=SC2034
 
-export PATH="${HOME}/.grok/bin:/home/box/.grok/bin:${PATH:-}"
+export PATH="${HOME}/.grok/bin:${PATH:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${GCS_ROOT:-$SCRIPT_DIR/../..}" && pwd)"
