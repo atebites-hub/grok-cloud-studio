@@ -22,32 +22,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
-STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
+_LIB_DIR = Path(__file__).resolve().parent
+if str(_LIB_DIR) not in sys.path:
+    sys.path.insert(0, str(_LIB_DIR))
+from lib import launch_seats as _launch_seats_fn  # noqa: E402
+from lib import skip_seats as _skip_seats_fn  # noqa: E402
+from lib import repo_root as _repo_root  # noqa: E402
+from lib import state_root as _state_root  # noqa: E402
+
+ROOT = _repo_root()
+STATE_DIR = _state_root(ROOT)
 LAUNCHER = ROOT / "scripts" / "directors" / "launch-director.sh"
 ACP_INJECT = ROOT / "scripts" / "directors" / "acp_inject.py"
 START_DAEMON = ROOT / "scripts" / "directors" / "start-seat-daemon.sh"
 POLL_SEC = float(os.environ.get("GCS_A2A_POLL_SEC", "2"))
 
-# Seats launch-director.sh accepts (hyphen form as used by A2A cards/send.sh).
-LAUNCH_SEATS = frozenset(
-    {
-        "floor",
-        "live-ops",
-        "content",
-        "narrative",
-        "systems",
-        "client",
-        "art",
-        "audio",
-        "balance",
-        "cloud-env",
-        "qa-a",
-        "qa-b",
-        "studio-ops",
-    }
-)
-SKIP_SEATS = frozenset({"donald"})  # orchestrator stays on Grok Bot
+
+def _launch_seats() -> frozenset[str]:
+    return frozenset(_launch_seats_fn(ROOT))
+
+
+def _skip_seats() -> frozenset[str]:
+    return _skip_seats_fn(ROOT)
 
 # pid -> (seat, Popen) for reaping; zombies accumulate without this.
 _CHILDREN: dict[int, tuple[str, subprocess.Popen]] = {}
@@ -194,7 +190,7 @@ def _compose_extra(task_id: str, context_id: str, text: str) -> str:
 
 
 def _discover_seats(filter_seats: set[str] | None) -> list[str]:
-    found: set[str] = set(LAUNCH_SEATS) | set(SKIP_SEATS)
+    found: set[str] = set(_launch_seats()) | set(_skip_seats())
     if STATE_DIR.is_dir():
         for child in STATE_DIR.iterdir():
             if child.is_dir() and not child.name.startswith("."):
@@ -248,7 +244,6 @@ def _read_new_records(seat: str) -> tuple[list[tuple[int, dict[str, Any]]], int]
     return records, size
 
 
-
 def _daemon_pid_path(seat: str) -> Path:
     return _seat_dir(seat) / "daemon.pid"
 
@@ -278,7 +273,7 @@ def _ensure_daemon(seat: str) -> bool:
         proc = subprocess.run(
             ["bash", str(START_DAEMON), seat],
             cwd=str(ROOT),
-            env={**os.environ, "GCS_ROOT": str(ROOT), "GCS_A2A_STATE": str(STATE_DIR)},
+            env={**os.environ, "GCS_ROOT": str(ROOT), "GCS_A2A_STATE": str(STATE_DIR), "GCS_DIRECTOR_SEAT": seat},
             capture_output=True,
             text=True,
             timeout=60,
@@ -300,7 +295,6 @@ def _ensure_daemon(seat: str) -> bool:
             return True
         time.sleep(0.25)
     return _daemon_healthy(seat)
-
 
 
 def _reap_finished() -> None:
@@ -348,14 +342,14 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
         context_id = str(rec.get("contextId") or "")
         text = _extract_text(rec.get("parts"))
 
-        # Always advance past donald / non-launch seats / empty (when not dry-run)
-        if seat in SKIP_SEATS:
-            print(f"DISPATCH_SKIP seat={seat} reason=donald task={task_id}")
+        # Always advance past skipped, non-launch, or empty records.
+        if seat in _skip_seats():
+            print(f"DISPATCH_SKIP seat={seat} reason=skip-seat task={task_id}")
             if not dry_run:
                 _write_offset(seat, end_offset)
             continue
 
-        if seat not in LAUNCH_SEATS:
+        if seat not in _launch_seats():
             print(f"DISPATCH_SKIP seat={seat} reason=not-in-launch-map task={task_id}")
             if not dry_run:
                 _write_offset(seat, end_offset)
@@ -395,7 +389,8 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
         env = os.environ.copy()
         env["GCS_ROOT"] = str(ROOT)
         env["GCS_A2A_STATE"] = str(STATE_DIR)
-        env["PATH"] = "/home/box/.grok/bin:" + env.get("PATH", "")
+        env["GCS_DIRECTOR_SEAT"] = seat
+        env["PATH"] = str(Path.home() / ".grok" / "bin") + ":/home/box/.grok/bin:" + env.get("PATH", "")
 
         try:
             log_f = log_path.open("w", encoding="utf-8")
@@ -438,8 +433,9 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
             seat,
             f"{_now()} LAUNCH seat={seat} task={task_id} mode={mode} pid={proc.pid} log={log_path}",
         )
+        marker = "DISPATCH_ACP_INJECT" if mode == "acp-inject" else "DISPATCH_LAUNCH"
         print(
-            f"DISPATCH_LAUNCH seat={seat} task={task_id} mode={mode} pid={proc.pid} log={log_path}"
+            f"{marker} seat={seat} task={task_id} mode={mode} pid={proc.pid} log={log_path}"
         )
         # Parent no longer needs the log handle; child owns the fd
         log_f.close()
@@ -460,7 +456,7 @@ def run_cycle(seats: list[str], *, dry_run: bool) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Grok Cloud Studio A2A inbox → Director dispatch")
+    parser = argparse.ArgumentParser(description="Grok Cloud Studio A2A inbox → seat dispatch")
     parser.add_argument(
         "--once",
         action="store_true",
