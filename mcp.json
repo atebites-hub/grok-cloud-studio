@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gcs-a2a": {
+      "command": "python3",
+      "args": ["scripts/mcp/gcs_mcp.py", "--plane", "a2a"]
+    },
+    "gcs-cursor-cloud": {
+      "command": "python3",
+      "args": ["scripts/mcp/gcs_mcp.py", "--plane", "cloud"]
+    }
+  }
+}
