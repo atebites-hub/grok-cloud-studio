@@ -24,7 +24,13 @@ for p in \
   scripts/directors/start-seat-daemon.sh \
   scripts/directors/fleet-shepherd.py \
   scripts/studio/agent-kanban/fleet-bridge.py \
+  scripts/studio/agent-kanban/notify-event.sh \
+  scripts/a2a/seat-lifecycle.sh \
+  scripts/directors/lifecycle-seat.sh \
+  scripts/cloud/smoke-handoff.sh \
   docs/studio/AGENT_KANBAN.md \
+  docs/studio/a2a/SEAT_LIFECYCLE.md \
+  docs/studio/directors/HARDENING.md \
   scripts/launch-cloud-extra-high.sh \
   scripts/cloud/spawn-waiter.sh \
   scripts/cloud/sdk/wait-notify.ts \

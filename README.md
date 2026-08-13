@@ -16,6 +16,7 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 | MCP plugins | `plugins/a2a`, `plugins/cursor-cloud` |
 | Webhook harness | `scripts/cloud/webhook_receiver.py`, `webhook-harness.sh` |
 | Agent Kanban (sync-only) | `docs/studio/AGENT_KANBAN.md`, `scripts/studio/agent-kanban/` |
+| Seat lifecycle | `scripts/a2a/seat-lifecycle.sh`, `docs/studio/a2a/SEAT_LIFECYCLE.md` |
 
 Example seats (edit `docs/a2a/registry.json`): `floor`, `ops`, `cloud`, `qa-a`, `qa-b`. Hub: `127.0.0.1:8732`. ACP ports: `8740+`.
 
@@ -51,6 +52,8 @@ See `.env.example`. Prefix is **`GCS_*`**. Important:
 - `GCS_CLOUD_REF` — default `main`
 - `GCS_SPAWN_WAITER=0` — disable the detached waiter (tests)
 - `GCS_WEBHOOK_SECRET` — enable signed webhook receiver
+- `GCS_AGENT_KANBAN_API_KEY` / `AGENT_KANBAN_API_KEY` — optional Agent Kanban (never print)
+- `GCS_AK_BRIDGE=0` — force-disable bus ak-bridge
 - `CURSOR_API_KEY` — never print; never commit
 
 ## MCP plugins

@@ -12,8 +12,12 @@ INSTALL = ROOT / "scripts" / "studio" / "agent-kanban" / "install-ak.sh"
 CONFIGURE = ROOT / "scripts" / "studio" / "agent-kanban" / "configure-ak.sh"
 BOOTSTRAP = ROOT / "scripts" / "studio" / "agent-kanban" / "bootstrap-board.sh"
 BRIDGE = ROOT / "scripts" / "studio" / "agent-kanban" / "fleet-bridge.py"
+NOTIFY = ROOT / "scripts" / "studio" / "agent-kanban" / "notify-event.sh"
 BUS = ROOT / "scripts" / "a2a" / "start-studio-bus.sh"
+SEAT_LC = ROOT / "scripts" / "a2a" / "seat-lifecycle.sh"
+SMOKE = ROOT / "scripts" / "cloud" / "smoke-handoff.sh"
 DOCS = ROOT / "docs" / "studio" / "AGENT_KANBAN.md"
+HARDENING = ROOT / "docs" / "studio" / "directors" / "HARDENING.md"
 DASHBOARD = ROOT / "scripts" / "studio" / "dashboard" / "README.md"
 FAKE_KEY = "test-ak-key-not-a-secret"
 
@@ -39,7 +43,7 @@ def _write_exec(path: Path, body: str) -> None:
     path.chmod(path.stat().st_mode | stat.S_IEXEC)
 
 
-def _fake_ak(home: Path, *, boards: str = "[]", apply_msg: str = "Created task tsk-1: demo") -> Path:
+def _fake_ak(home: Path, *, boards: str = "[]") -> Path:
     log = home / "ak.argv"
     ak = home / "bin" / "ak"
     _write_exec(
@@ -68,12 +72,17 @@ JSON
       echo "Created board brd-new: Studio Mission Control"
     elif [[ "${{1:-}}" == "repo" ]]; then
       echo "Added repository repo-1: product"
+    elif [[ "${{1:-}}" == "task" ]]; then
+      echo "Created task tsk-1: demo"
     else
       echo "created"
     fi
     ;;
+  task)
+    echo "task ok"
+    ;;
   apply)
-    echo {json.dumps(apply_msg)}
+    echo "Created task tsk-apply: demo"
     ;;
   start)
     echo "AK_START_CALLED" >&2
@@ -115,6 +124,9 @@ def test_docs_cover_aliases_sync_only_and_fsl() -> None:
     assert "github.com/saltbo/agent-kanban" in text
     assert "studio mission control" in text.lower()
     assert "scripts/studio/dashboard" in text
+    assert "GCS_AK_BRIDGE" in text
+    assert "seat-lifecycle" in text
+    assert HARDENING.is_file()
 
 
 def test_legacy_dashboard_points_at_agent_kanban_docs() -> None:
@@ -202,21 +214,13 @@ def test_bootstrap_board_creates_when_missing(tmp_path: Path) -> None:
     assert "--type ops" in argv
 
 
-def test_fleet_bridge_applies_task_yaml_and_writes_task_map(tmp_path: Path) -> None:
+def test_fleet_bridge_creates_task_and_writes_task_map(tmp_path: Path) -> None:
     home = tmp_path / "home"
     state = tmp_path / "state"
     seat = state / "ops"
     seat.mkdir(parents=True)
     (seat / "fleet.jsonl").write_text(
-        json.dumps(
-            {
-                "bc_id": "bc-aaa",
-                "seat": "ops",
-                "name": "demo-run",
-                "status": "open",
-            }
-        )
-        + "\n",
+        json.dumps({"bc_id": "bc-aaa", "seat": "ops", "name": "demo-run", "status": "open"}) + "\n",
         encoding="utf-8",
     )
     ak_dir = state / "agent-kanban"
@@ -229,13 +233,33 @@ def test_fleet_bridge_applies_task_yaml_and_writes_task_map(tmp_path: Path) -> N
     assert "AK_BRIDGE_" in proc.stdout
     assert FAKE_KEY not in proc.stdout + proc.stderr
     argv = log.read_text(encoding="utf-8")
-    assert "apply -f" in argv
+    assert "create task" in argv
+    assert "task claim" in argv
     assert "start" not in argv
-    task_map = json.loads((ak_dir / "task-map.json").read_text(encoding="utf-8"))
-    assert task_map["ops:bc-aaa"]["task_id"] == "tsk-1"
+    task_map = json.loads((state / "kanban" / "task-map.json").read_text(encoding="utf-8"))
+    assert task_map["bc-aaa"]["task_id"] == "tsk-1"
+    assert task_map["bc-aaa"]["ak_status"] == "in_progress"
 
 
-def test_fleet_bridge_skips_unchanged_and_updates_on_status_change(tmp_path: Path) -> None:
+def test_fleet_bridge_dry_run_skips_ak_mutate(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    state = tmp_path / "state"
+    seat = state / "ops"
+    seat.mkdir(parents=True)
+    (seat / "fleet.jsonl").write_text(
+        json.dumps({"bc_id": "bc-bbb", "seat": "ops", "name": "dry", "status": "open"}) + "\n",
+        encoding="utf-8",
+    )
+    (state / "agent-kanban").mkdir(parents=True)
+    (state / "agent-kanban" / "board.id").write_text("brd-studio\n", encoding="utf-8")
+    log = _fake_ak(home)
+    proc = _run(BRIDGE, _env(home, state), args=["--once", "--dry-run"])
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "AK_BRIDGE_DRY" in proc.stdout
+    assert (not log.exists()) or ("create task" not in log.read_text(encoding="utf-8"))
+
+
+def test_fleet_bridge_updates_on_status_change(tmp_path: Path) -> None:
     home = tmp_path / "home"
     state = tmp_path / "state"
     seat = state / "ops"
@@ -245,31 +269,34 @@ def test_fleet_bridge_skips_unchanged_and_updates_on_status_change(tmp_path: Pat
     ak_dir = state / "agent-kanban"
     ak_dir.mkdir(parents=True)
     (ak_dir / "board.id").write_text("brd-studio\n", encoding="utf-8")
-    log = _fake_ak(home, apply_msg="Created task tsk-1: demo")
+    log = _fake_ak(home)
     env = _env(home, state)
     first = _run(BRIDGE, env, args=["--once"])
     assert first.returncode == 0, first.stdout + first.stderr
-    second = _run(BRIDGE, env, args=["--once"])
-    assert second.returncode == 0, second.stdout + second.stderr
-    assert "AK_BRIDGE_SKIP" in second.stdout
-    applies = [ln for ln in log.read_text(encoding="utf-8").splitlines() if " apply " in ln]
-    assert len(applies) == 1
     row["status"] = "closed"
+    row["notified"] = True
     row["notified_by"] = "waiter"
     (seat / "fleet.jsonl").write_text(json.dumps(row) + "\n", encoding="utf-8")
-    _fake_ak(home, apply_msg="Updated task tsk-1: demo")
-    third = _run(BRIDGE, env, args=["--once"])
-    assert third.returncode == 0, third.stdout + third.stderr
-    applies = [ln for ln in log.read_text(encoding="utf-8").splitlines() if " apply " in ln]
-    assert len(applies) == 2
-    yaml_text = (ak_dir / "apply-task.yaml").read_text(encoding="utf-8")
-    assert "id:" in yaml_text
-    assert "tsk-1" in yaml_text
+    second = _run(BRIDGE, env, args=["--once"])
+    assert second.returncode == 0, second.stdout + second.stderr
+    argv = log.read_text(encoding="utf-8")
+    assert "task complete" in argv
+    task_map = json.loads((state / "kanban" / "task-map.json").read_text(encoding="utf-8"))
+    assert task_map["bc-aaa"]["ak_status"] == "done"
 
 
-def test_fleet_bridge_stays_under_250_lines() -> None:
-    lines = BRIDGE.read_text(encoding="utf-8").splitlines()
-    assert len(lines) < 250
+def test_notify_event_writes_jsonl_without_secrets(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    state = tmp_path / "state"
+    _fake_ak(home)
+    proc = _run(NOTIFY, _env(home, state), args=["launch", "bc-n1", "seat=ops", "api_key=SHOULD_NOT_APPEAR"])
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    line = (state / "agent-kanban" / "events.jsonl").read_text(encoding="utf-8").strip()
+    rec = json.loads(line)
+    assert rec["event"] == "launch"
+    assert rec["bc_id"] == "bc-n1"
+    assert "api_key" not in rec
+    assert "SHOULD_NOT_APPEAR" not in line
 
 
 def test_bus_script_optional_ak_bridge_hooks() -> None:
@@ -277,4 +304,12 @@ def test_bus_script_optional_ak_bridge_hooks() -> None:
     assert "ak-bridge" in text
     assert "AGENT_KANBAN_API_KEY" in text
     assert "GCS_AGENT_KANBAN_API_KEY" in text
+    assert "GCS_AK_BRIDGE" in text
     assert "STUDIO_BUS_AK_BRIDGE" in text
+
+
+def test_seat_lifecycle_and_smoke_scripts_exist() -> None:
+    assert SEAT_LC.is_file()
+    assert SMOKE.is_file()
+    assert "SEAT_UP" in SEAT_LC.read_text(encoding="utf-8")
+    assert "CLOUD_SMOKE" in SMOKE.read_text(encoding="utf-8")

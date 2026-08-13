@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
-"""Sync Extra High fleet.jsonl onto Agent Kanban via `ak apply` Task YAML.
+"""Sync-only Agent Kanban observer for Extra High fleet rows.
 
-Sync-only: never runs `ak start`. Stdlib + subprocess. Logs AK_BRIDGE_* without secrets.
+Watches `.a2a-state/*/fleet.jsonl` and `.a2a-state/agent-kanban/events.jsonl`,
+mirrors bc-ids to AK Tasks, and records task maps under `.a2a-state/kanban/`
+(and legacy `.a2a-state/agent-kanban/`).
+
+Does not spawn workers. Must never invoke `ak start` — Extra High remains the
+grunt spawner. Directors stay on ACP serve + A2A hub.
+
+Local studio only. Stdlib. Never prints API keys.
 """
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
-import signal
 import subprocess
 import sys
 import time
@@ -27,222 +32,425 @@ def env_first(*names: str, default: str = "") -> str:
     return default
 
 
-def root() -> Path:
-    return Path(env_first("GCS_ROOT") or Path(__file__).resolve().parents[3])
+ROOT = Path(env_first("GCS_ROOT") or Path(__file__).resolve().parents[3])
+STATE_DIR = Path(env_first("GCS_A2A_STATE") or str(ROOT / ".a2a-state"))
+SKIP_SEATS = frozenset({"agent-kanban", "kanban", "dashboard", "waiters"})
+CREATED_ID_RE = re.compile(
+    r"(?:Created (?:task|board)|Added repository)\s+(\S+)",
+    re.IGNORECASE,
+)
+
+AK_TODO = "todo"
+AK_IN_PROGRESS = "in_progress"
+AK_IN_REVIEW = "in_review"
+AK_DONE = "done"
+AK_CANCELLED = "cancelled"
+
+DRY_RUN = False
 
 
-def state_dir() -> Path:
-    return Path(env_first("GCS_A2A_STATE") or str(root() / ".a2a-state"))
-
-
-def ak_dir() -> Path:
-    return state_dir() / "agent-kanban"
-
-
-def ak_bin() -> str:
-    return env_first("AGENT_KANBAN_BIN", "GCS_AGENT_KANBAN_BIN", default="ak")
-
-
-def log(kind: str, **fields: Any) -> None:
-    bits = " ".join(f"{key}={val}" for key, val in fields.items() if val is not None)
-    print(f"AK_BRIDGE_{kind}" + (f" {bits}" if bits else ""), flush=True)
-
-
-def now() -> str:
+def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def load_map(path: Path) -> dict[str, Any]:
+def ak_state_dir(state_dir: Path | None = None) -> Path:
+    """Primary observer state: .a2a-state/kanban (legacy agent-kanban mirrored)."""
+    state = Path(state_dir or STATE_DIR)
+    kanban = state / "kanban"
+    legacy = state / "agent-kanban"
+    kanban.mkdir(parents=True, exist_ok=True)
+    legacy.mkdir(parents=True, exist_ok=True)
+    return kanban
+
+
+def legacy_ak_state_dir(state_dir: Path | None = None) -> Path:
+    return Path(state_dir or STATE_DIR) / "agent-kanban"
+
+
+def normalize_bc(raw: Any) -> str:
+    text = str(raw or "").strip()
+    if text.startswith("bc_"):
+        return "bc-" + text[3:]
+    return text
+
+
+def load_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
-        return {}
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return data if isinstance(data, dict) else {}
+        return []
+    out: list[dict[str, Any]] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            rec = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(rec, dict):
+            out.append(rec)
+    return out
 
 
-def save_map(path: Path, data: dict[str, Any]) -> None:
+def atomic_write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     tmp.replace(path)
 
 
-def board_id() -> str:
-    path = ak_dir() / "board.id"
-    if not path.is_file():
-        return ""
-    try:
-        return path.read_text(encoding="utf-8").strip().splitlines()[0].strip()
-    except OSError:
-        return ""
+def desired_ak_status(record: dict[str, Any]) -> str:
+    """Map Extra High ledger / observer event → AK column."""
+    event = str(record.get("event") or "").strip().lower()
+    run_status = str(
+        record.get("run_status") or record.get("runStatus") or ""
+    ).strip().upper()
+    ledger = str(record.get("status") or "").strip().lower()
+    pr_url = record.get("pr_url") or record.get("prUrl") or ""
+    if str(pr_url).lower() in {"", "none", "null"}:
+        pr_url = ""
+
+    if run_status in {"DELETED"} or event in {"deleted"}:
+        # closed ledger without FINISHED still maps via notified path below
+        pass
+    if run_status in {"ERROR", "CANCELLED", "EXPIRED"} or event in {
+        "error",
+        "cancelled",
+        "cancel",
+        "expired",
+    }:
+        return AK_CANCELLED
+    if run_status in {"FINISHED", "MERGED"} or event in {"finished", "merged", "done"}:
+        return AK_DONE
+    if ledger in {"closed", "done", "finished"} and (
+        record.get("notified") or record.get("notified_by")
+    ):
+        return AK_DONE
+    if pr_url or event in {"pr", "in_review", "review"}:
+        return AK_IN_REVIEW
+    if run_status == "ACTIVE" or event in {"active", "in_progress", "launched", "launch"}:
+        return AK_IN_PROGRESS
+    if ledger in {"open", "active", "running"} or event in {"todo", "open"}:
+        return AK_IN_PROGRESS
+    return AK_IN_PROGRESS
 
 
-def fleet_rows() -> list[tuple[str, dict[str, Any]]]:
-    rows: list[tuple[str, dict[str, Any]]] = []
-    for path in sorted(state_dir().glob("*/fleet.jsonl")):
-        seat = path.parent.name
-        if seat == "agent-kanban":
+def collect_records(state_dir: Path) -> dict[str, dict[str, Any]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    for fleet in sorted(Path(state_dir).glob("*/fleet.jsonl")):
+        seat = fleet.parent.name
+        if seat in SKIP_SEATS:
+            continue
+        for entry in load_jsonl(fleet):
+            bc_id = normalize_bc(entry.get("bc_id"))
+            if not bc_id:
+                continue
+            rec = dict(entry)
+            rec["bc_id"] = bc_id
+            rec["seat"] = rec.get("seat") or seat
+            by_id[bc_id] = rec
+    event_paths = [
+        ak_state_dir(state_dir) / "events.jsonl",
+        legacy_ak_state_dir(state_dir) / "events.jsonl",
+    ]
+    seen_paths: set[str] = set()
+    for ep in event_paths:
+        key = str(ep.resolve()) if ep.exists() else str(ep)
+        if key in seen_paths:
+            continue
+        seen_paths.add(key)
+        for event in load_jsonl(ep):
+            bc_id = normalize_bc(event.get("bc_id"))
+            if not bc_id:
+                continue
+            rec = dict(by_id.get(bc_id) or {"bc_id": bc_id})
+            for key_name, value in event.items():
+                if value is None or value == "":
+                    continue
+                rec[key_name] = value
+            rec["bc_id"] = bc_id
+            by_id[bc_id] = rec
+    return by_id
+
+
+def load_board_id(state_dir: Path) -> str:
+    for key in ("AGENT_KANBAN_BOARD_ID", "GCS_AGENT_KANBAN_BOARD_ID"):
+        env_id = str(os.environ.get(key) or "").strip()
+        if env_id:
+            return env_id
+    state = Path(state_dir)
+    for path in (
+        ak_state_dir(state) / "board.json",
+        legacy_ak_state_dir(state) / "board.json",
+        ak_state_dir(state) / "board.id",
+        legacy_ak_state_dir(state) / "board.id",
+    ):
+        if not path.is_file():
+            continue
+        if path.suffix == ".id":
+            bid = path.read_text(encoding="utf-8").strip()
+            if bid:
+                return bid
             continue
         try:
-            text = path.read_text(encoding="utf-8")
-        except OSError:
+            rec = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
             continue
-        for line in text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
+        if isinstance(rec, dict):
+            bid = str(rec.get("board_id") or rec.get("id") or "")
+            if bid:
+                return bid
+    return ""
+
+
+def load_task_map(state_dir: Path) -> dict[str, dict[str, Any]]:
+    path = ak_state_dir(state_dir) / "task-map.json"
+    if not path.is_file():
+        path = legacy_ak_state_dir(state_dir) / "task-map.json"
+    if not path.is_file():
+        return {}
+    try:
+        rec = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(rec, dict):
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    for key, value in rec.items():
+        if isinstance(value, dict):
+            out[str(key)] = value
+    return out
+
+
+def ak_bin() -> str:
+    env = env_first("AK_BIN", "AGENT_KANBAN_BIN", "GCS_AGENT_KANBAN_BIN")
+    if env:
+        return env
+    home = Path.home()
+    for cand in (
+        home / ".local" / "bin" / "ak",
+        home / ".local" / "lib" / "node_modules" / "agent-kanban" / "dist" / "index.js",
+    ):
+        if cand.exists():
+            return str(cand)
+    return "ak"
+
+
+def parse_created_id(stdout: str) -> str:
+    text = (stdout or "").strip()
+    for line in reversed(text.splitlines()):
+        line = line.strip()
+        if line.startswith("{"):
             try:
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if isinstance(rec, dict) and rec.get("bc_id"):
-                rows.append((seat, rec))
-    return rows
-
-
-def row_hash(seat: str, rec: dict[str, Any]) -> str:
-    payload = {
-        "seat": seat,
-        "bc_id": rec.get("bc_id"),
-        "name": rec.get("name"),
-        "status": rec.get("status"),
-        "notified": rec.get("notified"),
-        "notified_by": rec.get("notified_by"),
-        "run_id": rec.get("run_id"),
-    }
-    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
-
-
-def yaml_dump(spec: dict[str, Any]) -> str:
-    lines = ["kind: Task", "spec:"]
-    for key, val in spec.items():
-        if isinstance(val, list):
-            lines.append(f"  {key}:")
-            for item in val:
-                lines.append(f"    - {json.dumps(item)}")
-        elif val is None:
-            continue
-        else:
-            lines.append(f"  {key}: {json.dumps(val)}")
-    return "\n".join(lines) + "\n"
-
-
-def task_spec(seat: str, rec: dict[str, Any], board: str, task_id: str) -> dict[str, Any]:
-    bc_id = str(rec.get("bc_id") or "")
-    name = str(rec.get("name") or "")
-    status = str(rec.get("status") or "open")
-    spec: dict[str, Any] = {
-        "boardId": board,
-        "title": f"[{seat}] {name or bc_id}".strip(),
-        "description": (
-            f"Grok Cloud Studio Extra High sync-only mirror.\n"
-            f"seat={seat} bc_id={bc_id} status={status} "
-            f"notified_by={rec.get('notified_by') or 'none'}"
-        ),
-        "labels": ["fleet", "extra-high", f"seat-{seat}", f"status-{status}"],
-    }
-    repo = env_first("GCS_CLOUD_REPO", "CLOUD_REPO_URL", "AGENT_KANBAN_GITHUB_REPO")
-    if repo:
-        spec["repo"] = repo
-    if task_id:
-        spec["id"] = task_id
-    return spec
-
-
-TASK_RE = re.compile(r"(?:Created|Updated) task (\S+):", re.I)
-
-
-def parse_task_id(text: str) -> str:
-    match = TASK_RE.search(text)
+            if isinstance(rec, dict) and rec.get("id"):
+                return str(rec["id"])
+    match = CREATED_ID_RE.search(text)
     if match:
-        return match.group(1).strip().rstrip(",")
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return ""
-    if isinstance(data, dict):
-        return str(data.get("id") or "")
+        return match.group(1).rstrip(":")
     return ""
 
 
-def apply_yaml(yaml_text: str) -> tuple[int, str]:
-    path = ak_dir() / "apply-task.yaml"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml_text, encoding="utf-8")
+def run_ak(args: list[str], timeout: int = 60) -> subprocess.CompletedProcess[str]:
+    if args and args[0] == "start":
+        raise RuntimeError("observer bridge must not run ak start")
+    cmd = [ak_bin(), *args]
     try:
-        proc = subprocess.run(
-            [ak_bin(), "apply", "-f", str(path)],
-            cwd=str(root()),
+        return subprocess.run(
+            cmd,
+            cwd=str(ROOT),
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=timeout,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return 1, type(exc).__name__
-    return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(cmd, 127, "", "ak not found")
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(cmd, 124, "", "ak timeout")
 
 
-def run_cycle() -> int:
-    board = board_id()
-    if not board:
-        log("SKIP", reason="no_board")
-        return 0
-    tmap_path = ak_dir() / "task-map.json"
-    tmap = load_map(tmap_path)
-    applied = 0
-    for seat, rec in fleet_rows():
-        bc_id = str(rec.get("bc_id") or "")
-        key = f"{seat}:{bc_id}"
-        digest = row_hash(seat, rec)
-        entry = tmap.get(key) if isinstance(tmap.get(key), dict) else {}
-        if entry.get("hash") == digest and entry.get("task_id"):
-            log("SKIP", seat=seat, bc=bc_id, reason="unchanged")
-            continue
-        task_id = str(entry.get("task_id") or "")
-        rc, out = apply_yaml(yaml_dump(task_spec(seat, rec, board, task_id)))
-        if rc != 0:
-            log("FAIL", seat=seat, bc=bc_id, rc=rc)
-            continue
-        new_id = parse_task_id(out) or task_id
-        if not new_id:
-            log("FAIL", seat=seat, bc=bc_id, reason="no_task_id")
-            continue
-        tmap[key] = {"task_id": new_id, "hash": digest, "updated_at": now()}
-        save_map(tmap_path, tmap)
-        log("APPLY", seat=seat, bc=bc_id, task=new_id)
-        applied += 1
-    return applied
+def task_title(record: dict[str, Any]) -> str:
+    seat = str(record.get("seat") or "fleet")
+    name = str(record.get("name") or "").strip()
+    bc_id = str(record.get("bc_id") or "")
+    label = name or bc_id
+    return f"[{seat}] Extra High {label}"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="fleet.jsonl → Agent Kanban Task YAML (sync-only)")
-    parser.add_argument("--once", action="store_true")
-    args = parser.parse_args()
-    poll = float(env_first("AK_BRIDGE_POLL_SEC", "GCS_AK_BRIDGE_POLL_SEC", default="15") or "15")
-    ak_dir().mkdir(parents=True, exist_ok=True)
-    log("READY", state=state_dir(), poll=poll, once=int(args.once), sync="only")
-    stopping = False
+def task_description(record: dict[str, Any]) -> str:
+    bc_id = str(record.get("bc_id") or "")
+    seat = str(record.get("seat") or "")
+    url = str(record.get("url") or (f"https://cursor.com/agents/{bc_id}" if bc_id else ""))
+    pr = str(record.get("pr_url") or record.get("prUrl") or "")
+    lines = [
+        "Sync-only observer mirror of a Cursor Cloud Extra High grunt.",
+        "Directors stay on Grok Build ACP serve; A2A hub routes work; Extra High is the worker.",
+        "Do not treat this AK task as a worker spawn. The AK worker daemon is not used.",
+        f"bc_id={bc_id}",
+        f"seat={seat}",
+        f"url={url}",
+    ]
+    if pr and pr.lower() not in {"none", "null"}:
+        lines.append(f"pr={pr}")
+    return "\n".join(lines)
 
-    def _handle(signum: int, _frame: Any) -> None:
-        nonlocal stopping
-        stopping = True
-        log("STOP", signal=signum)
 
-    signal.signal(signal.SIGINT, _handle)
-    signal.signal(signal.SIGTERM, _handle)
+def create_task(board_id: str, record: dict[str, Any]) -> str:
+    seat = str(record.get("seat") or "fleet")
+    if DRY_RUN:
+        fake = f"dry-{normalize_bc(record.get('bc_id'))[:24]}"
+        print(f"AK_BRIDGE_DRY create board={board_id} title={task_title(record)!r} -> {fake}")
+        return fake
+    args = [
+        "create",
+        "task",
+        "--board",
+        board_id,
+        "--title",
+        task_title(record),
+        "--description",
+        task_description(record),
+        "--labels",
+        f"extra-high,{seat}",
+        "-o",
+        "json",
+    ]
+    proc = run_ak(args)
+    if proc.returncode != 0:
+        print(
+            f"AK_BRIDGE_ERR create failed id={record.get('bc_id')} rc={proc.returncode}",
+            file=sys.stderr,
+        )
+        return ""
+    return parse_created_id(proc.stdout)
+
+
+def apply_status(task_id: str, current: str, desired: str, pr_url: str = "") -> str:
+    """Best-effort lifecycle walk. Returns the status we believe we reached."""
+    if not task_id or current == desired:
+        return current or desired
+    if DRY_RUN:
+        print(f"AK_BRIDGE_DRY status task={task_id} {current or 'todo'}->{desired} pr={pr_url or 'none'}")
+        return desired
+    if desired == AK_CANCELLED:
+        proc = run_ak(["task", "cancel", task_id])
+        return AK_CANCELLED if proc.returncode == 0 else current
+    if desired == AK_TODO and current != AK_TODO:
+        proc = run_ak(["task", "release", task_id])
+        return AK_TODO if proc.returncode == 0 else current
+
+    reached = current or AK_TODO
+    if reached == AK_TODO and desired in {AK_IN_PROGRESS, AK_IN_REVIEW, AK_DONE}:
+        proc = run_ak(["task", "claim", task_id])
+        if proc.returncode == 0:
+            reached = AK_IN_PROGRESS
+        elif desired == AK_IN_PROGRESS:
+            return reached
+    if reached == AK_IN_PROGRESS and desired in {AK_IN_REVIEW, AK_DONE}:
+        cmd = ["task", "review", task_id]
+        if pr_url:
+            cmd.extend(["--pr-url", pr_url])
+        proc = run_ak(cmd)
+        if proc.returncode == 0:
+            reached = AK_IN_REVIEW
+        elif desired == AK_IN_REVIEW:
+            return reached
+    if desired == AK_DONE and reached in {AK_IN_REVIEW, AK_IN_PROGRESS, AK_TODO}:
+        proc = run_ak(["task", "complete", task_id])
+        if proc.returncode == 0:
+            reached = AK_DONE
+    return reached
+
+
+def sync_once(state_dir: Path | None = None) -> dict[str, dict[str, Any]]:
+    state = Path(state_dir or STATE_DIR)
+    board_id = load_board_id(state)
+    if not board_id:
+        if DRY_RUN:
+            board_id = "dry-board"
+            print("AK_BRIDGE_DRY missing board_id; using dry-board")
+        else:
+            print("AK_BRIDGE_ERR missing board_id (run bootstrap-board.sh)", file=sys.stderr)
+            return {}
+    records = collect_records(state)
+    task_map = load_task_map(state)
+    created = 0
+    updated = 0
+    for bc_id, record in sorted(records.items()):
+        desired = desired_ak_status(record)
+        pr_url = str(record.get("pr_url") or record.get("prUrl") or "")
+        if pr_url.lower() in {"none", "null"}:
+            pr_url = ""
+        row = dict(task_map.get(bc_id) or {})
+        task_id = str(row.get("task_id") or "")
+        current = str(row.get("ak_status") or "")
+        if not task_id:
+            task_id = create_task(board_id, record)
+            if not task_id:
+                continue
+            created += 1
+            current = AK_TODO
+        reached = apply_status(task_id, current or AK_TODO, desired, pr_url=pr_url)
+        if reached != current:
+            updated += 1
+        task_map[bc_id] = {
+            "task_id": task_id,
+            "ak_status": reached,
+            "seat": record.get("seat") or row.get("seat") or "",
+            "title": task_title(record),
+            "pr_url": pr_url or None,
+            "updated_at": now_iso(),
+        }
+    atomic_write_json(ak_state_dir(state) / "task-map.json", task_map)
+    atomic_write_json(legacy_ak_state_dir(state) / "task-map.json", task_map)
+    print(f"AK_BRIDGE_SYNC agents={len(records)} created={created} updated={updated}")
+    return task_map
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Observer bridge: Extra High fleet → Agent Kanban tasks (never ak start)."
+    )
+    parser.add_argument("--once", action="store_true", help="One sync pass then exit (smoke).")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Plan creates/status transitions without calling ak mutate APIs.",
+    )
+    parser.add_argument(
+        "--poll-sec",
+        type=float,
+        default=float(
+            env_first("GCS_AK_POLL_SEC", "AK_BRIDGE_POLL_SEC", "GCS_AK_BRIDGE_POLL_SEC", default="5")
+            or "5"
+        ),
+        help="Watch interval when not --once.",
+    )
+    args = parser.parse_args(argv)
+    global DRY_RUN
+    DRY_RUN = bool(args.dry_run) or env_first("GCS_AK_DRY", "AK_BRIDGE_DRY").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    state = STATE_DIR
+    ak_state_dir(state).mkdir(parents=True, exist_ok=True)
+    legacy_ak_state_dir(state).mkdir(parents=True, exist_ok=True)
+    local_bin = str(Path.home() / ".local" / "bin")
+    os.environ["PATH"] = local_bin + os.pathsep + os.environ.get("PATH", "")
     if args.once:
-        run_cycle()
+        sync_once(state)
         return 0
-    while not stopping:
-        run_cycle()
-        end = time.time() + poll
-        while not stopping and time.time() < end:
-            time.sleep(min(0.25, max(0.0, end - time.time())))
-    return 0
+    print(f"AK_BRIDGE_WATCH state={state} poll={args.poll_sec} (observer; never ak start)")
+    while True:
+        try:
+            sync_once(state)
+        except Exception as exc:  # noqa: BLE001 — keep the watcher alive
+            print(f"AK_BRIDGE_ERR cycle {exc}", file=sys.stderr)
+        time.sleep(max(1.0, float(args.poll_sec)))
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

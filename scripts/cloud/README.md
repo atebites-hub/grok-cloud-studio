@@ -121,3 +121,7 @@ Poll interval: `CLOUD_WATCH_INTERVAL` (short-name default 10s). Optional deadlin
 - List/status/watch/follow-up/result operate on existing agents; create goes through `launch-cloud-extra-high.sh`.
 - Do not call the Cloud Agents REST API from Director seats except via these scripts.
 - Never force-push the target repo `main`.
+
+## Handoff smoke
+
+`smoke-handoff.sh` dry-runs ledger register + Agent Kanban notify + complete path without creating a live cloud agent.

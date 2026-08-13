@@ -5,6 +5,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(cd "${GCS_ROOT:-$ROOT}" && pwd)"
+export GCS_ROOT="$ROOT"
 
 ID=""
 RUN=""
@@ -17,16 +19,24 @@ while [[ $# -gt 0 ]]; do
     --run) RUN="${2:-}"; shift 2 ;;
     --name) NAME="${2:-}"; shift 2 ;;
     --seat) SEAT="${2:-}"; shift 2 ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
+    *)
+      # Positional compat: spawn-waiter.sh <bc-id> [run-id]
+      if [[ -z "$ID" ]]; then
+        ID="$1"
+        shift
+      elif [[ -z "$RUN" ]]; then
+        RUN="$1"
+        shift
+      else
+        echo "unknown arg: $1" >&2
+        exit 2
+      fi
+      ;;
   esac
 done
 
 if [[ "${GCS_SPAWN_WAITER:-${CLOUD_SPAWN_WAITER:-1}}" == "0" ]]; then
   echo "CLOUD_WAITER_SKIPPED id=${ID:-unset} reason=GCS_SPAWN_WAITER=0"
-  exit 0
-fi
-if [[ "${CLOUD_WAITER_DRY:-0}" == "1" ]]; then
-  echo "CLOUD_WAITER_DRY id=${ID:-unset} run=${RUN:-unset}"
   exit 0
 fi
 
@@ -42,6 +52,16 @@ python3 "$LEDGER" register \
   ${RUN:+--run "$RUN"} \
   ${NAME:+--name "$NAME"} \
   --seat "$SEAT" >/dev/null
+
+ak_notify="$ROOT/scripts/studio/agent-kanban/notify-event.sh"
+if [[ -f "$ak_notify" ]]; then
+  bash "$ak_notify" launch "$LOOKUP_KEY" "seat=$SEAT" ${RUN:+"run_id=$RUN"} >/dev/null 2>&1 || true
+fi
+
+if [[ "${CLOUD_WAITER_DRY:-0}" == "1" ]]; then
+  echo "CLOUD_WAITER_DRY id=${ID:-unset} run=${RUN:-unset} seat=$SEAT"
+  exit 0
+fi
 
 LOG_DIR="${GCS_CLOUD_LOG_DIR:-$ROOT/.gcs-state/cloud-logs}"
 mkdir -p "$LOG_DIR"

@@ -19,3 +19,7 @@ scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
+
+## Handoff smoke
+
+`scripts/cloud/smoke-handoff.sh` dry-runs ledger register + AK notify + FLEET_DONE path (no live cloud agent). Set `CLOUD_SMOKE_LIVE=1` to optionally launch Extra High.

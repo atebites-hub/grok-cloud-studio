@@ -52,7 +52,7 @@ stop --daemons   also stop seat ACP daemons and clear daemons.enabled
 status           print bus + optional daemon flag
 
 Optional ak-bridge (sync-only fleet → Agent Kanban) when configured or
-AGENT_KANBAN_API_KEY / GCS_AGENT_KANBAN_API_KEY is set. Never runs ak start.
+AGENT_KANBAN_API_KEY / GCS_AGENT_KANBAN_API_KEY is set (or GCS_AK_BRIDGE=1). Never runs ak start.
 
 Opt-in without the flag: GCS_START_SEAT_DAEMONS=1
 Do not spawn a grok agent process per seat by surprise; daemons are explicit.
@@ -88,9 +88,20 @@ want_daemons() {
 }
 
 ak_bridge_wanted() {
+  # GCS_AK_BRIDGE=0 force-off / =1 force-on; else auto when key or configured marker present.
+  local force="${GCS_AK_BRIDGE:-}"
+  if [[ "$force" == "0" || "$force" == "false" ]]; then
+    return 1
+  fi
+  if [[ "$force" == "1" || "$force" == "true" ]]; then
+    return 0
+  fi
   [[ -n "${AGENT_KANBAN_API_KEY:-}" ]] && return 0
   [[ -n "${GCS_AGENT_KANBAN_API_KEY:-}" ]] && return 0
   [[ -f "$AK_CONFIGURED" ]] && return 0
+  [[ -f "$STATE_DIR/kanban/configured" ]] && return 0
+  local secret="${AGENT_KANBAN_SECRET_PATH:-${GCS_AGENT_KANBAN_SECRET_PATH:-}}"
+  [[ -n "$secret" && -f "$secret" ]] && return 0
   return 1
 }
 
