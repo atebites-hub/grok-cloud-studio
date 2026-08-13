@@ -29,6 +29,11 @@ ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 DEFAULT_TIMEOUT = float(os.environ.get("GCS_ACP_INJECT_TIMEOUT", "900"))
 
+_LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
+if str(_LIB_DIR) not in sys.path:
+    sys.path.insert(0, str(_LIB_DIR))
+from lib import seat_acp_port  # noqa: E402
+
 try:
     import websockets  # type: ignore
     from websockets.client import connect as ws_connect  # type: ignore
@@ -62,26 +67,11 @@ def _ensure_url(seat: str) -> str:
         return _read_text(url_path)
     if not secret_path.is_file():
         raise SystemExit(f"ACP_INJECT_FAIL seat={seat} missing acp.url/acp.secret (daemon not started?)")
-    # Reconstruct from port map + secret if url missing
-    ports = {
-        "floor": 8740,
-        "live-ops": 8741,
-        "content": 8742,
-        "narrative": 8743,
-        "systems": 8744,
-        "client": 8745,
-        "art": 8746,
-        "audio": 8747,
-        "balance": 8748,
-        "cloud-env": 8749,
-        "qa-a": 8750,
-        "qa-b": 8751,
-        "studio-ops": 8752,
-    }
-    port = ports.get(seat)
-    if port is None:
-        raise SystemExit(f"ACP_INJECT_FAIL seat={seat} unknown port")
     secret = _read_text(secret_path)
+    try:
+        port = seat_acp_port(seat, ROOT)
+    except KeyError as exc:
+        raise SystemExit(f"ACP_INJECT_FAIL seat={seat} {exc}") from exc
     url = f"ws://127.0.0.1:{port}/ws?server-key={secret}"
     _write_text(url_path, url)
     return url
@@ -454,7 +444,7 @@ def main() -> int:
     elif args.extra:
         prompt = " ".join(args.extra)
     elif args.seat_pos and not args.extra:
-        # allow: acp_inject.py art --file x  already handled; else need text
+        # allow: acp_inject.py --seat floor --file x  already handled; else need text
         parser.error("prompt text required (args, --file, or --stdin)")
     else:
         prompt = " ".join(args.extra)
