@@ -3,7 +3,9 @@
   "hub": "http://127.0.0.1:8732",
   "protocolVersion": "1.0",
   "protocolBinding": "HTTP+JSON",
-  "skipSeats": [],
+  "skipSeats": [
+    "donald"
+  ],
   "seats": {
     "floor": {
       "card": "docs/a2a/cards/floor.json",

@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "description": "Grok Bot seats on the local A2A bus (not grok agent serve / acp_inject).",
+  "seats": {
+    "donald": {
+      "kind": "grok-bot",
+      "agentId": "a2102e61-18e0-443d-bcea-d622895888fb",
+      "inbox": ".a2a-state/donald",
+      "note": "Orchestrator Bot example. Put Bot seats in registry skipSeats; bot-bridge wakes via bot-wake artifacts."
+    }
+  }
+}

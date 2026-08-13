@@ -36,6 +36,8 @@ LAUNCHER = ROOT / "scripts" / "directors" / "launch-director.sh"
 ACP_INJECT = ROOT / "scripts" / "directors" / "acp_inject.py"
 START_DAEMON = ROOT / "scripts" / "directors" / "start-seat-daemon.sh"
 POLL_SEC = float(os.environ.get("GCS_A2A_POLL_SEC", "2"))
+LOCK_TTL_SEC = float(os.environ.get("GCS_DISPATCH_LOCK_TTL_SEC", "240"))
+INJECT_TIMEOUT_SEC = float(os.environ.get("GCS_ACP_INJECT_TIMEOUT", "180"))
 
 
 def _launch_seats() -> frozenset[str]:
@@ -118,35 +120,114 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
-def _read_lock_pid(seat: str) -> int | None:
+def _read_lock(seat: str) -> tuple[int | None, float | None]:
+    """Return (pid, start_ts_epoch). Backward compatible with pid-only lock files."""
     p = _lock_path(seat)
     if not p.is_file():
-        return None
+        return None, None
     try:
-        pid = int(p.read_text(encoding="utf-8").strip().split()[0])
-    except (ValueError, IndexError, OSError):
-        return None
+        raw = p.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None, None
+    if not raw:
+        return None, None
+    lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+    try:
+        pid = int(lines[0].split()[0])
+    except (ValueError, IndexError):
+        return None, None
+    start_ts: float | None = None
+    if len(lines) >= 2:
+        second = lines[1]
+        try:
+            start_ts = float(second)
+        except ValueError:
+            try:
+                start_ts = datetime.fromisoformat(second.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                start_ts = None
+    if start_ts is None:
+        try:
+            start_ts = p.stat().st_mtime
+        except OSError:
+            start_ts = None
+    return pid, start_ts
+
+
+def _read_lock_pid(seat: str) -> int | None:
+    pid, _start = _read_lock(seat)
     return pid
 
 
-def _seat_locked(seat: str) -> bool:
-    pid = _read_lock_pid(seat)
-    if pid is None:
-        return False
-    if _pid_alive(pid):
-        return True
-    # Stale lock
+def _clear_lock(seat: str) -> None:
     try:
         _lock_path(seat).unlink(missing_ok=True)
     except OSError:
         pass
-    return False
+
+
+def _kill_lock_pid(seat: str, pid: int, *, age: float) -> None:
+    print(
+        f"DISPATCH_LOCK_TTL_KILL seat={seat} pid={pid} age={age:.1f}s ttl={LOCK_TTL_SEC}",
+        flush=True,
+    )
+    _append_seat_log(
+        seat,
+        f"{_now()} LOCK_TTL_KILL seat={seat} pid={pid} age={age:.1f}s ttl={LOCK_TTL_SEC}",
+    )
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        _clear_lock(seat)
+        return
+    except PermissionError:
+        pass
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        if not _pid_alive(pid):
+            break
+        time.sleep(0.1)
+    if _pid_alive(pid):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+    child = _CHILDREN.pop(pid, None)
+    if child is not None:
+        _seat, proc = child
+        try:
+            proc.poll()
+        except Exception:
+            pass
+    _clear_lock(seat)
+
+
+def _seat_locked(seat: str) -> bool:
+    pid, start_ts = _read_lock(seat)
+    if pid is None:
+        return False
+    if not _pid_alive(pid):
+        _clear_lock(seat)
+        return False
+    age = 0.0
+    if start_ts is not None:
+        age = max(0.0, time.time() - start_ts)
+    else:
+        try:
+            age = max(0.0, time.time() - _lock_path(seat).stat().st_mtime)
+        except OSError:
+            age = 0.0
+    if LOCK_TTL_SEC > 0 and age > LOCK_TTL_SEC:
+        _kill_lock_pid(seat, pid, age=age)
+        return False
+    return True
 
 
 def _write_lock(seat: str, pid: int) -> None:
     p = _lock_path(seat)
     tmp = p.with_suffix(".tmp")
-    tmp.write_text(f"{pid}\n", encoding="utf-8")
+    start = time.time()
+    tmp.write_text(f"{pid}\n{start:.6f}\n", encoding="utf-8")
     tmp.replace(p)
 
 
@@ -404,7 +485,18 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
         if ACP_INJECT.is_file() and (_daemon_healthy(seat) or _ensure_daemon(seat)):
             if _daemon_healthy(seat):
                 mode = "acp-inject"
-                cmd = [sys.executable, str(ACP_INJECT), seat, extra]
+                inject_timeout = INJECT_TIMEOUT_SEC
+                if LOCK_TTL_SEC > 30:
+                    inject_timeout = min(inject_timeout, LOCK_TTL_SEC - 30)
+                inject_timeout = max(1.0, inject_timeout)
+                cmd = [
+                    sys.executable,
+                    str(ACP_INJECT),
+                    "--timeout",
+                    str(inject_timeout),
+                    seat,
+                    extra,
+                ]
             else:
                 mode = "fallback-p"
                 cmd = [str(LAUNCHER), seat, extra]
@@ -482,7 +574,8 @@ def main() -> int:
     seats = _discover_seats(filter_seats)
     print(
         f"DISPATCH_READY state={STATE_DIR} seats={','.join(seats) or '(none)'} "
-        f"poll={POLL_SEC}s once={int(args.once)} dry_run={int(args.dry_run)}"
+        f"poll={POLL_SEC}s lock_ttl={LOCK_TTL_SEC}s inject_timeout={INJECT_TIMEOUT_SEC}s "
+        f"once={int(args.once)} dry_run={int(args.dry_run)}"
     )
 
     if not LAUNCHER.is_file() and not ACP_INJECT.is_file():
