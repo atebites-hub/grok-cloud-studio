@@ -1,6 +1,6 @@
 {
   "name": "QA B",
-  "description": "Review and squash-merge even-numbered PRs. Rebase Extra High only — no feature clouds.",
+  "description": "Review and squash-merge even-numbered PRs. Rebase Extra High only \u2014 no feature clouds.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
