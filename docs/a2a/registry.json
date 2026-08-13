@@ -4,9 +4,15 @@
   "protocolVersion": "1.0",
   "protocolBinding": "HTTP+JSON",
   "skipSeats": [
+    "orchestrator",
     "donald"
   ],
   "seats": {
+    "orchestrator": {
+      "card": "docs/a2a/cards/orchestrator.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/orchestrator",
+      "wellKnown": "http://127.0.0.1:8732/a2a/orchestrator/.well-known/agent-card.json"
+    },
     "floor": {
       "card": "docs/a2a/cards/floor.json",
       "endpoint": "http://127.0.0.1:8732/a2a/floor",
