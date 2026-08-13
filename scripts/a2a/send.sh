@@ -1,8 +1,35 @@
 #!/usr/bin/env bash
 # Send an A2A text message to a Grok Cloud Studio seat via the local hub.
-# Usage: send.sh <seat> "<text>" [optional-data-json]
+# Usage: send.sh [--from SEAT] <seat> "<text>" [optional-data-json]
 # Env: GCS_A2A_HUB (default http://127.0.0.1:8732)
+#      GCS_A2A_FROM (caller seat; --from wins)
 set -euo pipefail
+
+FROM_SEAT="${GCS_A2A_FROM:-}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --from)
+      FROM_SEAT="${2:-}"
+      shift 2
+      ;;
+    --from=*)
+      FROM_SEAT="${1#--from=}"
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "usage: $0 [--from SEAT] <seat> \"<text>\" [optional-data-json]" >&2
+      exit 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
 SEAT="${1:-}"
 TEXT="${2:-}"
 DATA_JSON="${3:-}"
@@ -11,7 +38,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${GCS_ROOT:-$SCRIPT_DIR/../..}" && pwd)"
 
 if [[ -z "$SEAT" || -z "$TEXT" ]]; then
-  echo "usage: $0 <seat> \"<text>\" [optional-data-json]" >&2
+  echo "usage: $0 [--from SEAT] <seat> \"<text>\" [optional-data-json]" >&2
   echo "seats:" >&2
   python3 "$ROOT/scripts/a2a/lib.py" launch-seats >&2 || true
   exit 2
@@ -22,25 +49,35 @@ import uuid; print(uuid.uuid4())
 PY
 )
 
-BODY=$(TEXT_VAL="$TEXT" MSG_ID="$MSG_ID" DATA_JSON="$DATA_JSON" python3 - <<'PY'
+BODY=$(TEXT_VAL="$TEXT" MSG_ID="$MSG_ID" DATA_JSON="$DATA_JSON" FROM_SEAT="$FROM_SEAT" python3 - <<'PY'
 import json, os
 parts = [{"kind": "text", "text": os.environ["TEXT_VAL"]}]
 raw = os.environ.get("DATA_JSON") or ""
+data = {}
 if raw.strip():
-    parts.append({"kind": "data", "data": json.loads(raw)})
+    data = json.loads(raw)
+from_seat = (os.environ.get("FROM_SEAT") or "").strip()
+if from_seat:
+    if not isinstance(data, dict):
+        data = {"payload": data}
+    data.setdefault("from", from_seat)
+if data:
+    parts.append({"kind": "data", "data": data})
 body = {
+    "from": from_seat or None,
     "message": {
         "messageId": os.environ["MSG_ID"],
         "role": "ROLE_USER",
         "parts": parts,
-    }
+        "metadata": {"from": from_seat} if from_seat else {},
+    },
 }
 print(json.dumps(body))
 PY
 )
 
 TMP=$(mktemp)
-HTTP=$(curl -sS -o "$TMP" -w "%{http_code}" \
+HTTP=$(curl -sS --connect-timeout 2 --max-time 8 -o "$TMP" -w "%{http_code}" \
   -H 'Content-Type: application/json' \
   -X POST "$HUB/a2a/${SEAT}/message:send" \
   -d "$BODY")

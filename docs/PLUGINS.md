@@ -7,7 +7,7 @@ Two Cursor/Grok MCP plugins ship in-tree. Both speak JSON-RPC stdio (Content-Len
 | Tool | Action |
 |---|---|
 | `a2a_list_seats` | Seats from `docs/a2a/registry.json` |
-| `a2a_send` | `scripts/a2a/send.sh <seat> <text>` |
+| `a2a_send` | `scripts/a2a/send.sh [--from SEAT] <seat> <text>` |
 
 ```bash
 grok plugin install ./plugins/a2a --trust

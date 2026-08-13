@@ -13,6 +13,7 @@ Local studio only. Stdlib only (acp_inject may use optional websockets).
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import signal
@@ -48,8 +49,20 @@ def _launch_seats() -> frozenset[str]:
 def _skip_seats() -> frozenset[str]:
     return _skip_seats_fn(ROOT)
 
-# pid -> (seat, Popen) for reaping; zombies accumulate without this.
-_CHILDREN: dict[int, tuple[str, subprocess.Popen]] = {}
+# pid -> (seat, Popen, meta) for reaping; zombies accumulate without this.
+_CHILDREN: dict[int, tuple[str, subprocess.Popen, dict[str, Any]]] = {}
+
+
+def _duplex_mod() -> Any:
+    path = ROOT / "scripts" / "a2a" / "duplex.py"
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("gcs_a2a_duplex", path)
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def _now() -> str:
@@ -195,7 +208,7 @@ def _kill_lock_pid(seat: str, pid: int, *, age: float) -> None:
             pass
     child = _CHILDREN.pop(pid, None)
     if child is not None:
-        _seat, proc = child
+        _seat, proc, _meta = child
         try:
             proc.poll()
         except Exception:
@@ -263,6 +276,9 @@ def _compose_extra(task_id: str, context_id: str, text: str) -> str:
         "You were woken by the local A2A dispatch bus (persistent ACP inject when "
         "available). Prioritize this ping in EXTRA TURN INSTRUCTIONS: act on it, "
         "then print the required RESULT (or PARK_ACK / QA_*_RESULT) line. "
+        "Do not call scripts/a2a/send.sh or a2a_send to ack the caller — print "
+        "RESULT; duplex writes that line onto the A2A task and notifies the caller "
+        "seat. Use send.sh only for new work pings to other seats. "
         "If you are on a persistent ACP seat daemon, idle for the next inject — "
         "do not exit the process. One-shot -p fallbacks may exit after RESULT.\n"
         "\n"
@@ -425,7 +441,8 @@ def _reap_finished() -> None:
     also waitpid(-1), or we race the Popen wait machinery.
     """
     done: list[int] = []
-    for pid, (seat, proc) in list(_CHILDREN.items()):
+    duplex = _duplex_mod()
+    for pid, (seat, proc, meta) in list(_CHILDREN.items()):
         rc = proc.poll()
         if rc is None:
             continue
@@ -436,6 +453,24 @@ def _reap_finished() -> None:
                 _lock_path(seat).unlink(missing_ok=True)
             except OSError:
                 pass
+        log_path = Path(str(meta.get("log_path") or ""))
+        output = ""
+        if log_path.is_file():
+            try:
+                output = log_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                output = ""
+        if duplex is not None:
+            rec = meta.get("record") if isinstance(meta.get("record"), dict) else {}
+            try:
+                duplex.duplex_from_output(
+                    state_dir=STATE_DIR,
+                    seat=seat,
+                    record=rec,
+                    output_text=output,
+                )
+            except Exception as e:  # noqa: BLE001 — reap must continue
+                print(f"DISPATCH_DUPLEX_ERR seat={seat} err={e}", file=sys.stderr)
         _append_seat_log(
             seat,
             f"{_now()} EXIT seat={seat} pid={pid} rc={rc}",
@@ -511,6 +546,18 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
         env["GCS_A2A_STATE"] = str(STATE_DIR)
         env["GCS_DIRECTOR_SEAT"] = seat
         env["PATH"] = str(Path.home() / ".grok" / "bin") + ":" + env.get("PATH", "")
+        env["GCS_A2A_TASK_ID"] = task_id
+        env["GCS_A2A_CONTEXT"] = context_id
+        duplex = _duplex_mod()
+        from_seat = ""
+        if duplex is not None:
+            try:
+                from_seat = str(duplex.extract_caller(rec) or "")
+            except Exception:
+                from_seat = ""
+        if from_seat:
+            env["GCS_A2A_FROM"] = from_seat
+        env["GCS_A2A_SEAT"] = seat
 
         try:
             log_f = log_path.open("w", encoding="utf-8")
@@ -558,7 +605,11 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
             break
 
         _write_lock(seat, proc.pid)
-        _CHILDREN[proc.pid] = (seat, proc)
+        _CHILDREN[proc.pid] = (
+            seat,
+            proc,
+            {"record": rec, "log_path": str(log_path), "task_id": task_id},
+        )
         _write_offset(seat, end_offset)
         _append_seat_log(
             seat,

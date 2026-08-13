@@ -8,7 +8,7 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 
 | Piece | Path |
 |---|---|
-| A2A hub / send / dispatch / bus | `scripts/a2a/` |
+| A2A hub / send / dispatch / duplex / bus | `scripts/a2a/` |
 | ACP seat daemons + inject | `scripts/directors/start-seat-daemon.sh`, `acp_inject.py` |
 | Extra High SDK + bash wrappers | `scripts/cloud/sdk/`, `scripts/launch-cloud-extra-high.sh` |
 | Waiter (`run.wait` → A2A ping) | `scripts/cloud/spawn-waiter.sh`, `sdk/wait-notify.ts` |

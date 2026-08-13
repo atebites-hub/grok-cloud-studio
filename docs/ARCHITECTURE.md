@@ -9,7 +9,7 @@ Grok Cloud Studio is a **local control plane**:
 ```
 send.sh → hub.py (ack + inbox JSONL)
             ↓
-        dispatch.py  → acp_inject.py (persistent grok agent serve)
+        dispatch.py  → acp_inject.py (persistent grok agent serve; RESULT harvest + duplex)
                      → launch-director.sh  (one-shot -p fallback)
 
 launch-cloud-extra-high.sh → @cursor/sdk Agent.create
