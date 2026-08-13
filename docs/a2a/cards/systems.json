@@ -1,0 +1,42 @@
+{
+  "name": "Systems",
+  "description": "Platform/systems Director \u2014 launches Extra High grunts for infra/code.",
+  "version": "1.0.0",
+  "protocolVersion": "1.0",
+  "provider": {
+    "organization": "Grok Cloud Studio",
+    "url": "https://github.com/atebites-hub/grok-cloud-studio"
+  },
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extendedAgentCard": false
+  },
+  "defaultInputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "systems",
+      "name": "Systems",
+      "description": "Platform/systems Director \u2014 launches Extra High grunts for infra/code.",
+      "tags": [
+        "systems",
+        "gcs",
+        "a2a"
+      ]
+    }
+  ],
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:8732/a2a/systems",
+      "protocolBinding": "HTTP+JSON",
+      "protocolVersion": "1.0"
+    }
+  ]
+}

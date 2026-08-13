@@ -1,0 +1,54 @@
+{
+  "version": "1.0.0",
+  "hub": "http://127.0.0.1:8732",
+  "protocolVersion": "1.0",
+  "protocolBinding": "HTTP+JSON",
+  "brand": "Grok Cloud Studio",
+  "seats": {
+    "ops": {
+      "card": "docs/a2a/cards/ops.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/ops",
+      "wellKnown": "http://127.0.0.1:8732/a2a/ops/.well-known/agent-card.json"
+    },
+    "studio-ops": {
+      "card": "docs/a2a/cards/studio-ops.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/studio-ops",
+      "wellKnown": "http://127.0.0.1:8732/a2a/studio-ops/.well-known/agent-card.json"
+    },
+    "cloud-env": {
+      "card": "docs/a2a/cards/cloud-env.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/cloud-env",
+      "wellKnown": "http://127.0.0.1:8732/a2a/cloud-env/.well-known/agent-card.json"
+    },
+    "qa-a": {
+      "card": "docs/a2a/cards/qa-a.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/qa-a",
+      "wellKnown": "http://127.0.0.1:8732/a2a/qa-a/.well-known/agent-card.json"
+    },
+    "qa-b": {
+      "card": "docs/a2a/cards/qa-b.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/qa-b",
+      "wellKnown": "http://127.0.0.1:8732/a2a/qa-b/.well-known/agent-card.json"
+    },
+    "systems": {
+      "card": "docs/a2a/cards/systems.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/systems",
+      "wellKnown": "http://127.0.0.1:8732/a2a/systems/.well-known/agent-card.json"
+    },
+    "client": {
+      "card": "docs/a2a/cards/client.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/client",
+      "wellKnown": "http://127.0.0.1:8732/a2a/client/.well-known/agent-card.json"
+    },
+    "content": {
+      "card": "docs/a2a/cards/content.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/content",
+      "wellKnown": "http://127.0.0.1:8732/a2a/content/.well-known/agent-card.json"
+    },
+    "live-ops": {
+      "card": "docs/a2a/cards/live-ops.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/live-ops",
+      "wellKnown": "http://127.0.0.1:8732/a2a/live-ops/.well-known/agent-card.json"
+    }
+  }
+}

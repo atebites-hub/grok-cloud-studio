@@ -1,0 +1,9 @@
+{
+  "name": "gcs-cursor-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Grok Cloud Studio Cursor Cloud Extra High MCP tools",
+  "bin": {"gcs-cursor-cloud-mcp": "./server.mjs"},
+  "dependencies": {"@modelcontextprotocol/sdk": "^1.12.1"}
+}

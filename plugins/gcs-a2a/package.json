@@ -1,0 +1,9 @@
+{
+  "name": "gcs-a2a",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Grok Cloud Studio A2A MCP tools",
+  "bin": {"gcs-a2a-mcp": "./server.mjs"},
+  "dependencies": {"@modelcontextprotocol/sdk": "^1.12.1"}
+}
