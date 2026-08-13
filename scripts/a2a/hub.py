@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal local A2A HTTP+JSON hub for Grok Cloud Studio Directors.
+"""Minimal local A2A HTTP+JSON hub for Grok Cloud Studio seats.
 
 Stdlib only. Serves Agent Cards, Send Message, Get/List/Cancel Task.
 This hub is the protocol ack bus: it appends per-seat inbox JSONL and
@@ -10,7 +10,7 @@ scripts/a2a/dispatch.py (standing inbox poller) and
 scripts/a2a/start-studio-bus.sh (hub + dispatch together). The hub itself
 does not launch Directors.
 
-Docs: docs/studio/GROK_DIRECTORS.md
+Docs: docs/ARCHITECTURE.md
 A2A: https://a2a-protocol.org/latest/
 """
 from __future__ import annotations
@@ -29,8 +29,8 @@ from urllib.parse import urlparse
 HOST = os.environ.get("GCS_A2A_HOST", "127.0.0.1")
 PORT = int(os.environ.get("GCS_A2A_PORT", "8732"))
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
-CARDS_DIR = ROOT / "docs" / "studio" / "a2a" / "cards"
-REGISTRY_PATH = ROOT / "docs" / "studio" / "a2a" / "registry.json"
+CARDS_DIR = ROOT / "docs" / "a2a" / "cards"
+REGISTRY_PATH = ROOT / "docs" / "a2a" / "registry.json"
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 
 SEAT_RE = re.compile(r"^[a-z0-9-]+$")
@@ -116,18 +116,7 @@ def _read_json(handler: BaseHTTPRequestHandler) -> dict[str, Any]:
 
 
 def _parse_path(path: str) -> tuple[str | None, str | None, str | None, str | None]:
-    """Return (seat, action, task_id, subaction).
-
-    Patterns:
-      /health
-      /registry
-      /a2a/{seat}/.well-known/agent-card.json
-      /a2a/{seat}/agent-card.json
-      /a2a/{seat}/message:send
-      /a2a/{seat}/tasks
-      /a2a/{seat}/tasks/{id}
-      /a2a/{seat}/tasks/{id}:cancel
-    """
+    """Return (seat, action, task_id, subaction)."""
     parsed = urlparse(path)
     parts = [p for p in parsed.path.split("/") if p]
     if not parts:
@@ -160,27 +149,25 @@ def _parse_path(path: str) -> tuple[str | None, str | None, str | None, str | No
             return seat, "task-get", tid, None
         if len(rest) == 2 or (len(rest) == 3 and rest[2] == ""):
             return seat, "task-get", tid, None
-    # also accept POST .../tasks/{id}:cancel as single segment already handled
     if len(rest) == 2 and rest[0] == "tasks" and rest[1].endswith(":cancel"):
         return seat, "task-cancel", rest[1][: -len(":cancel")], "cancel"
     return seat, "unknown", None, None
 
 
 class A2AHandler(BaseHTTPRequestHandler):
-    server_version = "GcsA2AHub/1.0"
+    server_version = "GrokCloudStudioA2AHub/1.0"
 
     def log_message(self, fmt: str, *args: Any) -> None:
-        # Quiet but useful
         print(f"[a2a] {self.address_string()} {fmt % args}")
 
-    def do_OPTIONS(self) -> None:  # noqa: N802
+    def do_OPTIONS(self) -> None:
         self.send_response(204)
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         seat, action, task_id, _ = _parse_path(self.path)
         if action == "health":
             _json_response(
@@ -225,7 +212,7 @@ class A2AHandler(BaseHTTPRequestHandler):
             return
         _json_response(self, 404, {"error": "not found", "path": self.path})
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         seat, action, task_id, _ = _parse_path(self.path)
         if action == "message-send" and seat:
             if _load_card(seat) is None:
@@ -288,7 +275,7 @@ class A2AHandler(BaseHTTPRequestHandler):
                                     "messageId": message_id,
                                     "receivedAt": _now(),
                                     "preview": receipt_text[:500],
-                                    "note": "Simple ack hub — Directors poll inbox JSONL or Donald bridges.",
+                                    "note": "Simple ack hub — seats poll inbox JSONL or an orchestrator bridges.",
                                 },
                             }
                         ],
