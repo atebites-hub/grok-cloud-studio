@@ -33,8 +33,8 @@ Non-GROW seats may still use leftover `acp_inject.py` (no `--pin-session`).
 
 `scripts/directors/acp_inject.py --pin-session` (GROW):
 
-- **HANDOFF** only after a real start: STATUS / substantial text. **Never** 1s silence. **Never** `x.ai/queue/changed` alone.
-- If the actor **did** start (this-prompt tool or non-RESULT update): **stay connected** until `seat_produced_work` or `session/prompt` RPC completes. First tool + short text is **not** a reason to hang up. Accept is not a reason to hang up.
+- **HANDOFF** only after this-prompt STATUS or a this-prompt real work tool (taskboard ticket move, `send.sh`, `scripts/launch-cloud-extra-high.sh`). Log `ACP_INJECT_HANDOFF reason=status` or `reason=work`. **Never** `reason=queue,tool,harvest`. **Never** `reason=substantial`. **Never** 1s silence. **Never** `x.ai/queue/changed` alone. Keep-alive acknowledgements (`Keep-alive received. Scanning A2A inboxes, fleet ledgers`, len>=40) are a start, not a leave. Leftover harvest (queue + leftover tools + short text) is a start, not a leave.
+- If the actor **did** start (this-prompt tool or non-RESULT update): **stay connected** until STATUS / this-prompt work tool or `session/prompt` RPC completes **with STATUS**. First tool + short text is **not** a reason to hang up. Accept is not a reason to hang up.
 - Dead session: after N consecutive no-accepts (`GCS_ACP_DEAD_STREAK`, default 1) with no tool / no non-RESULT update within `GCS_ACP_ACCEPT_DEADLINE` (default 30s), **one** `session/new`. Log `ACP_INJECT_SESSION_DEAD`. Clear the streak on real work. Silence / queue-only is `ACP_INJECT_TIMEOUT reason=no-accept`, not HANDOFF. If the actor started, stay until STATUS/work or `session/prompt` RPC, up to `GCS_ACP_INJECT_TIMEOUT` (default 180s).
 - **RESULT is duplex, not success.** Leftover tools + empty text is not work. RESULT-only is `reason=hangup-only`. Do **not** `session/cancel` a live turn you handed off.
 - Authenticate ACP `cached_token` after initialize. Copy host `~/.grok/auth.json` into seat `GROK_HOME` (never print the token). Log `ACP_INJECT_AUTH` / `SEAT_GROK_AUTH_OK`.

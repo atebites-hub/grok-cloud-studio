@@ -574,6 +574,12 @@ def test_prompt_output_accepted_advances_offset_before_model_finishes(
     assert wake.prompt_output_accepted(0, "") is True
     assert wake.prompt_output_accepted(1, "ACP_INJECT_OK seat=floor session=s chars=0\n") is True
     assert wake.prompt_output_accepted(1, "ACP_INJECT_HANDOFF seat=floor session=s\n") is True
+    assert (
+        wake.prompt_output_accepted(
+            1, "ACP_INJECT_HANDOFF seat=floor session=s reason=status\n"
+        )
+        is True
+    )
     assert wake.prompt_output_accepted(1, "ACP_INJECT_TIMEOUT seat=floor timeout=600\n") is False
     assert wake.prompt_output_accepted(1, "ACP_INJECT_FAIL seat=floor err=blocked\n") is False
 

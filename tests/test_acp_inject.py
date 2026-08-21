@@ -1,9 +1,11 @@
 """ACP inject leftover / pin-session rules (studio host OS).
 
-HANDOFF only after a real start. Silence is not HANDOFF. Queue is not accept.
-Stay on the websocket after the first tool until STATUS / substantial text or
-session/prompt RPC completes. Dead sessions remint once after N consecutive
-no-accepts. RESULT is duplex, not success. Leftover dispatch still cancels.
+HANDOFF only after this-prompt STATUS or a this-prompt work tool.
+Keep-alive chatter (len>=40) is not HANDOFF. Queue is not accept.
+Stay on the websocket after the first tool until STATUS / work tool or
+session/prompt RPC completes with STATUS. Dead sessions remint once after
+N consecutive no-accepts. RESULT is duplex, not success. Leftover dispatch
+still cancels.
 """
 from __future__ import annotations
 
@@ -27,6 +29,7 @@ AGENTS_DOC = REPO / "AGENTS.md"
 
 RESULT_LINE = "RESULT bc-id=none pr=none a2a=task-1 notes=park-ok"
 STATUS_LINE = "STATUS quoting token tick-1. Working."
+KEEP_ALIVE_LINE = "Keep-alive received. Scanning A2A inboxes, fleet ledgers"
 
 
 def _load(path: Path, name: str) -> ModuleType:
@@ -51,17 +54,25 @@ def _chunk(text: str) -> dict[str, Any]:
     }
 
 
-def _tool_update(tool_call_id: str = "tc-stale", title: str = "leftover") -> dict[str, Any]:
+def _tool_update(
+    tool_call_id: str = "tc-stale",
+    title: str = "leftover",
+    *,
+    command: str | None = None,
+    session_update: str = "tool_call",
+) -> dict[str, Any]:
+    update: dict[str, Any] = {
+        "sessionUpdate": session_update,
+        "toolCallId": tool_call_id,
+        "title": title,
+    }
+    if command is not None:
+        update["kind"] = "execute"
+        update["rawInput"] = {"command": command}
     return {
         "jsonrpc": "2.0",
         "method": "session/update",
-        "params": {
-            "update": {
-                "sessionUpdate": "tool_call",
-                "toolCallId": tool_call_id,
-                "title": title,
-            }
-        },
+        "params": {"update": update},
     }
 
 
@@ -85,6 +96,7 @@ def _capture_prompt_harvest(mod: ModuleType, monkeypatch: pytest.MonkeyPatch) ->
                     "harvested_early": bool(self._harvested_early),
                     "prompt_accepted": bool(getattr(self, "_prompt_accepted", False)),
                     "tool_events": int(self._tool_events or 0),
+                    "work_tools": int(getattr(self, "_work_tools", 0) or 0),
                     "chars": len(reply),
                     "reply": reply,
                 }
@@ -96,6 +108,7 @@ def _capture_prompt_harvest(mod: ModuleType, monkeypatch: pytest.MonkeyPatch) ->
                     "harvested_early": bool(self._harvested_early),
                     "prompt_accepted": bool(getattr(self, "_prompt_accepted", False)),
                     "tool_events": int(self._tool_events or 0),
+                    "work_tools": int(getattr(self, "_work_tools", 0) or 0),
                     "chars": len("".join(self._chunks)),
                     "reply": "".join(self._chunks),
                 }
@@ -104,6 +117,24 @@ def _capture_prompt_harvest(mod: ModuleType, monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr(mod.AcpClient, "session_prompt", wrap)
     return flags
+
+
+def _handoff_lines(blob: str) -> list[str]:
+    return [ln for ln in blob.splitlines() if "ACP_INJECT_HANDOFF" in ln]
+
+
+def _assert_handoff_reason(blob: str, expected: str) -> None:
+    """HANDOFF reason is status|work — never queue, tool, harvest, substantial."""
+    assert expected in ("status", "work"), expected
+    lines = _handoff_lines(blob)
+    assert lines, blob
+    for ln in lines:
+        assert f"reason={expected}" in ln, ln
+        assert "reason=queue" not in ln, ln
+        assert "reason=tool" not in ln, ln
+        assert "reason=harvest" not in ln, ln
+        assert "reason=substantial" not in ln, ln
+        assert "queue,tool,harvest" not in ln, ln
 
 
 class FakeAcpWs:
@@ -117,6 +148,9 @@ class FakeAcpWs:
         complete_prompt: bool = False,
         new_session_id: str = "sess-harvest",
         delay_before_rpc: float = 0.0,
+        later_chunks: list[str] | None = None,
+        later_updates: list[dict[str, Any]] | None = None,
+        later_delay: float = 0.0,
     ) -> None:
         self._incoming: asyncio.Queue[Any] = asyncio.Queue()
         self.sent: list[dict[str, Any]] = []
@@ -130,6 +164,10 @@ class FakeAcpWs:
         self._prompt_updates = list(prompt_updates or [])
         self._complete_prompt = complete_prompt
         self._delay_before_rpc = delay_before_rpc
+        self._later_chunks = list(later_chunks or [])
+        self._later_updates = list(later_updates or [])
+        self._later_delay = later_delay
+        self._later_task: asyncio.Task[None] | None = None
         self._new_session_ids = [new_session_id]
         self._new_i = 0
 
@@ -185,6 +223,8 @@ class FakeAcpWs:
                 await self._incoming.put(_chunk(part))
             for upd in self._prompt_updates:
                 await self._incoming.put(upd)
+            if self._later_chunks or self._later_updates:
+                self._later_task = asyncio.create_task(self._emit_later())
             if self._complete_prompt:
                 if self._delay_before_rpc > 0:
                     await asyncio.sleep(self._delay_before_rpc)
@@ -197,6 +237,14 @@ class FakeAcpWs:
             if rid is not None:
                 await self._incoming.put({"jsonrpc": "2.0", "id": rid, "result": {}})
 
+    async def _emit_later(self) -> None:
+        if self._later_delay > 0:
+            await asyncio.sleep(self._later_delay)
+        for part in self._later_chunks:
+            await self._incoming.put(_chunk(part))
+        for upd in self._later_updates:
+            await self._incoming.put(upd)
+
     async def recv(self) -> str:
         item = await self._incoming.get()
         if item is None:
@@ -207,6 +255,13 @@ class FakeAcpWs:
 
     async def close(self) -> None:
         self.closed = True
+        task = self._later_task
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 def _prep_seat(mod: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -260,7 +315,7 @@ def test_seat_produced_work_pong_is_not_work() -> None:
     assert mod.prompt_chunk_is_accept_signal("PONG") is False
     assert mod.pin_session_ready_to_leave(STATUS_LINE) is True
     assert mod.pin_session_ready_to_leave("Donald") is False
-    assert mod.pin_session_ready_to_leave("x" * 40) is True
+    assert mod.pin_session_ready_to_leave("x" * 40) is False
     assert mod.pin_session_ready_to_leave("") is False
 
 
@@ -270,6 +325,255 @@ def test_leftover_tools_empty_text_is_not_work() -> None:
     assert not mod.prompt_chunk_is_accept_signal("")
     assert mod.stream_is_hangup_only(RESULT_LINE)
     assert not mod.pin_session_ready_to_leave("Donald")
+
+
+def test_pin_session_ready_to_leave_ignores_leftover_harvest() -> None:
+    """pin_session + tools + chars=4 is not leave. STATUS / work-tool are."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_leave_fn")
+    leftover = "abcd"
+    assert len(leftover) == 4
+    assert len(KEEP_ALIVE_LINE) == 56
+    assert not mod.pin_session_ready_to_leave(leftover, tool_events=3)
+    assert not mod.pin_session_ready_to_leave("Donald", tool_events=1)
+    assert not mod.pin_session_ready_to_leave("")
+    assert not mod.pin_session_ready_to_leave("x" * 40, tool_events=2)
+    assert not mod.pin_session_ready_to_leave(KEEP_ALIVE_LINE)
+    assert not mod.pin_session_ready_to_leave(KEEP_ALIVE_LINE, tool_events=4)
+    assert not mod.pin_session_ready_to_leave(RESULT_LINE, work_tools=0)
+    assert mod.pin_session_ready_to_leave(STATUS_LINE, tool_events=9) is True
+    assert mod.pin_session_ready_to_leave(KEEP_ALIVE_LINE, work_tools=1) is True
+    assert mod.pin_session_handoff_reason(STATUS_LINE, tool_events=4) == "status"
+    assert mod.pin_session_handoff_reason(KEEP_ALIVE_LINE, work_tools=1) == "work"
+    assert mod.pin_session_handoff_reason(STATUS_LINE, work_tools=1) == "status"
+    assert mod.pin_session_handoff_reason("x" * 40, tool_events=1) is None
+    assert mod.pin_session_handoff_reason(KEEP_ALIVE_LINE) is None
+    assert mod.pin_session_handoff_reason(leftover, tool_events=3) is None
+    assert mod.pin_session_handoff_reason("", tool_events=2) is None
+    for reason in (
+        mod.pin_session_handoff_reason(STATUS_LINE),
+        mod.pin_session_handoff_reason(KEEP_ALIVE_LINE, work_tools=1),
+        mod.pin_session_handoff_reason(leftover, tool_events=3),
+    ):
+        if reason is None:
+            continue
+        assert reason in ("status", "work")
+        assert reason not in {"queue", "tool", "harvest", "substantial", "queue,tool,harvest"}
+
+
+def test_keep_alive_scanning_sentence_is_not_ready_to_leave() -> None:
+    """LIVE 2026-08-21T03:31Z floor-ops keep-alive sentence must not HANDOFF."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_keepalive_leave")
+    sentence = "Keep-alive received. Scanning A2A inboxes, fleet ledgers"
+    assert sentence == KEEP_ALIVE_LINE
+    assert len(sentence) == 56
+    assert mod.pin_session_ready_to_leave(sentence) is False
+    assert mod.pin_session_ready_to_leave(sentence, tool_events=2) is False
+    assert mod.pin_session_handoff_reason(sentence) is None
+
+
+def test_this_prompt_work_tool_is_not_leftover() -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_work_tool_fn")
+    send = {
+        "sessionUpdate": "tool_call",
+        "title": "bash",
+        "rawInput": {"command": "scripts/a2a/send.sh ops ping"},
+    }
+    board = {
+        "sessionUpdate": "tool_call",
+        "title": "taskboard move TB-1 in_progress",
+    }
+    launch = {
+        "sessionUpdate": "tool_call",
+        "kind": "execute",
+        "rawInput": {"command": "scripts/launch-cloud-extra-high.sh --name floor-iac"},
+    }
+    leftover_update = {
+        "sessionUpdate": "tool_call_update",
+        "title": "scripts/a2a/send.sh ops ping",
+        "status": "completed",
+    }
+    generic = {"sessionUpdate": "tool_call", "title": "read", "rawInput": {"path": "docs/A2A.md"}}
+    assert mod.is_this_prompt_work_tool(send) is True
+    assert mod.is_this_prompt_work_tool(board) is True
+    assert mod.is_this_prompt_work_tool(launch) is True
+    assert mod.is_this_prompt_work_tool(leftover_update) is False
+    assert mod.is_this_prompt_work_tool(generic) is False
+    assert mod.is_this_prompt_work_tool({"sessionUpdate": "agent_thought_chunk"}) is False
+
+
+def test_return_prompt_stream_leftover_harvest_is_not_handoff() -> None:
+    """accepted=True + leftover harvest (tools + chars=4) must not HANDOFF."""
+
+    async def _run() -> None:
+        mod = _load(ACP_INJECT, "gcs_acp_inject_return_stream")
+        client = mod.AcpClient("ws://127.0.0.1:1", str(REPO))
+        client._pin_wait = True
+        client._tool_events = 2
+        loop = asyncio.get_running_loop()
+        fut = loop.create_future()
+        client._pending[7] = fut
+        reply = client._return_prompt_stream(7, fut, "abcd", accepted=True)
+        assert reply == "abcd"
+        assert client._prompt_accepted is False
+        assert client._harvested_early is False
+        assert 7 in client._pending
+        assert not fut.done()
+
+        fut_status = loop.create_future()
+        client._pending[8] = fut_status
+        client._return_prompt_stream(8, fut_status, STATUS_LINE, accepted=True)
+        assert client._prompt_accepted is True
+        assert 8 not in client._pending
+
+        client._prompt_accepted = False
+        client._harvested_early = False
+        fut_long = loop.create_future()
+        client._pending[9] = fut_long
+        client._return_prompt_stream(9, fut_long, "y" * 40, accepted=True)
+        assert client._prompt_accepted is False
+        assert 9 in client._pending
+
+        client._work_tools = 1
+        fut_work = loop.create_future()
+        client._pending[10] = fut_work
+        client._return_prompt_stream(10, fut_work, KEEP_ALIVE_LINE, accepted=True)
+        assert client._prompt_accepted is True
+        assert 10 not in client._pending
+
+    asyncio.run(_run())
+
+
+def test_pin_session_leftover_harvest_chars4_does_not_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Live hang-up: queue + leftover tools + chars=4 is a start, not a leave."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_harvest4")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=["abcd"],
+        prompt_updates=[_queue_changed(), _tool_update("tc-stale", "leftover")],
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=0.45, pin_session=True))
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 1, blob
+    assert flags and flags[0]["chars"] == 4
+    assert flags[0]["tool_events"] > 0
+    assert flags[0]["prompt_accepted"] is False
+    assert flags[0]["harvested_early"] is False
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "queue,tool,harvest" not in blob
+    assert "reason=queue" not in blob
+    assert "ACP_INJECT_OK" not in out.out
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert "reason=no-accept" in blob
+    assert "ACP_INJECT_CANCEL" not in blob
+    assert ws.cancel_sessions == []
+    assert elapsed >= 0.35, f"waited {elapsed:.2f}s; leftover harvest must not disconnect"
+
+
+def test_pin_session_stays_through_leftover_harvest_until_status(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Stay on the websocket after leftover harvest until STATUS, then reason=status."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_harvest_then_status")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=["abcd"],
+        prompt_updates=[_queue_changed(), _tool_update("tc-stale", "leftover")],
+        later_chunks=[f"\n{STATUS_LINE}\n"],
+        later_delay=0.4,
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=2.0, pin_session=True))
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 0, blob
+    assert elapsed >= 0.35, f"waited {elapsed:.2f}s; must not leave on leftover harvest"
+    assert "ACP_INJECT_OK" in out.out
+    _assert_handoff_reason(blob, "status")
+    assert "ACP_INJECT_CANCEL" not in blob
+    assert flags and flags[0]["tool_events"] > 0
+    assert ws.cancel_sessions == []
+
+
+def test_pin_session_keep_alive_chatter_does_not_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """LIVE hang-up: 56-char keep-alive scanning sentence is not a leave."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_keepalive")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=[KEEP_ALIVE_LINE],
+        prompt_updates=[_queue_changed(), _tool_update("tc-stale", "leftover")],
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "ACP_PING STATUS/CONTINUE", timeout=0.45, pin_session=True))
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 1, blob
+    assert flags and flags[0]["chars"] == 56
+    assert flags[0]["prompt_accepted"] is False
+    assert flags[0]["harvested_early"] is False
+    assert flags[0]["work_tools"] == 0
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "reason=substantial" not in blob
+    assert "ACP_INJECT_OK" not in out.out
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert "reason=no-accept" in blob
+    assert ws.cancel_sessions == []
+    assert elapsed >= 0.35, f"waited {elapsed:.2f}s; keep-alive chatter must not disconnect"
+
+
+def test_pin_session_work_tool_handoff_reason_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """this-prompt send.sh / taskboard / launch is leave reason=work."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_work_tool")
+    _prep_seat(mod, tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=[KEEP_ALIVE_LINE],
+        prompt_updates=[
+            _queue_changed(),
+            _tool_update(
+                "tc-send",
+                "bash",
+                command="scripts/a2a/send.sh ops ticket-update",
+            ),
+        ],
+        later_delay=0.0,
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    rc = asyncio.run(mod.inject("floor", "ACP_PING STATUS/CONTINUE", timeout=2.0, pin_session=True))
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 0, blob
+    assert "ACP_INJECT_OK" in out.out
+    _assert_handoff_reason(blob, "work")
+    assert flags and flags[0]["work_tools"] >= 1
+    assert "ACP_INJECT_CANCEL" not in blob
 
 
 def test_inject_harvests_status_without_waiting_for_prompt_rpc(
@@ -352,7 +656,7 @@ def test_inject_timeout_without_work_stales(
 def test_first_tool_plus_donald_stays_connected(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Accept is not a reason to hang up. Stay until STATUS or RPC complete."""
+    """Accept is not a reason to hang up. Stay until STATUS."""
     mod = _load(ACP_INJECT, "gcs_acp_inject_stay_tool")
     seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
     (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
@@ -361,8 +665,8 @@ def test_first_tool_plus_donald_stays_connected(
     ws = FakeAcpWs(
         prompt_chunks=["Donald"],
         prompt_updates=[_tool_update("tc-1", "read")],
-        complete_prompt=True,
-        delay_before_rpc=0.55,
+        later_chunks=[f"\n{STATUS_LINE}\n"],
+        later_delay=0.55,
     )
     _patch_connect(mod, ws, monkeypatch)
 
@@ -373,10 +677,10 @@ def test_first_tool_plus_donald_stays_connected(
     blob = out.out + out.err
     assert rc == 0, blob
     assert elapsed >= 0.5
-    assert "ACP_INJECT_HANDOFF" not in blob
+    _assert_handoff_reason(blob, "status")
     assert "ACP_INJECT_OK" in out.out
     assert "ACP_INJECT_CANCEL" not in blob
-    assert flags and flags[0]["harvested_early"] is False
+    assert flags and flags[0]["harvested_early"] is True
     assert flags[0]["tool_events"] >= 1
     assert ws.cancel_sessions == []
     assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-pinned"
@@ -475,7 +779,7 @@ def test_pin_session_silence_uses_accept_deadline(
 def test_pin_session_started_stays_past_accept_deadline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """First tool + Donald is a start: stay until RPC, past the 30s-style nack window."""
+    """First tool + Donald is a start: stay until STATUS, past the 30s-style nack window."""
     mod = _load(ACP_INJECT, "gcs_acp_inject_pin_stay_past_nack")
     seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
     (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
@@ -485,8 +789,8 @@ def test_pin_session_started_stays_past_accept_deadline(
     ws = FakeAcpWs(
         prompt_chunks=["Donald"],
         prompt_updates=[_tool_update("tc-1", "read")],
-        complete_prompt=True,
-        delay_before_rpc=0.4,
+        later_chunks=[f"\n{STATUS_LINE}\n"],
+        later_delay=0.4,
     )
     _patch_connect(mod, ws, monkeypatch)
 
@@ -497,7 +801,7 @@ def test_pin_session_started_stays_past_accept_deadline(
     blob = out.out + out.err
     assert rc == 0, blob
     assert elapsed >= 0.35
-    assert "ACP_INJECT_HANDOFF" not in blob
+    _assert_handoff_reason(blob, "status")
     assert "ACP_INJECT_OK" in out.out
     assert "ACP_INJECT_CANCEL" not in blob
     assert flags and flags[0]["tool_events"] >= 1
@@ -713,7 +1017,7 @@ def test_pin_session_accepted_prompt_disconnect_does_not_cancel(
 
     assert rc == 0, blob
     assert "ACP_INJECT_OK" in out.out
-    assert "ACP_INJECT_HANDOFF" in out.out
+    _assert_handoff_reason(blob, "status")
     assert "ACP_INJECT_CANCEL" not in blob
     assert flags and flags[0]["prompt_accepted"] is True
     assert elapsed < 1.0
@@ -811,6 +1115,7 @@ def test_leftover_tools_then_status_may_harvest_early(
     blob = out.out + out.err
     assert rc == 0, blob
     assert "ACP_INJECT_OK" in out.out
+    _assert_handoff_reason(blob, "status")
     assert flags and flags[0]["harvested_early"] is True
     assert ws.cancel_sessions == []
 
@@ -838,6 +1143,8 @@ def test_footer_and_docs_do_not_train_result_only_hangup() -> None:
     assert "session/cancel" in blob or "do not session/cancel" in blob
     assert "cached_token" in blob or "auth.json" in blob
     assert "handoff" in blob
+    assert "reason=status" in blob
+    assert "reason=work" in blob
     assert "queue/changed" in blob
     assert "no-accept" in blob or "dead session" in blob
     assert "silence" in blob or "not a start" in blob

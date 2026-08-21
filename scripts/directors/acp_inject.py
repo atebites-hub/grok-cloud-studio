@@ -9,13 +9,18 @@ Usage:
 Reads .a2a-state/<seat>/{acp.url,acp.secret,acp.session}.
 Persists session id after session/new. Prefer session/load on later injects.
 
-GROW `--pin-session`: stay on the websocket until STATUS/substantial
-work or session/prompt RPC completes or timeout. Do not HANDOFF on 1s
-of silence, queue/changed alone, or first tool/queue — disconnecting
-there kills the turn. Timeout with no work is ACP_INJECT_TIMEOUT
+GROW `--pin-session`: stay on the websocket until this-prompt STATUS,
+a this-prompt real work tool (taskboard ticket, send.sh,
+launch-cloud-extra-high), or session/prompt RPC completes with STATUS.
+Do not HANDOFF on keep-alive chatter (len>=40 acknowledgements),
+leftover harvest (queue + leftover tools + short text), queue/changed,
+RESULT-only, or first generic tool. Disconnecting there kills the
+turn. Timeout with no STATUS/work-tool is ACP_INJECT_TIMEOUT
 reason=no-accept (not HANDOFF). After N consecutive no-accept/hangup
 fails on the same acp.session id, one session/new (SESSION_DEAD).
 Do not session/cancel a handed-off live turn. Not leftover-mint-per-ping.
+ACP_INJECT_HANDOFF logs reason=status|work (never queue,tool,harvest,
+never substantial).
 
 Leftover dispatch (no pin): completes on streamed work/STATUS (or this-prompt
 tool+text), not on session/prompt RPC end. Timeout and prompt-fail
@@ -61,6 +66,13 @@ _RESULT_LINE_RE = re.compile(
 _STATUS_LINE_RE = re.compile(r"^STATUS\b", re.MULTILINE)
 _PONG_ONLY_RE = re.compile(r"^\s*(PONG|pong|ok|OK)\s*$")
 _WORK_UPDATES = frozenset({"tool_call", "tool_call_update", "agent_thought_chunk"})
+# This-prompt Director work — not leftover read/search, not keep-alive chatter.
+_WORK_TOOL_RE = re.compile(
+    r"(?:taskboard|tcarac/taskboard|send\.sh|a2a_send|"
+    r"launch-cloud-extra-high|cloud_launch|"
+    r"\btb\s+(?:move|comment|create|show|update)\b)",
+    re.IGNORECASE,
+)
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
 if str(_LIB_DIR) not in sys.path:
@@ -117,14 +129,80 @@ def seat_produced_work(text: str, *, tool_events: int = 0) -> bool:
     return len(body) >= 40
 
 
-def pin_session_ready_to_leave(text: str) -> bool:
-    """True when pin-session may disconnect: STATUS or substantial text.
+def _tool_update_blob(update: dict[str, Any]) -> str:
+    """Flatten a session/update tool payload for work-tool matching."""
+    parts: list[str] = []
 
-    Queue, leftover/this-prompt tools, and short assistant text (chars=6
-    Donald) are not enough — disconnecting there kills the grok turn.
-    Ignores tool_events; leftover dispatch still uses seat_produced_work.
+    def _walk(obj: Any) -> None:
+        if obj is None:
+            return
+        if isinstance(obj, str):
+            if obj:
+                parts.append(obj)
+            return
+        if isinstance(obj, dict):
+            for value in obj.values():
+                _walk(value)
+            return
+        if isinstance(obj, (list, tuple)):
+            for value in obj:
+                _walk(value)
+
+    _walk(update)
+    return "\n".join(parts)
+
+
+def is_this_prompt_work_tool(update: dict[str, Any] | None) -> bool:
+    """True for a new tool_call that is taskboard / send.sh / launch-cloud.
+
+    Leftover tool_call_update completions and generic read/search tools are
+    not this-prompt work. Keep-alive assistant text is not a tool.
     """
-    return seat_produced_work(text, tool_events=0)
+    if not isinstance(update, dict):
+        return False
+    kind = str(update.get("sessionUpdate") or "")
+    if kind != "tool_call":
+        return False
+    return bool(_WORK_TOOL_RE.search(_tool_update_blob(update)))
+
+
+def pin_session_ready_to_leave(
+    text: str,
+    *,
+    tool_events: int = 0,
+    work_tools: int = 0,
+) -> bool:
+    """True when pin-session may disconnect: this-prompt STATUS or work tool.
+
+    Keep-alive acknowledgements (len>=40), leftover tools, queue/changed,
+    and RESULT-only are not leave. tool_events are ignored; leftover
+    dispatch still uses seat_produced_work.
+    """
+    del tool_events
+    raw = "" if text is None else str(text)
+    if _STATUS_LINE_RE.search(raw):
+        return True
+    return int(work_tools or 0) > 0
+
+
+def pin_session_handoff_reason(
+    text: str,
+    *,
+    tool_events: int = 0,
+    work_tools: int = 0,
+) -> str | None:
+    """ACP_INJECT_HANDOFF reason: status | work | None.
+
+    Never queue, tool, harvest, or substantial — keep-alive chatter is
+    not a leave. tool_events are ignored.
+    """
+    del tool_events
+    raw = "" if text is None else str(text)
+    if _STATUS_LINE_RE.search(raw):
+        return "status"
+    if int(work_tools or 0) > 0:
+        return "work"
+    return None
 
 
 def prompt_chunk_is_accept_signal(text: str) -> bool:
@@ -372,6 +450,7 @@ class AcpClient:
         self._result_seen: Optional[asyncio.Event] = None
         self._harvested_early = False
         self._tool_events = 0
+        self._work_tools = 0
         self._prompt_accepted = False
         self._queued = False
         self._accepted: Optional[asyncio.Event] = None
@@ -435,6 +514,8 @@ class AcpClient:
                             self._maybe_signal_accepted()
                     elif kind in _WORK_UPDATES:
                         self._tool_events += 1
+                        if is_this_prompt_work_tool(update):
+                            self._work_tools += 1
                         self._maybe_signal_done()
                         self._maybe_signal_accepted()
                 elif isinstance(method, str) and "queue/changed" in method:
@@ -473,12 +554,16 @@ class AcpClient:
                 self._prompt_done.set_exception(e)
 
     def _maybe_signal_done(self) -> None:
-        """Release leftover harvest on work/STATUS; pin-session only on STATUS/long text."""
+        """Release leftover harvest on work/STATUS; pin-session on STATUS/work-tool."""
         if self._result_seen is None or self._result_seen.is_set():
             return
         text = "".join(self._chunks)
         if self._pin_wait:
-            if pin_session_ready_to_leave(text):
+            if pin_session_ready_to_leave(
+                text,
+                tool_events=self._tool_events,
+                work_tools=self._work_tools,
+            ):
                 self._result_seen.set()
             return
         if seat_produced_work(text, tool_events=self._tool_events):
@@ -604,16 +689,19 @@ class AcpClient:
         *,
         pin_session: bool = False,
     ) -> str:
-        """Wait for work/STATUS (leftover) or pin-session work/RPC.
+        """Wait for work/STATUS (leftover) or pin-session STATUS/work-tool/RPC.
 
-        Pin-session stays on the websocket until STATUS/substantial text,
-        session/prompt RPC completes, or timeout. Queue and first tool are
-        not HANDOFF. Nack-window silence is not a start. RESULT-only is not
-        success. Leftover dispatch: harvest work/STATUS; leftover tools are
-        not work.
+        Pin-session stays on the websocket until this-prompt STATUS, a
+        this-prompt real work tool (taskboard / send.sh / launch-cloud),
+        session/prompt RPC completes with STATUS, or timeout. Keep-alive
+        chatter, leftover harvest, queue, and first generic tool are not
+        HANDOFF. Nack-window silence is not a start. RESULT-only is not
+        success. Leftover dispatch: harvest work/STATUS; leftover tools
+        are not work.
         """
         self._chunks = []
         self._tool_events = 0
+        self._work_tools = 0
         self._echo_chunks = True
         self._harvested_early = False
         self._prompt_accepted = False
@@ -659,7 +747,11 @@ class AcpClient:
                 msg = fut.result()
                 if "error" in msg:
                     raise RuntimeError(f"session/prompt error: {msg['error']}")
-            if pin_session_ready_to_leave(reply):
+            if pin_session_ready_to_leave(
+                reply,
+                tool_events=self._tool_events,
+                work_tools=self._work_tools,
+            ):
                 return self._return_prompt_stream(rid, fut, reply, accepted=pin_session)
             if pin_session:
                 started_turn = bool(
@@ -683,17 +775,23 @@ class AcpClient:
                             raise RuntimeError(
                                 f"session/prompt error: {msg['error']}"
                             )
-                    if pin_session_ready_to_leave(reply):
+                    if pin_session_ready_to_leave(
+                        reply,
+                        tool_events=self._tool_events,
+                        work_tools=self._work_tools,
+                    ):
                         return self._return_prompt_stream(
                             rid, fut, reply, accepted=True
                         )
                 if stream_is_hangup_only(reply, tool_events=self._tool_events):
                     self._pending.pop(rid, None)
                     raise asyncio.TimeoutError()
-                if fut.done() and seat_produced_work(
-                    reply, tool_events=self._tool_events
+                if fut.done() and pin_session_ready_to_leave(
+                    reply,
+                    tool_events=self._tool_events,
+                    work_tools=self._work_tools,
                 ):
-                    return self._return_prompt_stream(rid, fut, reply, accepted=False)
+                    return self._return_prompt_stream(rid, fut, reply, accepted=True)
                 self._pending.pop(rid, None)
                 raise asyncio.TimeoutError()
             if seat_produced_work(reply, tool_events=self._tool_events):
@@ -724,9 +822,32 @@ class AcpClient:
         *,
         accepted: bool,
     ) -> str:
+        """Finish a prompt wait. Pin-session leftover harvest is not a leave.
+
+        accepted=True plus keep-alive chatter or leftover harvest must not
+        set _prompt_accepted / HANDOFF. Only this-prompt STATUS or a
+        this-prompt real work tool.
+        """
+        ready = pin_session_ready_to_leave(
+            reply,
+            tool_events=self._tool_events,
+            work_tools=self._work_tools,
+        )
+        leftover_work = seat_produced_work(reply, tool_events=self._tool_events)
+        if self._pin_wait:
+            if not ready:
+                return reply
+            if accepted:
+                self._prompt_accepted = True
+            if leftover_work and not fut.done():
+                self._harvested_early = True
+                self._pending.pop(rid, None)
+            elif not fut.done():
+                self._pending.pop(rid, None)
+            return reply
         if accepted:
             self._prompt_accepted = True
-        if seat_produced_work(reply, tool_events=self._tool_events) and not fut.done():
+        if leftover_work and not fut.done():
             self._harvested_early = True
             self._pending.pop(rid, None)
         elif accepted and not fut.done():
@@ -861,7 +982,11 @@ async def inject(
                         evidence="hangup-only-streak",
                     )
                     return 1
-                if pin_session_ready_to_leave(reply):
+                if pin_session_ready_to_leave(
+                    reply,
+                    tool_events=int(getattr(client, "_tool_events", 0) or 0),
+                    work_tools=int(getattr(client, "_work_tools", 0) or 0),
+                ):
                     harvested_early = True
                     client._prompt_accepted = True
                 elif started_turn:
@@ -930,11 +1055,16 @@ async def inject(
                 f"ACP_INJECT_RESULT_HARVEST seat={seat} session={session_id}",
                 flush=True,
             )
-        if pin_session and getattr(client, "_prompt_accepted", False):
-            print(
-                f"ACP_INJECT_HANDOFF seat={seat} session={session_id}",
-                flush=True,
+        if pin_session:
+            reason = pin_session_handoff_reason(
+                reply,
+                work_tools=int(getattr(client, "_work_tools", 0) or 0),
             )
+            if reason in ("status", "work"):
+                print(
+                    f"ACP_INJECT_HANDOFF seat={seat} session={session_id} reason={reason}",
+                    flush=True,
+                )
         print(
             f"ACP_INJECT_OK seat={seat} session={session_id} reused={int(reused)} chars={len(reply)}",
             flush=True,
@@ -974,11 +1104,15 @@ def main() -> int:
         action="store_true",
         help=(
             "GROW wake: session/load the pinned id (or session/new once if "
-            "missing). Stay on the websocket until STATUS/work or "
-            "session/prompt RPC completes. Do not HANDOFF on silence, "
-            "queue/changed, or first tool. After N no-accept/hangup fails "
-            "on the same id, one session/new (dead session). Disconnect "
-            "without session/cancel after a true HANDOFF."
+            "missing). Stay on the websocket until this-prompt STATUS, "
+            "a this-prompt work tool (taskboard / send.sh / "
+            "launch-cloud-extra-high), or session/prompt RPC completes "
+            "with STATUS. Do not HANDOFF on keep-alive chatter, "
+            "silence, queue/changed, leftover harvest, or first "
+            "generic tool. HANDOFF reason=status|work only. After N "
+            "no-accept/hangup fails on the same id, one session/new "
+            "(dead session). Disconnect without session/cancel after a "
+            "true HANDOFF."
         ),
     )
     args = parser.parse_args()
