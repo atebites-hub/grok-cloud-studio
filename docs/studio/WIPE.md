@@ -12,15 +12,24 @@ the README quick start. This page is the Palemon-floor path.
 One-command deploy and teardown:
 
 ```bash
-./setup.sh      # idempotent: env, install, board, bus (NO --daemons), doctor
-./cleanup.sh    # soft: stop bus + board processes only
+./setup.sh           # idempotent: env, install, board, bus (NO --daemons), doctor, health_check
+./cleanup.sh         # soft: stop bus + board processes only
+./health_check.sh    # LIVE probes; HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN (exit 0/1/2)
+./recover.sh         # restart only what is down; print RECOVER_OK; re-run health_check
 ```
 
-`setup.sh` / `cleanup.sh` are the DR entrypoints. Steps below are what they
-do (and the fallback if you need to run a piece by hand). Default cleanup
-does not delete `studio.env`, `.env`, grok login, Cursor login, inboxes, or
-pins. `CLEANUP_WIPE_STATE=1 ./cleanup.sh` also stops daemons, then wipes
-inboxes, mind pins, and `taskboard.db` (warning printed). `studio.env` is kept.
+`setup.sh` / `cleanup.sh` are the deploy/teardown entrypoints.
+`health_check.sh` + `recover.sh` are the **DR loop** once the box is supposed
+to be up: probe live hub `/health`, taskboard `:3010`, mcp-http `:3011`, and
+each `GCS_MIND_SEATS` mind pid; restart only the down pieces via
+`start-studio-bus.sh start` (NO `--daemons`), `start-taskboard.sh start`, and
+`mcp-http.sh start`. Do not remint sessions. Do not wipe state. Do not launch
+Cursor Cloud. Tailscale missing is WARN, not FAIL.
+
+Default cleanup does not delete `studio.env`, `.env`, grok login, Cursor
+login, inboxes, or pins. `CLEANUP_WIPE_STATE=1 ./cleanup.sh` also stops
+daemons, then wipes inboxes, mind pins, and `taskboard.db` (warning printed).
+`studio.env` is kept. `recover.sh` never deletes `studio.env`.
 
 ## Recovered-studio layout (live box)
 
@@ -156,13 +165,17 @@ Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI:
    Higgsfield is grok-only, for when grok usage is back. Do not encode
    OAuth secrets. Do not fake a transfer between catalogs.
 
-10. Grok Build HTTP 402: `mind.py` already falls back to Cursor CLI
-    (`cursor-grok` or `agent --model cursor-grok-4.6-xhigh`). Not a wipe blocker.
+10. Grok Build HTTP 402: `mind.py` **switches** the persisted runner
+    (`$GCS_A2A_STATE/<seat>/mind/runner`) and retries that same mail line
+    once on Cursor CLI (`cursor-grok` or `agent --model cursor-grok-4.6-xhigh`).
+    Default `GCS_MIND_RUNNER=auto`. Forced `grok`/`cursor` does not flip.
+    Not a wipe blocker.
 
 ## Check
 
 ```bash
 ./doctor.sh
+./health_check.sh
 .venv/bin/pytest -q
 python3 scripts/secret_scan.py
 ```

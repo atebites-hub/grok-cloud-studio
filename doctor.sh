@@ -37,6 +37,8 @@ for p in \
   studio.env.example \
   setup.sh \
   cleanup.sh \
+  health_check.sh \
+  recover.sh \
   .gitmodules \
   .cursor/mcp.json \
   scripts/studio/taskboard/run-mcp.sh \
@@ -112,7 +114,7 @@ fi
 if command -v cursor-grok >/dev/null 2>&1 || command -v agent >/dev/null 2>&1; then
   ok "Cursor Agent CLI (agent/cursor-grok) on PATH"
 else
-  printf 'WARN agent/cursor-grok not on PATH (mind 402 fallback + Extra High host CLI; see docs/studio/WIPE.md)\n'
+  printf 'WARN agent/cursor-grok not on PATH (mind runner switch + Extra High host CLI; see docs/studio/WIPE.md)\n'
 fi
 
 if command -v taskboard >/dev/null 2>&1 || [[ -x "$ROOT/bin/taskboard" ]]; then

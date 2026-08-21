@@ -39,6 +39,8 @@ chmod +x \
   "$ROOT/doctor.sh" \
   "$ROOT/setup.sh" \
   "$ROOT/cleanup.sh" \
+  "$ROOT/health_check.sh" \
+  "$ROOT/recover.sh" \
   "$ROOT"/scripts/*.sh \
   "$ROOT"/scripts/a2a/*.sh \
   "$ROOT"/scripts/cloud/*.sh \
@@ -64,7 +66,7 @@ else
 fi
 
 echo "install ok — run ./doctor.sh then .venv/bin/pytest -q"
-echo "DR: ./setup.sh (deploy) and ./cleanup.sh (teardown); docs/studio/WIPE.md"
+echo "DR: ./setup.sh (deploy) and ./cleanup.sh (teardown); ./health_check.sh / ./recover.sh; docs/studio/WIPE.md"
 echo "A2A: scripts/a2a/start-studio-bus.sh (hub+dispatch+bot-bridge+shepherd); GROW: start --daemons"
 echo "Mind: GCS_MIND_SEATS from studio.env (docs/studio/MIND.md); Palemon wipe: docs/studio/WIPE.md"
 echo "Board: scripts/studio/taskboard/ (install-taskboard.sh is documented, not run here)"

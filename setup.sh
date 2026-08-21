@@ -26,6 +26,7 @@ One-command deploy (idempotent). Disaster recovery entrypoint with cleanup.sh.
   6. Start scripts/a2a/start-studio-bus.sh start   (NO --daemons)
   7. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if Agent Kanban returns)
   8. Print SETUP_OK with hub/board ports and mind seat list.
+  9. Run ./health_check.sh (HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN).
 
 Never auto-spawn a 13-seat grok serve floor. Do not pass --daemons.
 GCS_ACP_SEATS comes from env (studio.env) only; this script does not set it.
@@ -36,6 +37,7 @@ Optional skips (already-bootstrapped box / tests):
   GCS_SETUP_SKIP_SUBMODULE=1  skip git submodule update --init
   GCS_SETUP_SKIP_START=1      skip taskboard install/start and bus start
   GCS_SETUP_SKIP_DOCTOR=1     skip ./doctor.sh
+  GCS_SETUP_SKIP_HEALTH=1     skip ./health_check.sh (implied by SKIP_START)
 EOF
 }
 
@@ -102,3 +104,9 @@ MCP_HOST="${GCS_TASKBOARD_MCP_HOST:-127.0.0.1}"
 MCP_PORT="${GCS_TASKBOARD_MCP_PORT:-3011}"
 seats="$(python3 "$ROOT/scripts/a2a/lib.py" mind-seats 2>/dev/null | paste -sd, - || true)"
 echo "SETUP_OK hub=http://127.0.0.1:${HUB_PORT} board_ui=http://${UI_HOST}:${UI_PORT} board_mcp=http://${MCP_HOST}:${MCP_PORT}/mcp mind_seats=${seats:-none}"
+
+if [[ "${GCS_SETUP_SKIP_HEALTH:-0}" == "1" || "${GCS_SETUP_SKIP_START:-0}" == "1" ]]; then
+  echo "SETUP_HEALTH_SKIP"
+else
+  bash "$ROOT/health_check.sh"
+fi
