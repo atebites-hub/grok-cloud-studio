@@ -74,12 +74,22 @@ def normalize_seat(seat: str) -> str:
 
 
 def canonical_seat(seat: str, root: Path | None = None) -> str:
-    """Map aliases onto the registry seat name (studio-ops → ops)."""
+    """Map aliases onto a registry seat name when the token is missing.
+
+    First-class registry names win. `studio-ops` / `floor-ops` stay themselves
+    when present; they only fold onto `ops` / `floor` on extract registries
+    that still ship the short names.
+    """
     key = normalize_seat(seat)
     entries = _seat_entries(root)
     if key in entries:
         return key
-    aliases = {"studio-ops": "ops", "ops": "studio-ops"}
+    aliases = {
+        "studio-ops": "ops",
+        "ops": "studio-ops",
+        "floor-ops": "floor",
+        "floor": "floor-ops",
+    }
     alt = aliases.get(key)
     if alt and alt in entries:
         return alt
@@ -106,8 +116,9 @@ def grow_seats(root: Path | None = None) -> frozenset[str]:
 def mind_seats(root: Path | None = None) -> frozenset[str]:
     """Opt-in Grok Build mind seats (GCS_MIND_SEATS, default empty).
 
-    Example: GCS_MIND_SEATS=floor,ops. skipSeats (orchestrator, donald) never
-    join this set. Unknown names are ignored.
+    Example: GCS_MIND_SEATS=floor,ops. Palemon-floor wipe uses the eight
+    first-class seats in studio.env.example. skipSeats (orchestrator, donald)
+    never join this set. Names missing from the registry are ignored.
     """
     raw = env_first("GCS_MIND_SEATS")
     if not raw:

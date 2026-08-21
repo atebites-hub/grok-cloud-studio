@@ -26,8 +26,9 @@ GCS_ACP_SEATS=floor,studio-ops
 GROK_USE_LEADER=0
 ```
 
-The GCS example registry names the ops seat `ops`. Bus/dispatch treat
-`studio-ops` as an alias for `ops` when `ops` is in `launch-seats`.
+The GCS example registry still ships `ops` for generic extracts. Palemon-floor
+`studio-ops` is first-class (port 8752). Aliases apply only when the requested
+name is missing from the registry.
 
 - `GCS_ACP_SEATS` caps which seats the bus starts **and** which seats
   `dispatch.py` may auto-respawn. Crash recovery must never bring back the

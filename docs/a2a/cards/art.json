@@ -1,6 +1,6 @@
 {
-  "name": "Systems",
-  "description": "Server sim, schemas, and math. Spawns own Extra High.",
+  "name": "Art",
+  "description": "In-repo art plus Higgsfield wiring. Spawns own Extra High. No OAuth thrash. Donald liaison only.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -22,11 +22,11 @@
   ],
   "skills": [
     {
-      "id": "systems",
-      "name": "Systems",
-      "description": "Server sim, schemas, and math. Spawns own Extra High.",
+      "id": "art",
+      "name": "Art",
+      "description": "In-repo art plus Higgsfield wiring. Spawns own Extra High. No OAuth thrash. Donald liaison only.",
       "tags": [
-        "systems",
+        "art",
         "gcs",
         "a2a"
       ]
@@ -34,7 +34,7 @@
   ],
   "supportedInterfaces": [
     {
-      "url": "http://127.0.0.1:8732/a2a/systems",
+      "url": "http://127.0.0.1:8732/a2a/art",
       "protocolBinding": "HTTP+JSON",
       "protocolVersion": "1.0"
     }

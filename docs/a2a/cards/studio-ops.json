@@ -1,6 +1,6 @@
 {
   "name": "Studio Ops",
-  "description": "Bus health, A2A wake, Extra High launch orchestration, QA merge parity.",
+  "description": "First-class studio-ops seat. Bus health, A2A wake, Extra High orchestration, QA merge parity.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -24,7 +24,7 @@
     {
       "id": "studio-ops",
       "name": "Studio Ops",
-      "description": "Bus health, A2A wake, Extra High launch orchestration, QA merge parity.",
+      "description": "First-class studio-ops seat. Bus health, A2A wake, Extra High orchestration, QA merge parity.",
       "tags": [
         "studio-ops",
         "gcs",
