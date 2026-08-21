@@ -83,6 +83,8 @@ def test_agent_kanban_tree_absent() -> None:
 def test_wipe_kit_files_exist() -> None:
     for path in (
         WIPE,
+        REPO / "setup.sh",
+        REPO / "cleanup.sh",
         STUDIO_ENV_EXAMPLE,
         START_TB,
         MCP_HTTP,
@@ -120,6 +122,8 @@ def test_readme_points_at_wipe() -> None:
     assert "WIPE.md" in text
     assert "Palemon studio wipe" in text or "studio wipe" in text.lower()
     assert "start-studio-bus.sh start" in text
+    assert "setup.sh" in text
+    assert "cleanup.sh" in text
     assert PRIVATE_GAME not in text
 
 
@@ -286,6 +290,8 @@ def test_wipe_doc_has_host_bootstrap_steps() -> None:
     assert "TAILSCALE" in text or "tailscale" in text
     assert PRIVATE_GAME not in text
     assert "CURSOR_API_KEY" in text
+    assert "setup.sh" in text
+    assert "cleanup.sh" in text
 
 
 def test_install_taskboard_uses_brew_or_release_tarball_not_compile() -> None:
