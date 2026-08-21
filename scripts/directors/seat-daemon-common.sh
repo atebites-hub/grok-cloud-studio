@@ -15,9 +15,10 @@ export GCS_A2A_STATE="$STATE_DIR"
 GCS_TASKBOARD_DB="${GCS_TASKBOARD_DB:-${TASKBOARD_DB:-$STATE_DIR/taskboard/taskboard.db}}"
 export GCS_TASKBOARD_DB
 export TASKBOARD_DB="$GCS_TASKBOARD_DB"
-PROMPTS_DIR="${GCS_PROMPT_DIR:-$ROOT/prompts}"
 FOOTER="$SCRIPT_DIR/common_footer.txt"
 LIB_PY="$ROOT/scripts/a2a/lib.py"
+# shellcheck source=prompt-dir.sh
+source "$SCRIPT_DIR/prompt-dir.sh"
 
 mapfile -t LAUNCH_SEATS < <(python3 "$LIB_PY" launch-seats)
 
@@ -371,10 +372,10 @@ write_agent_profile() {
   local sd stem prompt_file profile
   sd="$(seat_state_dir "$seat")"
   stem="$(seat_prompt_stem "$seat")"
-  prompt_file="$PROMPTS_DIR/${stem}_director_prompt.txt"
+  prompt_file="$(gcs_resolve_prompt_file "$seat" || true)"
   profile="$sd/agent-profile.md"
-  if [[ ! -f "$prompt_file" ]]; then
-    echo "missing prompt: $prompt_file" >&2
+  if [[ -z "$prompt_file" || ! -f "$prompt_file" ]]; then
+    echo "missing prompt: $PROMPTS_DIR/${stem}_director_prompt.txt" >&2
     return 1
   fi
   if [[ ! -f "$FOOTER" ]]; then

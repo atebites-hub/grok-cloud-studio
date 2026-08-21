@@ -58,6 +58,7 @@ See `.env.example`. Prefix is **`GCS_*`**. Important:
 - `GCS_BOT_SEAT` — default `orchestrator` (`donald` still works; kept in `skipSeats` for back-compat)
 - `GCS_BOT_BIND_OPTIONAL=1` — doctor will not FAIL on placeholder agentId (CI clones only)
 - `GCS_CLOUD_REF` — default `main`
+- `GCS_PROMPT_DIR` — director prompts dir; empty uses `prompts/` or `docs/studio/directors`
 - `GCS_SPAWN_WAITER=0` — disable the detached waiter (tests)
 - `GCS_WEBHOOK_SECRET` — enable signed webhook receiver
 - `CURSOR_API_KEY` — never print; never commit

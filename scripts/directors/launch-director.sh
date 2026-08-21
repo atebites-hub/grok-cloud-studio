@@ -11,9 +11,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${GCS_ROOT:-$SCRIPT_DIR/../..}" && pwd)"
 export GCS_ROOT="$ROOT"
-PROMPTS_DIR="${GCS_PROMPT_DIR:-$ROOT/prompts}"
 FOOTER="$SCRIPT_DIR/common_footer.txt"
 LIB_PY="$ROOT/scripts/a2a/lib.py"
+# shellcheck source=prompt-dir.sh
+source "$SCRIPT_DIR/prompt-dir.sh"
 
 usage() {
   local seats
@@ -66,10 +67,10 @@ fi
 
 export GCS_DIRECTOR_SEAT="$SEAT"
 STEM="${SEAT//-/_}"
-PROMPT_FILE="$PROMPTS_DIR/${STEM}_director_prompt.txt"
+PROMPT_FILE="$(gcs_resolve_prompt_file "$SEAT" || true)"
 
-if [[ ! -f "$PROMPT_FILE" ]]; then
-  echo "missing prompt: $PROMPT_FILE" >&2
+if [[ -z "$PROMPT_FILE" || ! -f "$PROMPT_FILE" ]]; then
+  echo "missing prompt: $PROMPTS_DIR/${STEM}_director_prompt.txt" >&2
   exit 1
 fi
 if [[ ! -f "$FOOTER" ]]; then
