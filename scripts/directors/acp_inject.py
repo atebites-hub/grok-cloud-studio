@@ -10,8 +10,9 @@ Reads .a2a-state/<seat>/{acp.url,acp.secret,acp.session}.
 Persists session id after session/new. Prefer session/load on later injects.
 
 GROW `--pin-session`: stay on the websocket until this-prompt STATUS,
-a this-prompt real work tool (taskboard ticket, send.sh,
-launch-cloud-extra-high), or session/prompt RPC completes with STATUS.
+a this-prompt real work tool (ticket move|create / tb move|create,
+send.sh / a2a message send, launch-cloud-extra-high), or
+session/prompt RPC completes with STATUS.
 Do not HANDOFF on keep-alive chatter (len>=40 acknowledgements),
 leftover harvest (queue + leftover tools + short text), queue/changed,
 RESULT-only, or first generic tool. Disconnecting there kills the
@@ -66,11 +67,24 @@ _RESULT_LINE_RE = re.compile(
 _STATUS_LINE_RE = re.compile(r"^STATUS\b", re.MULTILINE)
 _PONG_ONLY_RE = re.compile(r"^\s*(PONG|pong|ok|OK)\s*$")
 _WORK_UPDATES = frozenset({"tool_call", "tool_call_update", "agent_thought_chunk"})
-# This-prompt Director work — not leftover read/search, not keep-alive chatter.
+# Inspect-only tools. list_dir / read / grep of a path (including one
+# containing "taskboard") is not a this-prompt mutation.
+_INSPECT_TOOL_NAMES = frozenset({"list_dir", "listdir", "read", "grep"})
+_INSPECT_TOOL_KINDS = frozenset({"read", "search"})
+# This-prompt Director mutations — ticket/tb CLI, send.sh / A2A message:send,
+# launch-cloud. Not leftover read/search, not keep-alive chatter, not the
+# word "taskboard" in a path or cwd.
 _WORK_TOOL_RE = re.compile(
-    r"(?:taskboard|tcarac/taskboard|send\.sh|a2a_send|"
-    r"launch-cloud-extra-high|cloud_launch|"
-    r"\btb\s+(?:move|comment|create|show|update)\b)",
+    r"(?:"
+    r"\bticket\s+(?:move|create)\b|"
+    r"\btb\s+(?:move|create)\b|"
+    r"send\.sh|"
+    r"a2a_send|"
+    r"message:send|"
+    r"\ba2a\s+message\s+send\b|"
+    r"launch-cloud-extra-high|"
+    r"cloud_launch"
+    r")",
     re.IGNORECASE,
 )
 
@@ -152,16 +166,38 @@ def _tool_update_blob(update: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def is_this_prompt_work_tool(update: dict[str, Any] | None) -> bool:
-    """True for a new tool_call that is taskboard / send.sh / launch-cloud.
+def _is_inspect_only_tool(update: dict[str, Any]) -> bool:
+    """True for list_dir / read / grep (and ACP kind read|search)."""
+    kind = str(update.get("kind") or "").strip().lower()
+    if kind in _INSPECT_TOOL_KINDS:
+        return True
+    for key in ("name", "toolName", "title"):
+        raw = update.get(key)
+        if not isinstance(raw, str):
+            continue
+        token = raw.strip().split()[0] if raw.strip() else ""
+        if not token:
+            continue
+        token = token.replace("-", "_").lower()
+        if token in _INSPECT_TOOL_NAMES:
+            return True
+    return False
 
-    Leftover tool_call_update completions and generic read/search tools are
-    not this-prompt work. Keep-alive assistant text is not a tool.
+
+def is_this_prompt_work_tool(update: dict[str, Any] | None) -> bool:
+    """True for a new tool_call that mutates the board or pings/launches.
+
+    Matches ticket move|create, tb move|create, send.sh / a2a message send,
+    and launch-cloud-extra-high. Leftover tool_call_update, list_dir/read/grep,
+    and a path containing the word taskboard are not this-prompt work.
+    Keep-alive assistant text is not a tool.
     """
     if not isinstance(update, dict):
         return False
     kind = str(update.get("sessionUpdate") or "")
     if kind != "tool_call":
+        return False
+    if _is_inspect_only_tool(update):
         return False
     return bool(_WORK_TOOL_RE.search(_tool_update_blob(update)))
 
@@ -692,7 +728,7 @@ class AcpClient:
         """Wait for work/STATUS (leftover) or pin-session STATUS/work-tool/RPC.
 
         Pin-session stays on the websocket until this-prompt STATUS, a
-        this-prompt real work tool (taskboard / send.sh / launch-cloud),
+        this-prompt real work tool (ticket/tb CLI / send.sh / launch-cloud),
         session/prompt RPC completes with STATUS, or timeout. Keep-alive
         chatter, leftover harvest, queue, and first generic tool are not
         HANDOFF. Nack-window silence is not a start. RESULT-only is not
@@ -1105,8 +1141,8 @@ def main() -> int:
         help=(
             "GROW wake: session/load the pinned id (or session/new once if "
             "missing). Stay on the websocket until this-prompt STATUS, "
-            "a this-prompt work tool (taskboard / send.sh / "
-            "launch-cloud-extra-high), or session/prompt RPC completes "
+            "a this-prompt work tool (ticket move|create / tb move|create / "
+            "send.sh / launch-cloud-extra-high), or session/prompt RPC completes "
             "with STATUS. Do not HANDOFF on keep-alive chatter, "
             "silence, queue/changed, leftover harvest, or first "
             "generic tool. HANDOFF reason=status|work only. After N "
