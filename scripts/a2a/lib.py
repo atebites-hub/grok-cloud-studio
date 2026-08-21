@@ -103,6 +103,30 @@ def grow_seats(root: Path | None = None) -> frozenset[str]:
     return frozenset(s for s in seats if s and s not in skipped)
 
 
+def mind_seats(root: Path | None = None) -> frozenset[str]:
+    """Opt-in Grok Build mind seats (GCS_MIND_SEATS, default empty).
+
+    Example: GCS_MIND_SEATS=floor,ops. skipSeats (orchestrator, donald) never
+    join this set. Unknown names are ignored.
+    """
+    raw = env_first("GCS_MIND_SEATS")
+    if not raw:
+        return frozenset()
+    skipped = skip_seats(root)
+    known = set(_seat_entries(root))
+    out: set[str] = set()
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        key = canonical_seat(token, root)
+        if not key or key in skipped:
+            continue
+        if key in known:
+            out.add(key)
+    return frozenset(out)
+
+
 def _seat_entries(root: Path | None = None) -> dict[str, dict[str, Any]]:
     raw = load_registry(root).get("seats") or {}
     out: dict[str, dict[str, Any]] = {}
@@ -363,7 +387,7 @@ def ensure_prompt_links(root: Path | None = None) -> list[Path]:
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print(
-            "usage: lib.py <launch-seats|skip-seats|grow-seats|port SEAT|"
+            "usage: lib.py <launch-seats|skip-seats|grow-seats|mind-seats|port SEAT|"
             "normalize SEAT|canonical SEAT|root|state|registry|cloud-repo|"
             "cloud-ref|prompts-dir|prompt-file SEAT|ensure-prompts>",
             file=sys.stderr,
@@ -378,6 +402,9 @@ def main(argv: list[str]) -> int:
         return 0
     if cmd == "grow-seats":
         print("\n".join(sorted(grow_seats())))
+        return 0
+    if cmd == "mind-seats":
+        print("\n".join(sorted(mind_seats())))
         return 0
     if cmd == "port":
         if len(argv) < 2:

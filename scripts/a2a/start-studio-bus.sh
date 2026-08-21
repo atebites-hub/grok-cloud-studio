@@ -5,6 +5,10 @@
 #
 # GROW: one `grok agent serve` per opted-in seat plus seat-wake-loop.sh →
 # wake-daemon.py (inbox.jsonl → ACP session/prompt inside that serve pid).
+# Opt-in Grok Build mind (GCS_MIND_SEATS, default empty, example floor,ops):
+# seat-mind-loop.sh → mind.py (inbox → grok -p --resume pinned session). Mind is
+# the GROW path when opted in; ACP wake is skipped for those seats unless
+# GCS_MIND_PLUS_ACP_WAKE=1 (in addition). Do not kill existing serve.
 # NOT grok --resume. NOT leftover dispatch as the GROW peer-mail path.
 # Host ticker enqueues ACP_PING STATUS/CONTINUE keep-alives (work turns).
 # Agent Kanban / `ak` was removed. Board is tcarac/taskboard (ticket CLI + HTTP /mcp).
@@ -39,6 +43,7 @@ START_DAEMON="$ROOT/scripts/directors/start-seat-daemon.sh"
 STOP_DAEMON="$ROOT/scripts/directors/stop-seat-daemon.sh"
 STATUS_DAEMON="$ROOT/scripts/directors/status-seat-daemon.sh"
 WAKE_LOOP="$ROOT/scripts/directors/seat-wake-loop.sh"
+MIND_LOOP="$ROOT/scripts/directors/seat-mind-loop.sh"
 TICKER_PY="$SCRIPT_DIR/host-ticker.py"
 TICKER_PID_FILE="$STATE_DIR/host-ticker.pid"
 TICKER_LOG="$STATE_DIR/host-ticker.log"
@@ -64,18 +69,21 @@ Usage: start-studio-bus.sh [start|stop|status] [--daemons]
 
 start            hub + dispatch + fleet-shepherd (idempotent)
 start --daemons  also start per-seat ACP daemons + GROW wake loops + host ticker
-stop             stop hub/dispatch/shepherd/wake/ticker (leaves seat serve)
+stop             stop hub/dispatch/shepherd/wake/mind/ticker (leaves seat serve)
 stop --daemons   also stop seat ACP daemons and clear daemons.enabled
-status           print bus + optional daemon / wake / ticker flag
+status           print bus + optional daemon / wake / mind / ticker flag
 
 GROW mail path: seat-wake-loop.sh → wake-daemon.py → seat-prompt-acp.sh
 (session/prompt inside grok agent serve). Dispatch does not own GROW inboxes.
+Opt-in mind (GCS_MIND_SEATS, example floor,ops): seat-mind-loop.sh → mind.py.
+Mind replaces ACP wake for those seats (set GCS_MIND_PLUS_ACP_WAKE=1 to run
+ACP wake in addition). Do not kill existing grok agent serve.
 Host ticker enqueues ACP_PING STATUS/CONTINUE work turns (not PONG, not LAUNCH).
 Board is tcarac/taskboard. Agent Kanban was removed; do not reconnect `ak`.
 
 Opt-in without the flag: GCS_START_SEAT_DAEMONS=1
 Do not spawn a grok agent process per seat by surprise; daemons are explicit.
-See docs/ARCHITECTURE.md and docs/A2A.md.
+See docs/ARCHITECTURE.md, docs/A2A.md, and docs/studio/MIND.md.
 EOF
 }
 
@@ -131,6 +139,19 @@ wake_seats() {
   acp_seats
 }
 
+mind_seats() {
+  python3 "$LIB_PY" mind-seats 2>/dev/null || true
+}
+
+is_mind_seat() {
+  local seat="$1" s
+  while read -r s; do
+    [[ -z "$s" ]] && continue
+    [[ "$s" == "$seat" ]] && return 0
+  done < <(mind_seats)
+  return 1
+}
+
 want_daemons() {
   [[ "${WITH_DAEMONS:-0}" == "1" ]] && return 0
   [[ "${GCS_START_SEAT_DAEMONS:-0}" == "1" ]] && return 0
@@ -166,6 +187,10 @@ start_wake_daemons() {
   fi
   while read -r seat; do
     [[ -z "$seat" ]] && continue
+    if is_mind_seat "$seat" && [[ "${GCS_MIND_PLUS_ACP_WAKE:-0}" != "1" ]]; then
+      echo "STUDIO_BUS_WAKE_SKIP seat=$seat reason=mind-owns-inbox (GCS_MIND_PLUS_ACP_WAKE=1 to also start ACP wake)"
+      continue
+    fi
     mkdir -p "$STATE_DIR/$seat"
     pidfile="$STATE_DIR/$seat/wake.pid"
     pid="$(read_pid "$pidfile")"
@@ -178,6 +203,65 @@ start_wake_daemons() {
     echo $! >"$pidfile"
     echo "STUDIO_BUS_WAKE_START seat=$seat pid=$(read_pid "$pidfile") log=$STATE_DIR/$seat/wake.log mode=acp-serve"
   done < <(wake_seats)
+}
+
+start_mind_daemons() {
+  local seat pid pidfile
+  if [[ ! -f "$MIND_LOOP" ]]; then
+    echo "STUDIO_BUS_MIND_SKIP missing $MIND_LOOP" >&2
+    return 0
+  fi
+  while read -r seat; do
+    [[ -z "$seat" ]] && continue
+    mkdir -p "$STATE_DIR/$seat/mind"
+    pidfile="$STATE_DIR/$seat/mind/pid"
+    pid="$(read_pid "$pidfile")"
+    if pid_alive "$pid"; then
+      echo "STUDIO_BUS_MIND_ALREADY seat=$seat pid=$pid"
+      continue
+    fi
+    rm -f "$pidfile"
+    nohup bash "$MIND_LOOP" "$seat" >>"$STATE_DIR/$seat/mind/mind.log" 2>&1 &
+    echo $! >"$pidfile"
+    echo "STUDIO_BUS_MIND_START seat=$seat pid=$(read_pid "$pidfile") log=$STATE_DIR/$seat/mind/mind.log mode=grok-build-mind"
+  done < <(mind_seats)
+}
+
+stop_mind_daemons() {
+  local seat pid pidfile
+  while read -r seat; do
+    [[ -z "$seat" ]] && continue
+    pidfile="$STATE_DIR/$seat/mind/pid"
+    pid="$(read_pid "$pidfile")"
+    if pid_alive "$pid"; then
+      kill "$pid" 2>/dev/null || true
+      for _ in 1 2 3 4 5; do
+        pid_alive "$pid" || break
+        sleep 0.2
+      done
+      if pid_alive "$pid"; then
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+      echo "STUDIO_BUS_MIND_STOP seat=$seat pid=$pid"
+    fi
+    rm -f "$pidfile"
+  done < <(mind_seats)
+}
+
+status_mind_daemons() {
+  local seat up=0 down=0 pid
+  while read -r seat; do
+    [[ -z "$seat" ]] && continue
+    pid="$(read_pid "$STATE_DIR/$seat/mind/pid")"
+    if pid_alive "$pid"; then
+      echo "STUDIO_BUS_MIND_STATUS seat=$seat up pid=$pid"
+      up=$((up + 1))
+    else
+      echo "STUDIO_BUS_MIND_STATUS seat=$seat down pid=${pid:-none}"
+      down=$((down + 1))
+    fi
+  done < <(mind_seats)
+  echo "STUDIO_BUS_MIND_SUMMARY up=$up down=$down"
 }
 
 stop_wake_daemons() {
@@ -421,6 +505,7 @@ case "$cmd" in
       fi
     fi
 
+    start_mind_daemons
     if want_daemons; then
       start_seat_daemons
     else
@@ -432,6 +517,7 @@ case "$cmd" in
 
   stop)
     stop_wake_daemons
+    stop_mind_daemons
     stop_host_ticker
     hub_pid="$(read_pid "$HUB_PID_FILE")"
     disp_pid="$(read_pid "$DISPATCH_PID_FILE")"
@@ -526,6 +612,7 @@ case "$cmd" in
     daemon_flag="off"
     [[ -f "$DAEMONS_FLAG" ]] && daemon_flag="on"
     echo "STUDIO_BUS_STATUS hub=$hub_state pid=${hub_pid:-none} dispatch=$disp_state pid=${disp_pid:-none} shepherd=$shep_state pid=${shep_pid:-none} bot_bridge=$bridge_state pid=${bridge_pid:-none} daemons=$daemon_flag state=$STATE_DIR"
+    status_mind_daemons || true
     if [[ "$daemon_flag" == "on" ]] || want_daemons; then
       status_seat_daemons || true
     fi

@@ -9,7 +9,8 @@ Grok Cloud Studio is a **local control plane**:
 ```
 send.sh → hub.py (ack + inbox JSONL)
             ↓
-        wake-daemon.py  → seat-prompt-acp.sh --pin-session  (GROW seats)
+        mind.py         → grok -p --resume pinned UUID   (GCS_MIND_SEATS)
+        wake-daemon.py  → seat-prompt-acp.sh --pin-session  (GROW seats, leftover)
         dispatch.py     → leftover acp_inject.py            (non-GROW only)
                         → launch-director.sh  (one-shot -p fallback)
 
@@ -34,7 +35,7 @@ Stdlib HTTP+JSON (`scripts/a2a/hub.py`):
 
 Default bind `127.0.0.1:8732`. Cards live in `docs/a2a/cards/`. Seats and ACP ports live in `docs/a2a/registry.json` (`scripts/a2a/lib.py` is the source of truth).
 
-`scripts/a2a/start-studio-bus.sh` starts hub + leftover dispatch + bot-bridge + fleet-shepherd. Pass `--daemons` (or `GCS_START_SEAT_DAEMONS=1`) to also start per-seat `grok agent serve` for seats in `GCS_ACP_SEATS` (default `floor,studio-ops` — not the full registry), GROW `seat-wake-loop.sh` / `wake-daemon.py`, and `host-ticker.py`. Daemons are **opt-in** so a bus start does not surprise-spawn grok processes. Agent Kanban was removed; the board is tcarac/taskboard (`docs/studio/TASKBOARD.md`).
+`scripts/a2a/start-studio-bus.sh` starts hub + leftover dispatch + bot-bridge + fleet-shepherd. Pass `--daemons` (or `GCS_START_SEAT_DAEMONS=1`) to also start per-seat `grok agent serve` for seats in `GCS_ACP_SEATS` (default `floor,studio-ops` — not the full registry), GROW `seat-wake-loop.sh` / `wake-daemon.py`, and `host-ticker.py`. Set `GCS_MIND_SEATS` (example `floor,ops`) to start `seat-mind-loop.sh` / `mind.py` instead of ACP wake for those seats (`GCS_MIND_PLUS_ACP_WAKE=1` to run both). Mind does not kill existing serve. See `docs/studio/MIND.md`. Daemons are **opt-in** so a bus start does not surprise-spawn grok processes. Agent Kanban was removed; the board is tcarac/taskboard (`docs/studio/TASKBOARD.md`).
 
 Grok Bot orchestrator seats (`docs/a2a/bot-agents.json`, default seat `orchestrator`) are listed in registry `skipSeats` and are **not** ACP inject targets. Bind with `GCS_BOT_AGENT_ID` + `scripts/a2a/bind-bot-agent.sh` (also run from `install.sh`). Standing Bot routines poll `.a2a-state/<seat>/bot-wake.txt` / `bot-wake.jsonl`.
 

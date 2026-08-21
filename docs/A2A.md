@@ -14,10 +14,11 @@ Cards/registry: `docs/a2a/`. Runtime state lives in `.a2a-state/` (gitignored).
 Hub default: `http://127.0.0.1:8732` (`GCS_A2A_HUB` / `GCS_A2A_PORT`).
 Example seats: `floor`, `ops`, `cloud`, `qa-a`, `qa-b`.
 ACP / GROW cap: `GCS_ACP_SEATS` / `GCS_GROW_SEATS` (default `floor,studio-ops`; `ops` aliases `studio-ops`). Mail cannot auto-start seats outside that allowlist. `skipSeats` stay skipped. See `docs/studio/GROK_LEADER.md`.
+Opt-in mind: `GCS_MIND_SEATS` (default empty, example `floor,ops`) starts `seat-mind-loop.sh` / `mind.py`. See `docs/studio/MIND.md`.
 
-## GROW wake (Bot-equivalent host OS)
+## GROW wake (leftover host OS)
 
-xAI grok-build does not accept external PRs, so `deliver_wake()` cannot live inside `grok agent serve`. Closest Bot-equivalent host OS:
+xAI grok-build does not accept external PRs, so `deliver_wake()` cannot live inside `grok agent serve`. Closest leftover host OS (ACP inject):
 
 1. One persistent `grok agent serve` per seat (`scripts/directors/start-seat-daemon.sh`).
 2. GROW wake: `inbox.jsonl` growth → `scripts/a2a/wake-daemon.py` → `scripts/directors/seat-prompt-acp.sh` → `session/prompt` **inside that serve pid** (never `grok --resume`).
@@ -28,6 +29,10 @@ xAI grok-build does not accept external PRs, so `deliver_wake()` cannot live ins
 Dispatch **does not own GROW inboxes** (`DISPATCH_SKIP reason=wake-owns-inbox`). A live `wake.pid` also skips leftover inject. Do **not** advance `dispatch.offset` on those skips (wake consumes `wake.offset`).
 
 Non-GROW seats may still use leftover `acp_inject.py` (no `--pin-session`).
+
+## Seat mind (Bot-equivalent)
+
+`GCS_MIND_SEATS` (default empty, example `floor,ops`) starts `scripts/directors/seat-mind-loop.sh` → `scripts/directors/mind.py`. Python is mailbox + pin + stay-up: inbox growth → one `grok -p --resume` (first turn `--session-id`) of a UUID in `$GCS_A2A_STATE/<seat>/mind/session` → persist `transcript.jsonl` / `offset` (offset only on grok exit 0). Grok is the agent for that turn (`--plugin-dir plugins/studio-mind`). No ACP WebSocket, no `session/prompt`, no leftover pin-session. Mind is the GROW path when opted in; ACP wake is skipped for those seats unless `GCS_MIND_PLUS_ACP_WAKE=1`. Do not kill existing serve. `skipSeats` (orchestrator, donald) are not mind seats. See `docs/studio/MIND.md`.
 
 ## Leftover ACP / pin-session rules
 

@@ -1,0 +1,7 @@
+{
+  "name": "studio-mind",
+  "displayName": "Grok Cloud Studio mind tools",
+  "version": "1.0.0",
+  "description": "Grok --plugin-dir MCP for ticket, a2a_send, and cloud_launch. Not ACP inject.",
+  "mcpServers": "./mcp.json"
+}

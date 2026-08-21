@@ -46,7 +46,8 @@ chmod +x \
   2>/dev/null || true
 
 chmod +x "$ROOT/scripts/a2a/bot-bridge.py" "$ROOT/scripts/a2a/bind-bot-agent.sh" \
-  "$ROOT/scripts/a2a/wake-daemon.py" "$ROOT/scripts/a2a/host-ticker.py" 2>/dev/null || true
+  "$ROOT/scripts/a2a/wake-daemon.py" "$ROOT/scripts/a2a/host-ticker.py" \
+  "$ROOT/scripts/directors/mind.py" 2>/dev/null || true
 mkdir -p "$ROOT/.a2a-state"
 python3 "$ROOT/scripts/a2a/lib.py" ensure-prompts >/dev/null || true
 
@@ -60,4 +61,4 @@ fi
 
 echo "install ok — run ./doctor.sh then .venv/bin/pytest -q"
 echo "A2A: scripts/a2a/start-studio-bus.sh (hub+dispatch+bot-bridge+shepherd); GROW: start --daemons"
-echo "ACP inject timeout default 180s (GCS_ACP_INJECT_TIMEOUT); dispatch lock TTL 240s (GCS_DISPATCH_LOCK_TTL_SEC)"
+echo "Mind: GCS_MIND_SEATS=floor,ops (docs/studio/MIND.md); ACP inject timeout default 180s (GCS_ACP_INJECT_TIMEOUT); dispatch lock TTL 240s (GCS_DISPATCH_LOCK_TTL_SEC)"

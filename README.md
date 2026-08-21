@@ -8,8 +8,9 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 
 | Piece | Path |
 |---|---|
-| A2A hub / send / leftover dispatch / GROW wake / duplex / bus | `scripts/a2a/` |
-| ACP seat daemons + pin-session inject | `scripts/directors/start-seat-daemon.sh`, `acp_inject.py`, `seat-prompt-acp.sh` |
+| A2A hub / send / leftover dispatch / GROW wake / mind / duplex / bus | `scripts/a2a/`, `scripts/directors/mind.py` |
+| ACP seat daemons + pin-session inject (leftover host OS) | `scripts/directors/start-seat-daemon.sh`, `acp_inject.py`, `seat-prompt-acp.sh` |
+| Grok Build seat mind (opt-in, `GCS_MIND_SEATS`) | `scripts/directors/mind.py`, `seat-mind-loop.sh`, `docs/studio/MIND.md` |
 | Extra High SDK + bash wrappers | `scripts/cloud/sdk/`, `scripts/launch-cloud-extra-high.sh` |
 | Waiter (`run.wait` → A2A ping) | `scripts/cloud/spawn-waiter.sh`, `sdk/wait-notify.ts` |
 | Orphan fleet-shepherd | `scripts/directors/fleet-shepherd.py` |
@@ -37,6 +38,7 @@ cp .env.example .env   # fill GCS_CLOUD_REPO + GCS_BOT_AGENT_ID; never commit .e
 # Local bus (hub + leftover dispatch + bot-bridge + orphan shepherd). ACP daemons are opt-in.
 scripts/a2a/start-studio-bus.sh start
 # scripts/a2a/start-studio-bus.sh start --daemons   # grok agent serve + GROW wake + host ticker
+# GCS_MIND_SEATS=floor,ops scripts/a2a/start-studio-bus.sh start   # Grok Build mind (see docs/studio/MIND.md)
 
 scripts/a2a/send.sh orchestrator "hello from ops"
 ```
