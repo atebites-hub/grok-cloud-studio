@@ -97,6 +97,28 @@ else
   bad "secret_scan failed"
 fi
 
+# Isolated GROK_HOME does not inherit ~/.grok/config.toml. Cursor
+# ${workspaceFolder} never expands under grok serve — WARN, do not FAIL.
+STATE="${GCS_A2A_STATE:-$ROOT/.a2a-state}"
+_gcs_warn_workspace_folder_mcp() {
+  local f="$1"
+  [[ -f "$f" ]] || return 0
+  if grep -F '${workspaceFolder}' "$f" >/dev/null 2>&1; then
+    printf 'WARN seat MCP config contains ${workspaceFolder} (never expands; register stdio MCP in GROK_HOME/config.toml): %s\n' "$f"
+  fi
+}
+mcp_configs=()
+if [[ -d "$STATE" ]]; then
+  mapfile -d '' mcp_configs < <(find "$STATE" -path '*/grok-home/config.toml' -print0 2>/dev/null || true)
+fi
+for f in "${mcp_configs[@]}"; do
+  [[ -n "$f" ]] || continue
+  _gcs_warn_workspace_folder_mcp "$f"
+done
+if [[ -n "${GROK_HOME:-}" ]]; then
+  _gcs_warn_workspace_folder_mcp "${GROK_HOME}/config.toml"
+fi
+
 if [[ "$FAIL" -ne 0 ]]; then
   echo "doctor: FAIL"
   exit 1
