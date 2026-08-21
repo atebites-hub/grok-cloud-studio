@@ -380,7 +380,9 @@ def test_this_prompt_work_tool_is_not_leftover() -> None:
     }
     board = {
         "sessionUpdate": "tool_call",
-        "title": "taskboard move TB-1 in_progress",
+        "title": "bash",
+        "kind": "execute",
+        "rawInput": {"command": "ticket move PAL-1 done"},
     }
     launch = {
         "sessionUpdate": "tool_call",
@@ -399,6 +401,91 @@ def test_this_prompt_work_tool_is_not_leftover() -> None:
     assert mod.is_this_prompt_work_tool(leftover_update) is False
     assert mod.is_this_prompt_work_tool(generic) is False
     assert mod.is_this_prompt_work_tool({"sessionUpdate": "agent_thought_chunk"}) is False
+
+
+def test_list_dir_on_taskboard_path_is_not_this_prompt_work() -> None:
+    """LIVE: list_dir / read / grep of a path containing taskboard is not work."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_listdir_taskboard")
+    list_dir = {
+        "sessionUpdate": "tool_call",
+        "title": "list_dir",
+        "kind": "read",
+        "rawInput": {"path": "/workspace/.a2a-state/taskboard"},
+    }
+    read_board = {
+        "sessionUpdate": "tool_call",
+        "title": "read",
+        "kind": "read",
+        "rawInput": {"path": "/workspace/.a2a-state/taskboard/PAL-1.md"},
+    }
+    grep_board = {
+        "sessionUpdate": "tool_call",
+        "title": "grep",
+        "kind": "search",
+        "rawInput": {"path": "/opt/tcarac/taskboard", "pattern": "PAL-1"},
+    }
+    cwd_ls = {
+        "sessionUpdate": "tool_call",
+        "title": "bash",
+        "kind": "execute",
+        "rawInput": {"command": "ls", "cwd": "/home/floor/taskboard"},
+    }
+    read_send = {
+        "sessionUpdate": "tool_call",
+        "title": "read",
+        "rawInput": {"path": "scripts/a2a/send.sh"},
+    }
+    assert mod.is_this_prompt_work_tool(list_dir) is False
+    assert mod.is_this_prompt_work_tool(read_board) is False
+    assert mod.is_this_prompt_work_tool(grep_board) is False
+    assert mod.is_this_prompt_work_tool(cwd_ls) is False
+    assert mod.is_this_prompt_work_tool(read_send) is False
+
+
+def test_ticket_move_cli_is_this_prompt_work() -> None:
+    """ticket move / ticket create / tb move|create / send / launch are work."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_ticket_move_work")
+    move = {
+        "sessionUpdate": "tool_call",
+        "title": "bash",
+        "kind": "execute",
+        "rawInput": {"command": "ticket move PAL-1 done"},
+    }
+    create = {
+        "sessionUpdate": "tool_call",
+        "title": "bash",
+        "kind": "execute",
+        "rawInput": {"command": "ticket create --title floor-follow-up"},
+    }
+    tb_move = {
+        "sessionUpdate": "tool_call",
+        "title": "bash",
+        "kind": "execute",
+        "rawInput": {"command": "tb move PAL-1 in_progress"},
+    }
+    tb_create = {
+        "sessionUpdate": "tool_call",
+        "title": "bash",
+        "rawInput": {"command": "tb create follow-up"},
+    }
+    a2a_msg = {
+        "sessionUpdate": "tool_call",
+        "title": "bash",
+        "rawInput": {
+            "command": "curl -X POST http://127.0.0.1:8732/a2a/ops/message:send -d '{}'"
+        },
+    }
+    a2a_prose = {
+        "sessionUpdate": "tool_call",
+        "title": "a2a message send",
+        "rawInput": {"seat": "ops", "text": "ping"},
+    }
+    assert mod.is_this_prompt_work_tool(move) is True
+    assert mod.is_this_prompt_work_tool(create) is True
+    assert mod.is_this_prompt_work_tool(tb_move) is True
+    assert mod.is_this_prompt_work_tool(tb_create) is True
+    assert mod.is_this_prompt_work_tool(a2a_msg) is True
+    assert mod.is_this_prompt_work_tool(a2a_prose) is True
 
 
 def test_return_prompt_stream_leftover_harvest_is_not_handoff() -> None:
@@ -542,6 +629,50 @@ def test_pin_session_keep_alive_chatter_does_not_handoff(
     assert "reason=no-accept" in blob
     assert ws.cancel_sessions == []
     assert elapsed >= 0.35, f"waited {elapsed:.2f}s; keep-alive chatter must not disconnect"
+
+
+def test_pin_session_list_dir_taskboard_does_not_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """LIVE hang-up: keep-alive + list_dir on .a2a-state/taskboard is not reason=work."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_listdir_board")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    list_dir = {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tc-listdir",
+                "title": "list_dir",
+                "kind": "read",
+                "rawInput": {"path": "/workspace/.a2a-state/taskboard"},
+            }
+        },
+    }
+    ws = FakeAcpWs(
+        prompt_chunks=[KEEP_ALIVE_LINE],
+        prompt_updates=[_queue_changed(), list_dir],
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "ACP_PING STATUS/CONTINUE", timeout=0.45, pin_session=True))
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 1, blob
+    assert flags and flags[0]["work_tools"] == 0
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "reason=work" not in blob
+    assert "ACP_INJECT_OK" not in out.out
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert "reason=no-accept" in blob
+    assert ws.cancel_sessions == []
+    assert elapsed >= 0.35, f"waited {elapsed:.2f}s; list_dir taskboard must not disconnect"
 
 
 def test_pin_session_work_tool_handoff_reason_work(
