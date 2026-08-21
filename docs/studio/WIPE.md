@@ -20,6 +20,35 @@ GCS_A2A_STATE=/workspace/palemon/.a2a-state     # live state; never the deploy-t
 A wipe clone of grok-cloud-studio can keep `GCS_ROOT` as the checkout and set
 `GCS_A2A_STATE` to a sibling state dir. Copy `studio.env.example` there.
 
+## Two-runtime mind law
+
+Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` +
+`mind/offset` + pin (`mind/session` grok UUID, `mind/cursor-session` Cursor
+chat id). Grok runner and Cursor CLI runner **share** that mailbox. Offset
+advances only on runner exit 0.
+
+**Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
+
+- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio
+  `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust`
+  of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok
+  usage is back.
+- Cursor CLI catalog: repo `.cursor/mcp.json` wrapping
+  `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no
+  `GROK_HOME`). Higgsfield is Cursor catalog login when the runner is Cursor
+  CLI (Art generate). Grok Bot Higgsfield is a different catalog.
+
+Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`,
+`scripts/launch-cloud-extra-high.sh`.
+
+No third Python tool loop. No ACP `session/prompt` GROW. No `deliver_wake`
+overlay.
+
+The grunt is **Cursor Cloud** (not "Extra High" as the noun, not "Cursor Cloud API").
+Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI:
+`--model cursor-grok-4.6-xhigh` only. The PATH launcher stays
+`scripts/launch-cloud-extra-high.sh`. Full mind law: `docs/studio/MIND.md`.
+
 ## Steps
 
 1. Clone this repo. Python 3.11+.
@@ -73,6 +102,9 @@ A wipe clone of grok-cloud-studio can keep `GCS_ROOT` as the checkout and set
 
    DB is `$GCS_A2A_STATE/taskboard/taskboard.db` (`PALEMON_A2A_STATE` alias
    accepted). Details: `scripts/studio/taskboard/README.md`.
+   Cursor CLI sees the board via checkout `.cursor/mcp.json` (wrapper
+   `scripts/studio/taskboard/run-mcp.sh`). Do not copy `GROK_HOME` MCP.
+   Do not put MagicDNS hostnames or private GitHub URLs in that file.
 
 7. Mind seats come from `studio.env` (`GCS_MIND_SEATS` eight first-class
    names). Start the bus **without** `--daemons`:
@@ -95,8 +127,10 @@ A wipe clone of grok-cloud-studio can keep `GCS_ROOT` as the checkout and set
    `palemon-studio.panther-arctic.ts.net`. Skip with `PALEMON_TAILSCALE_SERVE=0`
    or if `tailscale` is missing. Never write Tailscale auth key values.
 
-9. Higgsfield: Art uses **Cursor Agents MCP login** when it needs generate.
-   The Grok Bot catalog is a different catalog. Do not encode OAuth secrets.
+9. Higgsfield: Cursor catalog login when the runner is Cursor CLI (Art
+   generate). Grok Bot Higgsfield is a different catalog. Grok-home
+   Higgsfield is grok-only, for when grok usage is back. Do not encode
+   OAuth secrets. Do not fake a transfer between catalogs.
 
 10. Grok Build HTTP 402: `mind.py` already falls back to Cursor CLI
     (`cursor-grok` or `agent --model cursor-grok-4.6-xhigh`). Not a wipe blocker.

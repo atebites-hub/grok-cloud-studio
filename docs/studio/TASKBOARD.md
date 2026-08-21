@@ -34,10 +34,12 @@ command = "/absolute/path/to/taskboard"
 args = ["--db", "/absolute/path/to/taskboard.db", "mcp"]
 ```
 
-That is the grok serve config. Isolated `GROK_HOME` does not inherit `~/.grok/config.toml`. Cursor `${workspaceFolder}` never expands under grok; `.cursor/mcp.json` is not the serve config. `./doctor.sh` WARNs if a seat `config.toml` still contains `${workspaceFolder}`. Refreshing MCP config does not remint a live serve.
+That is the grok serve config. Isolated `GROK_HOME` does not inherit `~/.grok/config.toml`. Cursor `${workspaceFolder}` never expands under grok; grok must not load `.cursor/mcp.json`. Seat start sets `[compat.cursor] mcps = false`. `./doctor.sh` WARNs if a seat `config.toml` still contains `${workspaceFolder}`. Refreshing MCP config does not remint a live serve.
+
+Cursor CLI uses a **second catalog**: checkout `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (`taskboard --db $DB mcp`). Do not copy `GROK_HOME` MCP into Cursor CLI. Two catalogs. Never fake a transfer. No Agent Kanban. No secrets, private GitHub URLs, or MagicDNS hostnames in that file.
 
 This repository does not vendor the taskboard binary. Point seats at your local taskboard checkout the same way you point Extra High at `GCS_CLOUD_REPO`.
 
-Host process scripts (wipe box): `scripts/studio/taskboard/` — `install-taskboard.sh`, `start-taskboard.sh` (UI `127.0.0.1:3010`), `mcp-http.sh` (MCP `127.0.0.1:3011`). Palemon floor recreate: `docs/studio/WIPE.md`.
+Host process scripts (wipe box): `scripts/studio/taskboard/` — `install-taskboard.sh`, `start-taskboard.sh` (UI `127.0.0.1:3010`), `mcp-http.sh` (MCP `127.0.0.1:3011`), `run-mcp.sh` (Cursor CLI stdio). Palemon floor recreate: `docs/studio/WIPE.md`. Two-runtime mind law: `docs/studio/MIND.md`.
 
 The HTML files under `scripts/studio/dashboard/` remain LEGACY and are not the board.

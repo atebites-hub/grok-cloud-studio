@@ -7,6 +7,11 @@ SQLite file through wrappers (`docs/studio/TASKBOARD.md`). Agent Kanban
 
 Do not vendor the `taskboard` binary into git.
 
+Cursor CLI sees the board through checkout `.cursor/mcp.json` →
+`run-mcp.sh` (`taskboard --db $DB mcp`). That is the Cursor catalog.
+Grok seats keep `GROK_HOME/config.toml`. Do not copy GROK_HOME MCP.
+Two catalogs. Never fake a transfer.
+
 ## After a machine wipe
 
 From a grok-cloud-studio checkout (see `docs/studio/WIPE.md`):
