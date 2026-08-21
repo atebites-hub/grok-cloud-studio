@@ -39,17 +39,13 @@ if [[ ! -f "$INJECT" ]]; then
   exit 1
 fi
 
+export_seat_serve_env "$SEAT"
+: "${GCS_TASKBOARD_DB:?export_seat_serve_env must set GCS_TASKBOARD_DB}"
+
 if ! ensure_seat_serve "$SEAT"; then
   echo "ACP_PROMPT_FAIL seat=$SEAT serve down (never grok --resume)" >&2
   exit 1
 fi
-
-export GCS_ROOT="$ROOT"
-export GCS_A2A_STATE="$STATE_DIR"
-export GCS_DIRECTOR_SEAT="$SEAT"
-export GROK_MEMORY="${GROK_MEMORY:-1}"
-export GROK_HOME="${GROK_HOME:-$SD/grok-home}"
-mkdir -p "$GROK_HOME"
 
 # Pin session: session/load existing acp.session; never --force-new-session.
 # acp_inject.py --pin-session returns when session/prompt is accepted

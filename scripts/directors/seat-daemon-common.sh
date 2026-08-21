@@ -9,6 +9,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${GCS_ROOT:-$SCRIPT_DIR/../..}" && pwd)"
 export GCS_ROOT="$ROOT"
 STATE_DIR="${GCS_A2A_STATE:-$ROOT/.a2a-state}"
+export GCS_A2A_STATE="$STATE_DIR"
+# Studio board SQLite. Wrappers always pass --db so grok serve does not
+# fall back to ~/.config/taskboard/taskboard.db.
+GCS_TASKBOARD_DB="${GCS_TASKBOARD_DB:-${TASKBOARD_DB:-$STATE_DIR/taskboard/taskboard.db}}"
+export GCS_TASKBOARD_DB
+export TASKBOARD_DB="$GCS_TASKBOARD_DB"
 PROMPTS_DIR="${GCS_PROMPT_DIR:-$ROOT/prompts}"
 FOOTER="$SCRIPT_DIR/common_footer.txt"
 LIB_PY="$ROOT/scripts/a2a/lib.py"
@@ -69,6 +75,145 @@ daemon_healthy() {
   return 0
 }
 
+_gcs_taskboard_is_wrapper() {
+  local f="$1"
+  [[ -f "$f" ]] || return 1
+  grep -q "gcs-seat-taskboard-wrapper" "$f" 2>/dev/null
+}
+
+resolve_taskboard_bin() {
+  local cand dir found oldifs
+  if [[ -n "${TASKBOARD_BIN:-}" && -x "${TASKBOARD_BIN}" ]] && ! _gcs_taskboard_is_wrapper "$TASKBOARD_BIN"; then
+    printf '%s\n' "$TASKBOARD_BIN"
+    return 0
+  fi
+  for cand in \
+    "$ROOT/bin/taskboard" \
+    "${HOME:-}/.local/bin/taskboard" \
+    /usr/local/bin/taskboard \
+    /opt/homebrew/bin/taskboard \
+    /usr/bin/taskboard
+  do
+    if [[ -n "$cand" && -x "$cand" ]] && ! _gcs_taskboard_is_wrapper "$cand"; then
+      printf '%s\n' "$cand"
+      return 0
+    fi
+  done
+  oldifs="$IFS"
+  IFS=':'
+  for dir in ${PATH:-}; do
+    IFS="$oldifs"
+    cand="${dir}/taskboard"
+    if [[ -n "$dir" && -x "$cand" ]] && ! _gcs_taskboard_is_wrapper "$cand"; then
+      printf '%s\n' "$cand"
+      return 0
+    fi
+  done
+  IFS="$oldifs"
+  found="$(command -v taskboard 2>/dev/null || true)"
+  if [[ -n "$found" && -x "$found" ]] && ! _gcs_taskboard_is_wrapper "$found"; then
+    printf '%s\n' "$found"
+    return 0
+  fi
+  return 1
+}
+
+_write_taskboard_wrapper() {
+  local dest="$1" kind="$2" bin="$3" db="$4"
+  local bin_q db_q
+  mkdir -p "$(dirname "$dest")"
+  bin_q="$(printf '%q' "$bin")"
+  db_q="$(printf '%q' "$db")"
+  case "$kind" in
+    taskboard)
+      cat >"$dest" <<EOF
+#!/bin/bash
+# gcs-seat-taskboard-wrapper
+set -euo pipefail
+BIN=\${TASKBOARD_BIN:-$bin_q}
+DB=\${GCS_TASKBOARD_DB:-\${TASKBOARD_DB:-$db_q}}
+if [[ ! -x "\$BIN" ]]; then
+  echo "GCS_TASKBOARD_FAIL missing binary (set TASKBOARD_BIN)" >&2
+  exit 127
+fi
+has_db=0
+for arg in "\$@"; do
+  if [[ "\$arg" == "--db" ]]; then
+    has_db=1
+    break
+  fi
+done
+if [[ "\$has_db" == "1" ]]; then
+  exec "\$BIN" "\$@"
+fi
+exec "\$BIN" --db "\$DB" "\$@"
+EOF
+      ;;
+    ticket|tb)
+      cat >"$dest" <<EOF
+#!/bin/bash
+# gcs-seat-taskboard-wrapper
+set -euo pipefail
+BIN=\${TASKBOARD_BIN:-$bin_q}
+DB=\${GCS_TASKBOARD_DB:-\${TASKBOARD_DB:-$db_q}}
+if [[ ! -x "\$BIN" ]]; then
+  echo "GCS_TASKBOARD_FAIL missing binary (set TASKBOARD_BIN)" >&2
+  exit 127
+fi
+exec "\$BIN" --db "\$DB" ticket "\$@"
+EOF
+      ;;
+    *)
+      echo "install_seat_taskboard_cli: unknown wrapper kind=$kind" >&2
+      return 1
+      ;;
+  esac
+  chmod +x "$dest"
+}
+
+install_seat_taskboard_cli() {
+  # Put taskboard / ticket / tb on the grok serve PATH (~/.grok/bin and
+  # GROK_HOME/bin). Wrappers bake --db to the state-dir board so a Director
+  # can exec `ticket list` without a box-local symlink. Does not remint serve.
+  local seat="${1:-}"
+  local sd gh db bin wrap_dir
+  sd="$(seat_state_dir "${seat:-floor}")"
+  gh="${GROK_HOME:-$sd/grok-home}"
+  db="${GCS_TASKBOARD_DB:-${TASKBOARD_DB:-$STATE_DIR/taskboard/taskboard.db}}"
+  export GCS_A2A_STATE="${GCS_A2A_STATE:-$STATE_DIR}"
+  export GCS_TASKBOARD_DB="$db"
+  export TASKBOARD_DB="$db"
+  mkdir -p "$gh/bin" "${HOME:-$gh}/.grok/bin" "$(dirname "$db")"
+  bin="$(resolve_taskboard_bin || true)"
+  if [[ -z "$bin" ]]; then
+    bin="${TASKBOARD_BIN:-$ROOT/bin/taskboard}"
+    echo "SEAT_TASKBOARD_SKIP seat=${seat:-?} missing host binary; wrappers still installed bin=$bin db=$db" >&2
+  else
+    echo "SEAT_TASKBOARD_OK seat=${seat:-?} bin=$bin db=$db wrap=$gh/bin" >&2
+  fi
+  for wrap_dir in "$gh/bin" "${HOME:-$gh}/.grok/bin"; do
+    _write_taskboard_wrapper "$wrap_dir/taskboard" taskboard "$bin" "$db"
+    _write_taskboard_wrapper "$wrap_dir/ticket" ticket "$bin" "$db"
+    _write_taskboard_wrapper "$wrap_dir/tb" tb "$bin" "$db"
+  done
+}
+
+export_seat_serve_env() {
+  local seat="$1"
+  local sd
+  sd="$(seat_state_dir "$seat")"
+  export GCS_ROOT="$ROOT"
+  export GCS_A2A_STATE="$STATE_DIR"
+  export GCS_DIRECTOR_SEAT="$seat"
+  export GCS_TASKBOARD_DB="${GCS_TASKBOARD_DB:-${TASKBOARD_DB:-$STATE_DIR/taskboard/taskboard.db}}"
+  export TASKBOARD_DB="$GCS_TASKBOARD_DB"
+  export GROK_MEMORY="${GROK_MEMORY:-1}"
+  export GROK_HOME="${GROK_HOME:-$sd/grok-home}"
+  mkdir -p "$GROK_HOME"
+  install_seat_identity "$seat"
+  export PATH="${GROK_HOME}/bin:${HOME}/.grok/bin:${PATH:-}"
+}
+
 install_seat_identity() {
   local seat="$1"
   local sd src alias
@@ -77,6 +222,7 @@ install_seat_identity() {
   alias="$ROOT/docs/studio/directors/souls/$(python3 "$LIB_PY" canonical "$seat" 2>/dev/null || echo "$seat")"
   mkdir -p "$sd/grok-home"
   install_seat_grok_auth "$seat"
+  install_seat_taskboard_cli "$seat"
   if [[ -f "$src/SOUL.md" ]]; then
     cp "$src/SOUL.md" "$sd/SOUL.md"
   elif [[ -f "$alias/SOUL.md" ]]; then

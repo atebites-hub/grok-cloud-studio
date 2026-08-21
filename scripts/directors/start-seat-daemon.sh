@@ -29,10 +29,11 @@ LOG_FILE="$SD/daemon.log"
 URL_FILE="$SD/acp.url"
 SECRET_FILE="$SD/acp.secret"
 
-export GROK_MEMORY="${GROK_MEMORY:-1}"
-export GROK_HOME="${GROK_HOME:-$SD/grok-home}"
-mkdir -p "$GROK_HOME"
-install_seat_identity "$SEAT"
+# Wrappers go on GROK_HOME/bin and ~/.grok/bin even when serve is already
+# healthy. Do not remint a live grok agent serve just to refresh PATH.
+export_seat_serve_env "$SEAT"
+: "${GCS_TASKBOARD_DB:?export_seat_serve_env must set GCS_TASKBOARD_DB}"
+: "${GCS_A2A_STATE:?export_seat_serve_env must set GCS_A2A_STATE}"
 
 if daemon_healthy "$SEAT"; then
   pid="$(read_pid_file "$PID_FILE")"
@@ -75,12 +76,12 @@ fi
 URL="ws://127.0.0.1:${PORT}/ws?server-key=${SECRET}"
 printf '%s\n' "$URL" >"$URL_FILE"
 
-export GCS_ROOT="$ROOT"
-export GCS_A2A_STATE="$STATE_DIR"
-export GCS_DIRECTOR_SEAT="$SEAT"
+export_seat_serve_env "$SEAT"
+export GCS_TASKBOARD_DB="${GCS_TASKBOARD_DB}"
+export GCS_A2A_STATE="${GCS_A2A_STATE}"
 export GROK_MEMORY="${GROK_MEMORY:-1}"
-export GROK_HOME="${GROK_HOME:-$SD/grok-home}"
-export PATH="${HOME}/.grok/bin:${PATH:-}"
+export GROK_HOME="${GROK_HOME}"
+export PATH="${GROK_HOME}/bin:${HOME}/.grok/bin:${PATH:-}"
 
 {
   echo "===== $(date -u +%Y-%m-%dT%H:%M:%SZ) START seat=$SEAT port=$PORT ====="
