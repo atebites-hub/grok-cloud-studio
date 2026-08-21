@@ -18,6 +18,8 @@ fi
 for p in \
   scripts/a2a/hub.py \
   scripts/a2a/dispatch.py \
+  scripts/a2a/wake-daemon.py \
+  scripts/a2a/seat-prompt-acp.sh \
   scripts/a2a/duplex.py \
   scripts/a2a/send.sh \
   scripts/a2a/start-studio-bus.sh \

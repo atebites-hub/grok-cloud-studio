@@ -8,8 +8,8 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 
 | Piece | Path |
 |---|---|
-| A2A hub / send / dispatch / duplex / bus | `scripts/a2a/` |
-| ACP seat daemons + inject | `scripts/directors/start-seat-daemon.sh`, `acp_inject.py` |
+| A2A hub / send / dispatch / duplex / wake / bus | `scripts/a2a/` |
+| ACP seat daemons + pin-session inject | `scripts/directors/start-seat-daemon.sh`, `acp_inject.py`, `scripts/a2a/seat-prompt-acp.sh` |
 | Extra High SDK + bash wrappers | `scripts/cloud/sdk/`, `scripts/launch-cloud-extra-high.sh` |
 | Waiter (`run.wait` → A2A ping) | `scripts/cloud/spawn-waiter.sh`, `sdk/wait-notify.ts` |
 | Orphan fleet-shepherd | `scripts/directors/fleet-shepherd.py` |
@@ -34,9 +34,9 @@ export GCS_BOT_AGENT_ID='your-grok-bot-agent-id'   # from Grok Bot settings
 ```bash
 cp .env.example .env   # fill GCS_CLOUD_REPO + GCS_BOT_AGENT_ID; never commit .env
 
-# Local bus (hub + dispatch + bot-bridge + orphan shepherd). ACP daemons are opt-in.
+# Local bus (hub + dispatch + bot-bridge + orphan shepherd). ACP daemons + inbox wake are opt-in.
 scripts/a2a/start-studio-bus.sh start
-# scripts/a2a/start-studio-bus.sh start --daemons   # grok agent serve per seat
+# scripts/a2a/start-studio-bus.sh start --daemons   # grok agent serve + wake-daemon.py per seat
 
 scripts/a2a/send.sh orchestrator "hello from ops"
 ```

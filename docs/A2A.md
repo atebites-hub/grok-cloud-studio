@@ -2,7 +2,7 @@
 
 ```bash
 scripts/a2a/start-studio-bus.sh                 # hub + dispatch + bot-bridge + fleet-shepherd
-scripts/a2a/start-studio-bus.sh start --daemons # ACP daemons for GCS_ACP_SEATS (opt-in)
+scripts/a2a/start-studio-bus.sh start --daemons # ACP daemons + inbox wake for GCS_ACP_SEATS (opt-in)
 scripts/a2a/send.sh ops "ping: hello"
 scripts/a2a/start-studio-bus.sh status
 ```
@@ -15,9 +15,29 @@ Hub default: `http://127.0.0.1:8732` (`GCS_A2A_HUB` / `GCS_A2A_PORT`).
 Example seats: `floor`, `ops`, `cloud`, `qa-a`, `qa-b`.
 ACP daemon cap: `GCS_ACP_SEATS` (default `floor,studio-ops`). Mail cannot auto-start seats outside that allowlist. `skipSeats` stay skipped. See `docs/studio/GROK_LEADER.md`.
 
+## Inbox wake (pin-session ACP)
+
+`scripts/a2a/wake-daemon.py` watches `.a2a-state/<seat>/inbox.jsonl` and turns each line into ACP `session/prompt` inside the live `grok agent serve` pid via `scripts/a2a/seat-prompt-acp.sh` → `acp_inject.py --pin-session`.
+
+- Pin `.a2a-state/<seat>/acp.session` (session/load; session/new once). Never `grok --resume`.
+- Success is mail delivered (`ACP_INJECT_OK` / `ACP_INJECT_HANDOFF`). The inject client disconnects without `session/cancel` so serve owns the turn.
+- Offset is `wake.offset`. A live `wake.pid` makes `dispatch.py` skip that inbox (`wake-owns-inbox`).
+- Bus `--daemons` starts wake alongside seat serve. Manual: `python3 scripts/a2a/wake-daemon.py --seat floor`.
+
+Debug one-shot (does not mint a new ACP session):
+
+```bash
+scripts/a2a/seat-prompt-acp.sh <seat> --stdin
+python3 scripts/a2a/wake-daemon.py --seat <seat> --once --dry-run
+```
+
+This path does not start Agent Kanban workers.
+
 ## Inject timeout + dispatch lock TTL
 
-`acp_inject.py` defaults to **180s** (`GCS_ACP_INJECT_TIMEOUT`). As soon as a streamed `RESULT` / `PARK_ACK` / `QA_*_RESULT` line appears, inject duplexes (`scripts/a2a/duplex.py`), prints `ACP_INJECT_OK`, unlinks `acp.inject.stale`, and best-effort `session/cancel` leftover turn — it does **not** wait for the `session/prompt` JSON-RPC result. If the wait times out but a RESULT line already streamed, that is success, not failure. Timeout/failure with **no** RESULT still sends `session/cancel`, writes `acp.inject.stale` (next inject auto force-new session), and exits non-zero. Dispatch lock TTL defaults to **240s** (`GCS_DISPATCH_LOCK_TTL_SEC`). If a lock pid is still alive past TTL, dispatch logs `DISPATCH_LOCK_TTL_KILL`, SIGTERM then SIGKILL that pid, clears the lock, and continues the inbox. Inject launches use `--timeout min(inject_timeout, lock_ttl-30)` so inject dies before the TTL killer races it. A mid-turn inject holding the lock for 10–15+ minutes is a bug we kill.
+Leftover `acp_inject.py` (no `--pin-session`) defaults to **180s** (`GCS_ACP_INJECT_TIMEOUT`). As soon as a streamed `RESULT` / `PARK_ACK` / `QA_*_RESULT` line appears, inject duplexes (`scripts/a2a/duplex.py`), prints `ACP_INJECT_OK`, unlinks `acp.inject.stale`, and best-effort `session/cancel` leftover turn — it does **not** wait for the `session/prompt` JSON-RPC result. If the wait times out but a RESULT line already streamed, that is success, not failure. Timeout/failure with **no** RESULT still sends `session/cancel`, writes `acp.inject.stale` (next inject auto force-new session), and exits non-zero. Dispatch lock TTL defaults to **240s** (`GCS_DISPATCH_LOCK_TTL_SEC`). If a lock pid is still alive past TTL, dispatch logs `DISPATCH_LOCK_TTL_KILL`, SIGTERM then SIGKILL that pid, clears the lock, and continues the inbox. Inject launches use `--timeout min(inject_timeout, lock_ttl-30)` so inject dies before the TTL killer races it. A mid-turn inject holding the lock for 10–15+ minutes is a bug we kill.
+
+`--pin-session` (inbox wake via `seat-prompt-acp.sh`) is different: success is mail delivered (prompt accepted / queued / RPC started). The client prints `ACP_INJECT_HANDOFF` + `ACP_INJECT_OK` and disconnects **without** `session/cancel` so `grok agent serve` owns the turn. RESULT-only hang-up is not success. Pin-session never remints `acp.session` from `acp.inject.stale`.
 
 ## Grok Bot seats (orchestrator)
 

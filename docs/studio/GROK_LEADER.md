@@ -46,6 +46,7 @@ bash scripts/directors/start-grok-leader.sh
 bash scripts/directors/status-grok-leader.sh
 bash scripts/a2a/start-studio-bus.sh start --daemons
 bash scripts/directors/start-seat-daemon.sh studio-ops
+python3 scripts/a2a/wake-daemon.py --seat ops
 ```
 
 `scripts/a2a/start-bus.sh` is a compatibility wrapper for the same bus commands.

@@ -6,9 +6,9 @@ This hub is the protocol ack bus: it appends per-seat inbox JSONL and
 returns TASK_STATE_COMPLETED + a receipt artifact.
 
 Auto-wake of Grok Build Director seats is handled separately by
-scripts/a2a/dispatch.py (standing inbox poller) and
-scripts/a2a/start-studio-bus.sh (hub + dispatch together). The hub itself
-does not launch Directors.
+scripts/a2a/wake-daemon.py (inbox.jsonl → pin-session ACP session/prompt into
+live grok agent serve), scripts/a2a/dispatch.py (fallback inbox poller), and
+scripts/a2a/start-studio-bus.sh. The hub itself does not launch Directors.
 
 Docs: docs/ARCHITECTURE.md
 A2A: https://a2a-protocol.org/latest/
