@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Grok --plugin-dir MCP: ticket, a2a_send, cloud_launch.
+"""Studio-mind MCP: ticket, a2a_send, cloud_launch.
 
 Grok is the agent. This process only exposes tools. Python mind.py does not
-parse grok stdout for function calls.
+parse grok stdout for function calls. Installed into seat GROK_HOME with
+`grok plugin install --trust` (not `--plugin-dir` on headless grok).
 """
 from __future__ import annotations
 

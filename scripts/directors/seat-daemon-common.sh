@@ -255,6 +255,38 @@ install_seat_grok_mcp() {
   echo "SEAT_GROK_MCP_OK seat=${seat:-?} command=$bin db=$db dest=$cfg" >&2
 }
 
+install_studio_mind_plugin() {
+  # Install plugins/studio-mind into this seat GROK_HOME. grok headless cannot
+  # take --plugin-dir (that is a grok agent flag). --trust belongs here, not
+  # on grok --prompt-file. Failure is MCP-only: taskboard is already in
+  # GROK_HOME/config.toml. Never abort the mind loop.
+  local seat="${1:-}"
+  local plugin gh grok_bin
+  plugin="$ROOT/plugins/studio-mind"
+  gh="${GROK_HOME:-}"
+  if [[ ! -d "$plugin" ]]; then
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=missing-dir mcp-only" >&2
+    return 0
+  fi
+  grok_bin="$(command -v grok 2>/dev/null || true)"
+  if [[ -z "$grok_bin" ]]; then
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-grok mcp-only" >&2
+    return 0
+  fi
+  if [[ -z "$gh" ]]; then
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-GROK_HOME mcp-only" >&2
+    return 0
+  fi
+  mkdir -p "$gh"
+  plugin="$(_gcs_abs_path "$plugin")"
+  if GROK_HOME="$gh" "$grok_bin" plugin install "$plugin" --trust; then
+    echo "MIND_PLUGIN_OK seat=${seat:-?} plugin=studio-mind dest=$gh" >&2
+  else
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=install-fail mcp-only" >&2
+  fi
+  return 0
+}
+
 install_seat_taskboard_cli() {
   # Put taskboard / ticket / tb on the grok serve PATH (~/.grok/bin and
   # GROK_HOME/bin). Wrappers bake --db to the state-dir board so a Director

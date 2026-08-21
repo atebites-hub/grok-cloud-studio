@@ -33,21 +33,23 @@ Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Pro
 
 ### Mail is a turn
 
-Each inbox line:
+Each inbox line (`scripts/directors/mind.py` `grok_cli_argv`):
 
 ```text
-grok -p --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
-    --output-format json --always-approve --permission-mode bypassPermissions --trust \
-    --agent-profile "$SOUL" --plugin-dir "$REPO/plugins/studio-mind" \
+grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
+    --output-format json --always-approve --permission-mode bypassPermissions \
     --max-turns 40
 ```
 
-- Create the UUID once (`uuid4`), store in `mind/session`. First turn omits `--resume` and passes `--session-id $UUID` to mint. Later turns **only** `--resume` that id.
+- Create the UUID once (`uuid4`), store in `mind/session`. First turn uses `--session-id $UUID` instead of `--resume`. Later turns **only** `--resume` that id.
+- Never bare `-p`. Live proven 2026-08-21: `-p` before `--resume` is clap rc=2 because `--single` requires `<PROMPT>`. `--prompt-file` is the prompt and also triggers headless mode.
+- `--agent-profile`, `--trust`, and `--plugin-dir` are **grok agent** flags, not grok headless. Do not put them on this argv.
+- `--agent PATH` only if PATH is a file starting with YAML `---`. Markdown `SOUL.md` is not an agent file; omit `--agent`.
+- If grok says the session is already in use, treat it as minted and `--resume` the same UUID. Do not mint a new UUID.
 - Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty.
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
 - Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after grok exits 0.
-
-`--agent-profile` is `$GCS_A2A_STATE/<seat>/SOUL.md` when present, else `docs/studio/directors/souls/<seat>/SOUL.md`.
+- `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
 
 No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.
 
@@ -57,9 +59,9 @@ No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex /
 |---|---|
 | Grok builtins | Shell, files, etc. inside grok |
 | Seat `GROK_HOME/config.toml` | Taskboard stdio MCP: `taskboard --db $GCS_TASKBOARD_DB mcp` |
-| `--plugin-dir plugins/studio-mind` | Grok Agent SDK inject (`grok agent --plugin-dir`): MCP `ticket`, `a2a_send`, `cloud_launch` |
+| `grok plugin install --trust` | `plugins/studio-mind` into seat `GROK_HOME` from `seat-mind-loop.sh` (`ticket`, `a2a_send`, `cloud_launch`) |
 
-If `plugins/studio-mind` exists, `mind.py` passes `--plugin-dir`. If that directory is missing, `--plugin-dir` is omitted; Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the plugin-dir server) — they are **not** a second agent loop.
+`--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install "$ROOT/plugins/studio-mind" --trust` with that seat’s `GROK_HOME`. If install is skipped (no grok, missing dir, install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop.
 
 A missing binary returns an error string from the MCP tool. Plugin output is redacted (`CURSOR_API_KEY`, webhook secrets, bearer tokens) and never printed as credentials.
 

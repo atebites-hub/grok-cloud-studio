@@ -2,13 +2,15 @@
 """Grok Build seat mind: mailbox + pin + stay-up.
 
 Python is not the agent. It harvests one inbox line, pins a grok session UUID,
-runs one `grok -p` turn, persists json stdout, and stays up. Grok is the agent
-for that turn (its own tool loop, `--max-turns 40`).
+runs one `grok --prompt-file` turn, persists json stdout, and stays up. Grok is
+the agent for that turn (its own tool loop, `--max-turns 40`).
 
 Do not parse grok stdout for function calls. Do not run a second tool-calling
 loop. Do not use grok agent serve or leftover ACP inject on opted-in mind
 seats. Pin one UUID in mind/session; first turn `--session-id`, later turns
-`--resume` that id. Never remint because harvest was empty.
+`--resume` that id. Never remint because harvest was empty. Never bare `-p`
+(`--single` requires a prompt; `--prompt-file` is the prompt). `--agent-profile`,
+`--trust`, and `--plugin-dir` are grok agent flags, not grok headless.
 
 Stdlib only. Donald/orchestrator (skipSeats) are not mind seats.
 """
@@ -40,6 +42,11 @@ _SECRET_ASSIGN_RE = re.compile(
     r"(?i)\b(CURSOR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
     r"server-key|ACP_SECRET|api[_-]?key)\s*[=:]\s*\S+"
 )
+_SESSION_IN_USE_RE = re.compile(
+    r"session.*already in use|already in use.*session",
+    re.IGNORECASE | re.DOTALL,
+)
+MIND_FAIL_STDERR_CHARS = 240
 
 
 @dataclass(frozen=True)
@@ -47,8 +54,8 @@ class Plugin:
     """Fallback helper callable plus JSON schema. Not a second agent loop.
 
     Grok sees tools via builtins, seat GROK_HOME taskboard MCP, and
-    `--plugin-dir plugins/studio-mind` when that directory exists. This dict
-    stays for `call_plugin` / tests / the plugin-dir MCP server.
+    `grok plugin install --trust` of `plugins/studio-mind` into that GROK_HOME.
+    This dict stays for `call_plugin` / tests / the studio-mind MCP server.
     """
 
     schema: dict[str, Any]
@@ -64,6 +71,13 @@ def redact(text: str) -> str:
     if not text:
         return text
     return _SECRET_ASSIGN_RE.sub(lambda m: f"{m.group(1)}=[redacted]", text)
+
+
+def stderr_log_snippet(text: str) -> str:
+    """Redact, collapse whitespace, and cap MIND_FAIL stderr at 240 chars."""
+    blob = redact(text or "")
+    blob = " ".join(blob.split())
+    return blob[:MIND_FAIL_STDERR_CHARS]
 
 
 def mind_dir(seat: str) -> Path:
@@ -148,7 +162,7 @@ def mark_session_minted(seat: str) -> None:
 
 
 def soul_profile(seat: str) -> str | None:
-    """`--agent-profile` value: seat SOUL.md, else docs souls, else omit."""
+    """Candidate `--agent` path: seat SOUL.md, else docs souls, else omit."""
     local = STATE_DIR / seat / "SOUL.md"
     if local.is_file():
         return str(local)
@@ -158,12 +172,26 @@ def soul_profile(seat: str) -> str | None:
     return None
 
 
-def studio_mind_plugin_dir() -> Path | None:
-    """Grok Agent SDK inject dir. Omit `--plugin-dir` when it is missing."""
-    path = ROOT / "plugins" / "studio-mind"
-    if path.is_dir():
-        return path
+def yaml_agent_file(path: str | Path | None) -> str | None:
+    """`--agent PATH` only if PATH is a file starting with YAML ---."""
+    if path is None:
+        return None
+    candidate = Path(path)
+    if not candidate.is_file():
+        return None
+    try:
+        with candidate.open("r", encoding="utf-8") as fh:
+            start = fh.read(3)
+    except OSError:
+        return None
+    if start == "---":
+        return str(candidate)
     return None
+
+
+def _session_already_in_use(stderr: str, stdout: str = "") -> bool:
+    blob = f"{stderr}\n{stdout}"
+    return bool(_SESSION_IN_USE_RE.search(blob))
 
 
 def _extract_text(parts: Any) -> str:
@@ -372,13 +400,21 @@ def grok_cli_argv(
     session_id: str,
     minted: bool,
     mail_path: Path,
-    soul: str | None = None,
-    plugin_dir: Path | None = None,
+    agent: str | Path | None = None,
     grok: str | None = None,
 ) -> list[str]:
-    """Pinned-session grok CLI. First turn mints; later turns resume that UUID."""
+    """Pinned-session grok CLI. First turn mints; later turns resume that UUID.
+
+    Headless law (never bare `-p`; never grok-agent `--agent-profile` /
+    `--trust` / `--plugin-dir`):
+
+        grok --resume $UUID --prompt-file $mail --verbatim --output-format json \\
+            --always-approve --permission-mode bypassPermissions --max-turns 40
+
+    First turn uses `--session-id $UUID` instead of `--resume`.
+    """
     binary = grok or os.environ.get("GROK_BIN") or "grok"
-    argv: list[str] = [binary, "-p"]
+    argv: list[str] = [binary]
     if minted:
         argv.extend(["--resume", session_id])
     else:
@@ -393,14 +429,13 @@ def grok_cli_argv(
             "--always-approve",
             "--permission-mode",
             "bypassPermissions",
-            "--trust",
+            "--max-turns",
+            "40",
         ]
     )
-    if soul:
-        argv.extend(["--agent-profile", soul])
-    if plugin_dir is not None:
-        argv.extend(["--plugin-dir", str(plugin_dir)])
-    argv.extend(["--max-turns", "40"])
+    agent_path = yaml_agent_file(agent)
+    if agent_path:
+        argv.extend(["--agent", agent_path])
     return argv
 
 
@@ -410,13 +445,7 @@ def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str,
     minted = session_is_minted(seat)
     mail_path = mind_dir(seat) / "mail.txt"
     mail_path.write_text(prompt, encoding="utf-8")
-    argv = grok_cli_argv(
-        session_id=session_id,
-        minted=minted,
-        mail_path=mail_path,
-        soul=soul_profile(seat),
-        plugin_dir=studio_mind_plugin_dir(),
-    )
+    agent = yaml_agent_file(soul_profile(seat))
     env = os.environ.copy()
     env["GCS_ROOT"] = str(ROOT)
     env["GCS_A2A_STATE"] = str(STATE_DIR)
@@ -424,35 +453,60 @@ def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str,
     env["GROK_MEMORY"] = "1"
     timeout_raw = os.environ.get("GCS_MIND_TURN_TIMEOUT", "").strip()
     timeout: float | None = float(timeout_raw) if timeout_raw else None
-    try:
-        proc = subprocess.run(
-            argv,
-            cwd=str(ROOT),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
+
+    def _run(minted_flag: bool) -> dict[str, Any]:
+        argv = grok_cli_argv(
+            session_id=session_id,
+            minted=minted_flag,
+            mail_path=mail_path,
+            agent=agent,
         )
-    except FileNotFoundError:
-        return {"text": "PLUGIN_ERR grok CLI missing on PATH", "returncode": 127}
-    except subprocess.TimeoutExpired:
-        return {"text": "PLUGIN_ERR grok CLI timeout", "returncode": 124}
-    except OSError as e:
-        return {"text": f"PLUGIN_ERR grok CLI: {e}", "returncode": 1}
-    text = redact((proc.stdout or "").strip())
-    stderr = redact((proc.stderr or "").strip())
-    return {"text": text, "returncode": int(proc.returncode), "stderr": stderr}
+        try:
+            proc = subprocess.run(
+                argv,
+                cwd=str(ROOT),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except FileNotFoundError:
+            return {
+                "text": "PLUGIN_ERR grok CLI missing on PATH",
+                "returncode": 127,
+                "stderr": "",
+            }
+        except subprocess.TimeoutExpired:
+            return {"text": "PLUGIN_ERR grok CLI timeout", "returncode": 124, "stderr": ""}
+        except OSError as e:
+            return {"text": f"PLUGIN_ERR grok CLI: {e}", "returncode": 1, "stderr": ""}
+        text = redact((proc.stdout or "").strip())
+        stderr = redact((proc.stderr or "").strip())
+        return {"text": text, "returncode": int(proc.returncode), "stderr": stderr}
+
+    result = _run(minted)
+    if (
+        not minted
+        and int(result.get("returncode") or 0) != 0
+        and _session_already_in_use(
+            str(result.get("stderr") or ""), str(result.get("text") or "")
+        )
+    ):
+        mark_session_minted(seat)
+        result = _run(True)
+    return result
 
 
 DEFAULT_RUNNER: Callable[..., Any] = grok_cli_runner
 
 
-def _runner_payload(raw: Any) -> tuple[str, int]:
+def _runner_payload(raw: Any) -> tuple[str, int, str]:
     if raw is None:
-        return "", 0
+        return "", 0, ""
     if isinstance(raw, dict):
         text = str(raw.get("text") or "")
+        stderr = str(raw.get("stderr") or "")
         rc = raw.get("returncode")
         if rc is None:
             rc = 0
@@ -460,8 +514,8 @@ def _runner_payload(raw: Any) -> tuple[str, int]:
             code = int(rc)
         except (TypeError, ValueError):
             code = 1
-        return text, code
-    return str(raw), 0
+        return text, code, stderr
+    return str(raw), 0, ""
 
 
 def _is_skip_seat(seat: str) -> bool:
@@ -496,15 +550,17 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             raw = run(prompt, seat=seat)
         except Exception as e:
             print(
-                f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail err={e}",
+                f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail "
+                f"err={stderr_log_snippet(str(e))}",
                 file=sys.stderr,
             )
             return {"consumed": 0, "reason": "runner-fail", "task_id": task_id}
 
-        assistant_text, returncode = _runner_payload(raw)
+        assistant_text, returncode, stderr = _runner_payload(raw)
         if returncode != 0:
             print(
-                f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail rc={returncode}",
+                f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail "
+                f"rc={returncode} stderr={stderr_log_snippet(stderr)}",
                 file=sys.stderr,
             )
             return {

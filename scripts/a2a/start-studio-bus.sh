@@ -6,10 +6,11 @@
 # GROW: one `grok agent serve` per opted-in seat plus seat-wake-loop.sh →
 # wake-daemon.py (inbox.jsonl → ACP session/prompt inside that serve pid).
 # Opt-in Grok Build mind (GCS_MIND_SEATS, default empty, example floor,ops):
-# seat-mind-loop.sh → mind.py (inbox → grok -p --resume pinned session). Mind is
+# seat-mind-loop.sh → mind.py (inbox → grok --resume pinned session --prompt-file;
+# never bare -p). Mind is
 # the GROW path when opted in; ACP wake is skipped for those seats unless
 # GCS_MIND_PLUS_ACP_WAKE=1 (in addition). Do not kill existing serve.
-# NOT grok --resume. NOT leftover dispatch as the GROW peer-mail path.
+# Leftover ACP GROW is session/prompt inside serve, not this grok --resume path.
 # Host ticker enqueues ACP_PING STATUS/CONTINUE keep-alives (work turns).
 # Agent Kanban / `ak` was removed. Board is tcarac/taskboard (ticket CLI + HTTP /mcp).
 #
