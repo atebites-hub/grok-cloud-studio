@@ -7,6 +7,21 @@ already-joined). Do not reconnect Agent Kanban. Do not print keys.
 Generic extract start (hub + dispatch only, empty `GCS_MIND_SEATS`) is still
 the README quick start. This page is the Palemon-floor path.
 
+## Disaster recovery entrypoints
+
+One-command deploy and teardown:
+
+```bash
+./setup.sh      # idempotent: env, install, board, bus (NO --daemons), doctor
+./cleanup.sh    # soft: stop bus + board processes only
+```
+
+`setup.sh` / `cleanup.sh` are the DR entrypoints. Steps below are what they
+do (and the fallback if you need to run a piece by hand). Default cleanup
+does not delete `studio.env`, `.env`, grok login, Cursor login, inboxes, or
+pins. `CLEANUP_WIPE_STATE=1 ./cleanup.sh` also stops daemons, then wipes
+inboxes, mind pins, and `taskboard.db` (warning printed). `studio.env` is kept.
+
 ## Recovered-studio layout (live box)
 
 Do **not** hard-require these absolute paths in scripts. They are the layout

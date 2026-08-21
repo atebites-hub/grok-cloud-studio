@@ -34,7 +34,9 @@ export GCS_BOT_AGENT_ID='your-grok-bot-agent-id'   # from Grok Bot settings
 
 ### Palemon studio wipe
 
-Recover today's Palemon floor (8-seat mind, taskboard UI/MCP, no `--daemons`) from a clean machine: **[docs/studio/WIPE.md](docs/studio/WIPE.md)**. Copy `studio.env.example` to `$GCS_A2A_STATE/studio.env` (not committed). Host board: `scripts/studio/taskboard/`.
+Disaster recovery: `./setup.sh` (deploy) and `./cleanup.sh` (teardown). See **[docs/studio/WIPE.md](docs/studio/WIPE.md)**.
+
+Recover today's Palemon floor (8-seat mind, taskboard UI/MCP, no `--daemons`) from a clean machine. Copy `studio.env.example` to `$GCS_A2A_STATE/studio.env` (not committed). Host board: `scripts/studio/taskboard/`.
 
 ```bash
 cp .env.example .env   # fill GCS_CLOUD_REPO + GCS_BOT_AGENT_ID; never commit .env

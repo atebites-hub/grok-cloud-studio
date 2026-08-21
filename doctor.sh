@@ -35,6 +35,8 @@ for p in \
   docs/studio/MIND.md \
   docs/studio/WIPE.md \
   studio.env.example \
+  setup.sh \
+  cleanup.sh \
   .cursor/mcp.json \
   scripts/studio/taskboard/run-mcp.sh \
   scripts/studio/taskboard/start-taskboard.sh \
