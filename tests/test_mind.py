@@ -11,6 +11,7 @@ import os
 import stat
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 from types import ModuleType
@@ -873,10 +874,120 @@ def test_bus_starts_mind_loop_without_killing_serve() -> None:
     assert "Agent Kanban" in bus or "Agent Kanban was removed" in a2a
 
 
-def test_dispatch_skips_live_mind_pid(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    dispatch = _load(DISPATCH_PY, "gcs_dispatch_mind_skip")
+def _spawn_sleep() -> subprocess.Popen:
+    return subprocess.Popen(
+        ["sleep", "180"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def _write_pid(path: Path, proc: subprocess.Popen) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{proc.pid}\n", encoding="utf-8")
+
+
+def _reap_proc(proc: subprocess.Popen | None) -> None:
+    if proc is None or proc.poll() is not None:
+        return
+    proc.kill()
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _reap_pid(pid: int) -> None:
+    if pid <= 0:
+        return
+    try:
+        os.kill(pid, 9)
+    except OSError:
+        return
+    for _ in range(20):
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return
+        time.sleep(0.05)
+
+
+def _bus_env(state: Path, extra: dict[str, str] | None = None) -> dict[str, str]:
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in {"GCS_MIND_SEATS", "GCS_START_SEAT_DAEMONS", "GCS_ACP_STOP_WITH_BUS"}
+    }
+    env.update(
+        {
+            "GCS_ROOT": str(REPO),
+            "GCS_A2A_STATE": str(state),
+            "GCS_START_SEAT_DAEMONS": "0",
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "LC_ALL": "C",
+        }
+    )
+    if extra:
+        env.update(extra)
+    return env
+
+
+def _run_bus_start(state: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(BUS_SH), "start"],
+        cwd=str(REPO),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=25,
+    )
+
+
+def _plant_leftover_bus(
+    state: Path, *, mind_seats: tuple[str, ...]
+) -> dict[str, subprocess.Popen]:
+    """Stand-ins for leftover studio-bus pids. Dispatch is the one that may bounce."""
+    state.mkdir(parents=True, exist_ok=True)
+    procs = {
+        "hub": _spawn_sleep(),
+        "dispatch": _spawn_sleep(),
+        "bot-bridge": _spawn_sleep(),
+        "shepherd": _spawn_sleep(),
+        "ticker": _spawn_sleep(),
+    }
+    _write_pid(state / "hub.pid", procs["hub"])
+    _write_pid(state / "dispatch.pid", procs["dispatch"])
+    _write_pid(state / "bot-bridge.pid", procs["bot-bridge"])
+    _write_pid(state / "fleet-shepherd.pid", procs["shepherd"])
+    _write_pid(state / "host-ticker.pid", procs["ticker"])
+    for seat in mind_seats:
+        mind = _spawn_sleep()
+        serve = _spawn_sleep()
+        procs[f"mind:{seat}"] = mind
+        procs[f"serve:{seat}"] = serve
+        _write_pid(state / seat / "mind" / "pid", mind)
+        _write_pid(state / seat / "daemon.pid", serve)
+    return procs
+
+
+def _reap_planted(procs: dict[str, subprocess.Popen], state: Path) -> None:
+    try:
+        raw = (state / "dispatch.pid").read_text(encoding="utf-8").strip()
+        leftover = procs["dispatch"].pid
+        if raw and int(raw.split()[0]) != leftover:
+            _reap_pid(int(raw.split()[0]))
+    except (OSError, ValueError, KeyError):
+        pass
+    for proc in procs.values():
+        _reap_proc(proc)
+
+
+def _prep_dispatch_skip(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> tuple[ModuleType, Path, Path]:
+    monkeypatch.delenv("GCS_MIND_SEATS", raising=False)
+    dispatch = _load(DISPATCH_PY, name)
     state = tmp_path / "a2a-state"
     inject_stamp = tmp_path / "inject.extra"
     fake_inject = _write_exec(
@@ -890,6 +1001,15 @@ def test_dispatch_skips_live_mind_pid(
     monkeypatch.setattr(dispatch, "_daemon_healthy", lambda seat: True)
     monkeypatch.setattr(dispatch, "_ensure_daemon", lambda seat: True)
     monkeypatch.setattr(dispatch, "_CHILDREN", {})
+    return dispatch, state, inject_stamp
+
+
+def test_dispatch_skips_live_mind_pid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dispatch, state, inject_stamp = _prep_dispatch_skip(
+        tmp_path, monkeypatch, "gcs_dispatch_mind_skip_pid"
+    )
     qa = state / "qa-a"
     (qa / "mind").mkdir(parents=True)
     (qa / "mind" / "pid").write_text(str(os.getpid()) + "\n", encoding="utf-8")
@@ -898,8 +1018,122 @@ def test_dispatch_skips_live_mind_pid(
     assert started == 0
     assert not inject_stamp.is_file()
     assert not (qa / "dispatch.offset").is_file()
+    out = capsys.readouterr().out
+    assert "DISPATCH_SKIP seat=qa-a reason=mind-owns-inbox" in out
     src = DISPATCH_PY.read_text(encoding="utf-8")
-    assert "mind-owns-inbox" in src or "mind/pid" in src
+    assert "mind-owns-inbox" in src
+    assert "mind/pid" in src
+    assert "MIND_SEATS = _mind_seats_fn" not in src
+
+
+def test_dispatch_skips_mind_owns_inbox_from_current_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Long-lived dispatch must re-read GCS_MIND_SEATS; do not freeze at import."""
+    dispatch, state, inject_stamp = _prep_dispatch_skip(
+        tmp_path, monkeypatch, "gcs_dispatch_mind_skip_env"
+    )
+    _append_inbox(state, "qa-a", "task-mind-env", "LAUNCH ONLY do not inject")
+    first = dispatch._process_seat("qa-a", dry_run=True)
+    assert first == 0
+    first_out = capsys.readouterr().out
+    assert "DISPATCH_SKIP seat=qa-a reason=mind-owns-inbox" not in first_out
+    assert "DISPATCH_DRY_RUN" in first_out
+
+    monkeypatch.setenv("GCS_MIND_SEATS", "qa-a")
+    started = dispatch._process_seat("qa-a", dry_run=False)
+    assert started == 0
+    assert not inject_stamp.is_file()
+    assert not (state / "qa-a" / "dispatch.offset").is_file()
+    out = capsys.readouterr().out
+    assert "DISPATCH_SKIP seat=qa-a reason=mind-owns-inbox" in out
+    assert "DISPATCH_LAUNCH" not in out
+
+
+def test_bus_recycles_dispatch_when_mind_seats_change_without_killing_minds(
+    tmp_path: Path,
+) -> None:
+    """PAL-15: leftover dispatch from before GCS_MIND_SEATS=qa-a must bounce alone."""
+    state = tmp_path / "a2a-state"
+    procs = _plant_leftover_bus(state, mind_seats=("qa-a",))
+    leftover_disp = procs["dispatch"].pid
+    (state / "studio.env").write_text("GCS_MIND_SEATS=qa-a\n", encoding="utf-8")
+    try:
+        proc = _run_bus_start(state, _bus_env(state))
+        out = proc.stdout + proc.stderr
+        assert proc.returncode == 0, out
+        assert "STUDIO_BUS_DISPATCH_RECYCLE" in out
+        assert "reason=mind-seats-changed" in out
+        assert "STUDIO_BUS_DISPATCH_START" in out
+        assert "STUDIO_BUS_DISPATCH_ALREADY" not in out
+        assert "STUDIO_BUS_HUB_ALREADY" in out
+        assert "STUDIO_BUS_SHEPHERD_ALREADY" in out
+        assert "STUDIO_BUS_BOT_BRIDGE_ALREADY" in out
+        assert "STUDIO_BUS_MIND_ALREADY seat=qa-a" in out
+        assert "STUDIO_BUS_HUB_STOP" not in out
+        assert "STUDIO_BUS_SHEPHERD_STOP" not in out
+        assert "STUDIO_BUS_BOT_BRIDGE_STOP" not in out
+        assert "STUDIO_BUS_MIND_STOP" not in out
+        assert "STUDIO_BUS_TICKER_STOP" not in out
+        assert "stop-seat-daemon" not in out
+        assert procs["hub"].poll() is None
+        assert procs["bot-bridge"].poll() is None
+        assert procs["shepherd"].poll() is None
+        assert procs["ticker"].poll() is None
+        assert procs["mind:qa-a"].poll() is None
+        assert procs["serve:qa-a"].poll() is None
+        assert procs["dispatch"].poll() is not None
+        new_pid = int((state / "dispatch.pid").read_text(encoding="utf-8").strip().split()[0])
+        assert new_pid != leftover_disp
+        os.kill(new_pid, 0)
+        persisted = (state / "dispatch.mind-seats").read_text(encoding="utf-8")
+        seats = {part.strip() for part in persisted.replace(",", "\n").split() if part.strip()}
+        assert seats == {"qa-a"}
+    finally:
+        _reap_planted(procs, state)
+
+
+def test_bus_keeps_dispatch_when_mind_seats_match(tmp_path: Path) -> None:
+    state = tmp_path / "a2a-state"
+    procs = _plant_leftover_bus(state, mind_seats=("floor", "qa-a"))
+    leftover_disp = procs["dispatch"].pid
+    (state / "dispatch.mind-seats").write_text("qa-a,floor\n", encoding="utf-8")
+    env = _bus_env(state, {"GCS_MIND_SEATS": "floor,qa-a"})
+    try:
+        proc = _run_bus_start(state, env)
+        out = proc.stdout + proc.stderr
+        assert proc.returncode == 0, out
+        assert "STUDIO_BUS_DISPATCH_ALREADY" in out
+        assert f"pid={leftover_disp}" in out
+        assert "STUDIO_BUS_DISPATCH_RECYCLE" not in out
+        assert "STUDIO_BUS_DISPATCH_START" not in out
+        assert "STUDIO_BUS_DISPATCH_STOP" not in out
+        assert procs["dispatch"].poll() is None
+        assert procs["hub"].poll() is None
+        assert procs["mind:floor"].poll() is None
+        assert procs["mind:qa-a"].poll() is None
+        assert procs["serve:qa-a"].poll() is None
+        assert int((state / "dispatch.pid").read_text(encoding="utf-8").strip().split()[0]) == leftover_disp
+    finally:
+        _reap_planted(procs, state)
+
+
+def test_bus_keeps_dispatch_when_mind_seats_file_missing_and_current_empty(
+    tmp_path: Path,
+) -> None:
+    state = tmp_path / "a2a-state"
+    procs = _plant_leftover_bus(state, mind_seats=())
+    leftover_disp = procs["dispatch"].pid
+    try:
+        proc = _run_bus_start(state, _bus_env(state))
+        out = proc.stdout + proc.stderr
+        assert proc.returncode == 0, out
+        assert "STUDIO_BUS_DISPATCH_ALREADY" in out
+        assert "STUDIO_BUS_DISPATCH_RECYCLE" not in out
+        assert procs["dispatch"].poll() is None
+        assert int((state / "dispatch.pid").read_text(encoding="utf-8").strip().split()[0]) == leftover_disp
+    finally:
+        _reap_planted(procs, state)
 
 
 def test_plugin_schemas_are_json_objects() -> None:

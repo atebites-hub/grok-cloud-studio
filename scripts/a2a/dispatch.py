@@ -75,7 +75,6 @@ _INJECT_ONLY_KINDS = frozenset(
     }
 )
 GROW_SEATS = _grow_seats_fn(ROOT)
-MIND_SEATS = _mind_seats_fn(ROOT)
 
 
 def _launch_seats() -> frozenset[str]:
@@ -84,6 +83,11 @@ def _launch_seats() -> frozenset[str]:
 
 def _skip_seats() -> frozenset[str]:
     return _skip_seats_fn(ROOT)
+
+
+def _mind_seats() -> frozenset[str]:
+    """Current GCS_MIND_SEATS. Re-read each poll; do not freeze at import."""
+    return _mind_seats_fn(ROOT)
 
 
 def _wake_owns_inbox(seat: str) -> bool:
@@ -101,8 +105,8 @@ def _wake_owns_inbox(seat: str) -> bool:
 
 
 def _mind_owns_inbox(seat: str) -> bool:
-    """Opt-in mind seats and any seat with a live mind/pid own inbox.jsonl."""
-    if seat in MIND_SEATS:
+    """Opt-in mind seats (live env) and any seat with a live mind/pid own inbox.jsonl."""
+    if seat in _mind_seats():
         return True
     path = STATE_DIR / seat / "mind" / "pid"
     if not path.is_file():

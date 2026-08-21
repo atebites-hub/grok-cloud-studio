@@ -11,6 +11,10 @@
 # the GROW path when opted in; ACP wake is skipped for those seats unless
 # GCS_MIND_PLUS_ACP_WAKE=1 (in addition). Do not kill existing serve.
 # Leftover ACP GROW is session/prompt inside serve, not this grok --resume path.
+# start recycles leftover dispatch only when .a2a-state/dispatch.mind-seats
+# differs from current GCS_MIND_SEATS (env / studio.env). Matching keeps
+# STUDIO_BUS_DISPATCH_ALREADY. Recycle does not kill hub, bot-bridge,
+# fleet-shepherd, seat minds, host ticker, or grok agent serve.
 # Host ticker enqueues ACP_PING STATUS/CONTINUE keep-alives (work turns).
 # Agent Kanban / `ak` was removed. Board is tcarac/taskboard (ticket CLI + HTTP /mcp).
 #
@@ -33,6 +37,7 @@ DISPATCH_PY="$SCRIPT_DIR/dispatch.py"
 BOT_BRIDGE_PY="$SCRIPT_DIR/bot-bridge.py"
 HUB_PID_FILE="$STATE_DIR/hub.pid"
 DISPATCH_PID_FILE="$STATE_DIR/dispatch.pid"
+DISPATCH_MIND_SEATS_FILE="$STATE_DIR/dispatch.mind-seats"
 BOT_BRIDGE_PID_FILE="$STATE_DIR/bot-bridge.pid"
 HUB_LOG="$STATE_DIR/hub.log"
 DISPATCH_LOG="$STATE_DIR/dispatch.log"
@@ -68,7 +73,8 @@ usage() {
   cat <<'EOF'
 Usage: start-studio-bus.sh [start|stop|status] [--daemons]
 
-start            hub + dispatch + fleet-shepherd (idempotent)
+start            hub + dispatch + fleet-shepherd (idempotent; recycle leftover
+                 dispatch only when dispatch.mind-seats != current GCS_MIND_SEATS)
 start --daemons  also start per-seat ACP daemons + GROW wake loops + host ticker
 stop             stop hub/dispatch/shepherd/wake/mind/ticker (leaves seat serve)
 stop --daemons   also stop seat ACP daemons and clear daemons.enabled
@@ -142,6 +148,42 @@ wake_seats() {
 
 mind_seats() {
   python3 "$LIB_PY" mind-seats 2>/dev/null || true
+}
+
+# Sorted comma set so floor,qa-a and qa-a,floor compare equal. Empty → "".
+comma_join_sorted_seats() {
+  awk 'NF { gsub(/^[ \t]+|[ \t]+$/, ""); if ($0 != "") print }' | sort -u | awk 'BEGIN { ORS="" } { if (n++) printf ","; printf "%s", $0 }'
+}
+
+canonical_mind_seats() {
+  mind_seats | comma_join_sorted_seats
+}
+
+persisted_mind_seats() {
+  local f="$DISPATCH_MIND_SEATS_FILE"
+  [[ -f "$f" ]] || { printf '%s' ""; return 0; }
+  tr ',' '\n' < "$f" | comma_join_sorted_seats
+}
+
+write_dispatch_mind_seats() {
+  canonical_mind_seats > "$DISPATCH_MIND_SEATS_FILE"
+}
+
+# Recycle leftover dispatch only when its persisted GCS_MIND_SEATS set differs
+# from current env / studio.env. Missing persist file is the empty set (pre-feature
+# leftovers). Do not touch hub, bot-bridge, shepherd, minds, ticker, or serve.
+recycle_dispatch_for_mind_seats() {
+  local disp_pid="$1"
+  local want have
+  want="$(canonical_mind_seats)"
+  have="$(persisted_mind_seats)"
+  if [[ "$want" == "$have" ]]; then
+    return 1
+  fi
+  echo "STUDIO_BUS_DISPATCH_RECYCLE reason=mind-seats-changed pid=$disp_pid was=${have:-none} now=${want:-none}"
+  stop_pid_file "$DISPATCH_PID_FILE" "DISPATCH"
+  rm -f "$DISPATCH_MIND_SEATS_FILE"
+  return 0
 }
 
 is_mind_seat() {
@@ -454,6 +496,13 @@ case "$cmd" in
       echo "STUDIO_BUS_HUB_ALREADY pid=$hub_pid"
     fi
 
+    if [[ "$disp_running" == "1" ]]; then
+      if recycle_dispatch_for_mind_seats "$disp_pid"; then
+        disp_running=0
+        disp_pid=""
+      fi
+    fi
+
     if [[ "$disp_running" != "1" ]]; then
       rm -f "$DISPATCH_PID_FILE"
       nohup python3 "$DISPATCH_PY" >>"$DISPATCH_LOG" 2>&1 &
@@ -464,6 +513,7 @@ case "$cmd" in
         echo "STUDIO_BUS_FAIL dispatch did not stay up; see $DISPATCH_LOG" >&2
         exit 1
       fi
+      write_dispatch_mind_seats
       echo "STUDIO_BUS_DISPATCH_START pid=$disp_pid log=$DISPATCH_LOG"
     else
       echo "STUDIO_BUS_DISPATCH_ALREADY pid=$disp_pid"
@@ -565,7 +615,7 @@ case "$cmd" in
     else
       echo "STUDIO_BUS_DISPATCH_NOT_RUNNING"
     fi
-    rm -f "$DISPATCH_PID_FILE"
+    rm -f "$DISPATCH_PID_FILE" "$DISPATCH_MIND_SEATS_FILE"
 
     if pid_alive "$hub_pid"; then
       kill "$hub_pid" 2>/dev/null || true

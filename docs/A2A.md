@@ -26,7 +26,7 @@ xAI grok-build does not accept external PRs, so `deliver_wake()` cannot live ins
 4. Named identity: `docs/studio/directors/souls/<seat>/{SOUL.md,MEMORY.md}` plus `GROK_MEMORY=1` on serve.
 5. Host ticker (`scripts/a2a/host-ticker.py`, interval `GCS_TICKER_SEC` default 600s) enqueues `ACP_PING STATUS/CONTINUE` **work turns** (tools allowed). Not PONG. Not a 45s central assigner. Not a LAUNCH kind.
 
-Dispatch **does not own GROW inboxes** (`DISPATCH_SKIP reason=wake-owns-inbox`). A live `wake.pid` also skips leftover inject. Do **not** advance `dispatch.offset` on those skips (wake consumes `wake.offset`).
+Dispatch **does not own GROW inboxes** (`DISPATCH_SKIP reason=wake-owns-inbox`). A live `wake.pid` also skips leftover inject. Do **not** advance `dispatch.offset` on those skips (wake consumes `wake.offset`). Mind seats (`GCS_MIND_SEATS` plus a live `mind/pid`) skip leftover inject (`DISPATCH_SKIP reason=mind-owns-inbox`). Dispatch re-reads `mind_seats()` on each poll. `start-studio-bus.sh start` recycles leftover dispatch only when `.a2a-state/dispatch.mind-seats` differs from the current env / `studio.env` set; a match keeps `STUDIO_BUS_DISPATCH_ALREADY`. Recycle does not kill hub, bot-bridge, fleet-shepherd, seat minds, host ticker, or `grok agent serve`.
 
 Non-GROW seats may still use leftover `acp_inject.py` (no `--pin-session`).
 
