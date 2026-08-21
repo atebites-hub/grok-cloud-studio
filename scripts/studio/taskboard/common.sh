@@ -43,10 +43,44 @@ gcs_taskboard_db() {
   printf '%s\n' "$(gcs_studio_state_dir)/taskboard/taskboard.db"
 }
 
+gcs_taskboard_vendor_dir() {
+  printf '%s\n' "$GCS_KIT_ROOT/vendor/taskboard"
+}
+
+gcs_taskboard_submodule_prebuilt() {
+  local cand
+  for cand in \
+    "$(gcs_taskboard_vendor_dir)/taskboard" \
+    "$(gcs_taskboard_vendor_dir)/bin/taskboard"
+  do
+    if [[ -n "$cand" && -f "$cand" && -x "$cand" ]]; then
+      printf '%s\n' "$cand"
+      return 0
+    fi
+  done
+  return 1
+}
+
+gcs_ensure_taskboard_submodule() {
+  local dest
+  dest="$(gcs_taskboard_vendor_dir)"
+  if [[ -e "$dest/.git" ]]; then
+    return 0
+  fi
+  if [[ ! -f "$GCS_KIT_ROOT/.gitmodules" ]]; then
+    return 1
+  fi
+  git -C "$GCS_KIT_ROOT" submodule update --init --recursive -- vendor/taskboard
+}
+
 gcs_taskboard_bin() {
   local cand
   if [[ -n "${TASKBOARD_BIN:-}" && -x "${TASKBOARD_BIN}" ]]; then
     printf '%s\n' "$TASKBOARD_BIN"
+    return 0
+  fi
+  if cand="$(gcs_taskboard_submodule_prebuilt)"; then
+    printf '%s\n' "$cand"
     return 0
   fi
   for cand in \

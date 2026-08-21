@@ -21,6 +21,7 @@ SKIP_DIRS = {
     ".pytest_cache",
     ".a2a-state",
     ".gcs-state",
+    "vendor",
 }
 
 SKIP_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".woff", ".woff2", ".lock"}

@@ -23,7 +23,7 @@ Example seats (edit `docs/a2a/registry.json`): `orchestrator` (Grok Bot, ACP-ski
 ## Quick start
 
 ```bash
-git clone https://github.com/atebites-hub/grok-cloud-studio
+git clone --recurse-submodules https://github.com/atebites-hub/grok-cloud-studio
 cd grok-cloud-studio
 export GCS_BOT_AGENT_ID='your-grok-bot-agent-id'   # from Grok Bot settings
 ./install.sh                                       # binds the Bot seat into A2A
@@ -34,7 +34,7 @@ export GCS_BOT_AGENT_ID='your-grok-bot-agent-id'   # from Grok Bot settings
 
 ### Palemon studio wipe
 
-Disaster recovery: `./setup.sh` (deploy) and `./cleanup.sh` (teardown). See **[docs/studio/WIPE.md](docs/studio/WIPE.md)**.
+Disaster recovery: `./setup.sh` (deploy) and `./cleanup.sh` (teardown). See **[docs/studio/WIPE.md](docs/studio/WIPE.md)**. Clone with `--recurse-submodules` (or `git submodule update --init --recursive`) so `vendor/taskboard` is the v0.6.0 source pin.
 
 Recover today's Palemon floor (8-seat mind, taskboard UI/MCP, no `--daemons`) from a clean machine. Copy `studio.env.example` to `$GCS_A2A_STATE/studio.env` (not committed). Host board: `scripts/studio/taskboard/`.
 

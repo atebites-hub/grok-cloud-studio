@@ -20,20 +20,22 @@ One-command deploy (idempotent). Disaster recovery entrypoint with cleanup.sh.
   1. Source $GCS_A2A_STATE/studio.env if present; else copy studio.env.example
      there (does not overwrite a live studio.env).
   2. Run ./install.sh (venv + chmod).
-  3. Install taskboard if missing.
-  4. Start board UI + MCP HTTP.
-  5. Start scripts/a2a/start-studio-bus.sh start   (NO --daemons)
-  6. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if Agent Kanban returns)
-  7. Print SETUP_OK with hub/board ports and mind seat list.
+  3. Init vendor/taskboard submodule if missing (git submodule update --init).
+  4. Install taskboard if missing (prefer vendor/taskboard prebuilt; else brew/tarball).
+  5. Start board UI + MCP HTTP.
+  6. Start scripts/a2a/start-studio-bus.sh start   (NO --daemons)
+  7. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if Agent Kanban returns)
+  8. Print SETUP_OK with hub/board ports and mind seat list.
 
 Never auto-spawn a 13-seat grok serve floor. Do not pass --daemons.
 GCS_ACP_SEATS comes from env (studio.env) only; this script does not set it.
 Never print secrets. Never git-add studio.env.
 
 Optional skips (already-bootstrapped box / tests):
-  GCS_SETUP_SKIP_INSTALL=1  skip ./install.sh
-  GCS_SETUP_SKIP_START=1    skip taskboard install/start and bus start
-  GCS_SETUP_SKIP_DOCTOR=1   skip ./doctor.sh
+  GCS_SETUP_SKIP_INSTALL=1    skip ./install.sh
+  GCS_SETUP_SKIP_SUBMODULE=1  skip git submodule update --init
+  GCS_SETUP_SKIP_START=1      skip taskboard install/start and bus start
+  GCS_SETUP_SKIP_DOCTOR=1     skip ./doctor.sh
 EOF
 }
 
@@ -66,6 +68,17 @@ export GCS_A2A_STATE="$STATE"
 
 if [[ "${GCS_SETUP_SKIP_INSTALL:-0}" != "1" ]]; then
   bash "$ROOT/install.sh"
+fi
+
+if [[ "${GCS_SETUP_SKIP_SUBMODULE:-0}" != "1" ]]; then
+  if [[ -e "$ROOT/vendor/taskboard/.git" ]]; then
+    echo "SETUP_SUBMODULE_OK path=$ROOT/vendor/taskboard"
+  elif [[ -f "$ROOT/.gitmodules" ]]; then
+    echo "SETUP_SUBMODULE_INIT vendor/taskboard"
+    git -C "$ROOT" submodule update --init --recursive -- vendor/taskboard
+  else
+    echo "SETUP_SUBMODULE_WARN missing .gitmodules; brew/tarball fallback" >&2
+  fi
 fi
 
 if [[ "${GCS_SETUP_SKIP_START:-0}" != "1" ]]; then

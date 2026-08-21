@@ -37,6 +37,7 @@ for p in \
   studio.env.example \
   setup.sh \
   cleanup.sh \
+  .gitmodules \
   .cursor/mcp.json \
   scripts/studio/taskboard/run-mcp.sh \
   scripts/studio/taskboard/start-taskboard.sh \
@@ -118,6 +119,12 @@ if command -v taskboard >/dev/null 2>&1 || [[ -x "$ROOT/bin/taskboard" ]]; then
   ok "taskboard on PATH"
 else
   printf 'WARN taskboard not on PATH (board UI/MCP; run scripts/studio/taskboard/install-taskboard.sh)\n'
+fi
+
+if [[ -e "$ROOT/vendor/taskboard/.git" ]]; then
+  ok "vendor/taskboard submodule"
+else
+  printf 'WARN vendor/taskboard submodule not initialized (git clone --recurse-submodules, or git submodule update --init --recursive)\n'
 fi
 
 if command -v node >/dev/null 2>&1; then

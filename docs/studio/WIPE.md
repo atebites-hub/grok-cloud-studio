@@ -69,11 +69,17 @@ Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI:
 1. Clone this repo. Python 3.11+.
 
    ```bash
-   git clone https://github.com/atebites-hub/grok-cloud-studio
+   git clone --recurse-submodules https://github.com/atebites-hub/grok-cloud-studio
    cd grok-cloud-studio
+   # If you already cloned without submodules:
+   git submodule update --init --recursive
    ./install.sh          # Python venv + chmod; bind Bot if GCS_BOT_AGENT_ID is set
    cp .env.example .env  # fill GCS_CLOUD_REPO + GCS_BOT_AGENT_ID; never commit .env
    ```
+
+   Board source pin: `vendor/taskboard` (tcarac/taskboard **v0.6.0**, not floating
+   main). `./setup.sh` inits the submodule if missing. Do not vendor a compiled
+   binary blob.
 
 2. Live knobs live in **`$GCS_A2A_STATE/studio.env`**, not in git.
 
@@ -107,7 +113,10 @@ Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI:
 5. Set `CURSOR_API_KEY` in the environment or `~/.config/cursor/agent.env`.
    Never print it. Never commit it.
 
-6. Board + MCP HTTP (tcarac/taskboard v0.6.0; do not compile; do not vendor):
+6. Board + MCP HTTP (tcarac/taskboard v0.6.0; do not compile; do not vendor a
+   binary). Source pin is `vendor/taskboard`. `install-taskboard.sh` prefers a
+   prebuilt in that checkout; brew tap or the matching v0.6.0 GitHub tarball
+   remains the fallback when the submodule has no prebuilt.
 
    ```bash
    bash scripts/studio/taskboard/install-taskboard.sh

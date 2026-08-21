@@ -5,7 +5,11 @@ directory is the **wipe-box host process** layer. Seats still talk to the
 SQLite file through wrappers (`docs/studio/TASKBOARD.md`). Agent Kanban
 (`ak`, AMA, `scripts/studio/agent-kanban/`) stays gone.
 
-Do not vendor the `taskboard` binary into git.
+Do not vendor the `taskboard` binary into git. Source pin:
+`vendor/taskboard` (submodule, **v0.6.0**). Clone with
+`--recurse-submodules`, or `git submodule update --init --recursive`.
+`./setup.sh` inits the submodule if missing. brew/tarball remains the
+fallback when that checkout has no prebuilt.
 
 Cursor CLI sees the board through checkout `.cursor/mcp.json` →
 `run-mcp.sh` (`taskboard --db $DB mcp`). That is the Cursor catalog.
@@ -17,7 +21,9 @@ Two catalogs. Never fake a transfer.
 From a grok-cloud-studio checkout (see `docs/studio/WIPE.md`):
 
 ```bash
-# 1. Binary (brew tap, else GitHub release tarball — do not compile)
+# 1. Submodule (source pin v0.6.0) then binary (brew tap, else GitHub
+#    release tarball — do not compile, do not vendor a blob)
+git submodule update --init --recursive
 bash scripts/studio/taskboard/install-taskboard.sh
 
 # 2. UI on 127.0.0.1:3010  (DB $GCS_A2A_STATE/taskboard/taskboard.db)
