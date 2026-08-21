@@ -3,9 +3,10 @@
 
 GROW seats (GCS_GROW_SEATS / GCS_ACP_SEATS, default floor,studio-ops) are
 owned by `scripts/a2a/wake-daemon.py` (inbox.jsonl → persistent grok agent
-serve + local ACP session/prompt). This process must not ACP-inject peer
-mail for those seats (or any seat with a live wake.pid) and must not
-advance dispatch.offset there.
+serve + local ACP session/prompt). Opt-in mind seats (GCS_MIND_SEATS) plus
+any seat with a live mind/pid are owned by `scripts/directors/mind.py`.
+This process must not ACP-inject peer mail for those seats (or any seat
+with a live wake.pid) and must not advance dispatch.offset there.
 
 Non-GROW seats may still use leftover `grok agent serve` + acp_inject.py.
 STATUS / FLEET_* / A2A_REPLY never launch (A2A_REPLY is a duplex caller ping).
@@ -34,6 +35,7 @@ if str(_LIB_DIR) not in sys.path:
 from lib import launch_seats as _launch_seats_fn  # noqa: E402
 from lib import skip_seats as _skip_seats_fn  # noqa: E402
 from lib import grow_seats as _grow_seats_fn  # noqa: E402
+from lib import mind_seats as _mind_seats_fn  # noqa: E402
 from lib import repo_root as _repo_root  # noqa: E402
 from lib import state_root as _state_root  # noqa: E402
 
@@ -73,6 +75,7 @@ _INJECT_ONLY_KINDS = frozenset(
     }
 )
 GROW_SEATS = _grow_seats_fn(ROOT)
+MIND_SEATS = _mind_seats_fn(ROOT)
 
 
 def _launch_seats() -> frozenset[str]:
@@ -88,6 +91,20 @@ def _wake_owns_inbox(seat: str) -> bool:
     if seat in GROW_SEATS:
         return True
     path = STATE_DIR / seat / "wake.pid"
+    if not path.is_file():
+        return False
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip().split()[0])
+    except (ValueError, IndexError, OSError):
+        return False
+    return _pid_alive(pid)
+
+
+def _mind_owns_inbox(seat: str) -> bool:
+    """Opt-in mind seats and any seat with a live mind/pid own inbox.jsonl."""
+    if seat in MIND_SEATS:
+        return True
+    path = STATE_DIR / seat / "mind" / "pid"
     if not path.is_file():
         return False
     try:
@@ -607,10 +624,14 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
 
     GROW seats and any seat with a live wake.pid are owned by the inbox wake
     loop (wake.offset / local ACP session/prompt into grok agent serve).
+    Mind seats and any seat with a live mind/pid are owned by mind.py.
     Do not ACP-inject peer mail and do not advance dispatch.offset there.
     """
     if _wake_owns_inbox(seat):
         print(f"DISPATCH_SKIP seat={seat} reason=wake-owns-inbox", flush=True)
+        return 0
+    if _mind_owns_inbox(seat):
+        print(f"DISPATCH_SKIP seat={seat} reason=mind-owns-inbox", flush=True)
         return 0
 
     records, _size = _read_new_records(seat)

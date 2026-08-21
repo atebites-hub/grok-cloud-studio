@@ -1,0 +1,611 @@
+#!/usr/bin/env python3
+"""Grok Build seat mind: stateful Python core, everything is a plugin.
+
+One long-lived process per opted-in seat. Mail is a turn: inbox.jsonl growth
+→ one model runner call → persist transcript + offset. The harness owns
+conversation state. Default runner is a grok CLI one-shot (cwd=$GCS_ROOT,
+GROK_HOME=seat grok-home). Tests inject a fake runner.
+
+No ACP WebSocket. No leftover inject client. Never a grok resume flag.
+Donald/orchestrator (skipSeats) are not mind seats. Stdlib only.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import signal
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Callable
+
+_LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
+if str(_LIB_DIR) not in sys.path:
+    sys.path.insert(0, str(_LIB_DIR))
+from lib import canonical_seat, skip_seats  # noqa: E402
+
+ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
+STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
+
+_SECRET_ASSIGN_RE = re.compile(
+    r"(?i)\b(CURSOR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
+    r"server-key|ACP_SECRET|api[_-]?key)\s*[=:]\s*\S+"
+)
+
+
+@dataclass(frozen=True)
+class Plugin:
+    """One callable plugin plus its JSON schema."""
+
+    schema: dict[str, Any]
+    call: Callable[[dict[str, Any]], str]
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def redact(text: str) -> str:
+    """Strip credential assignments from plugin/runner output. Never print secrets."""
+    if not text:
+        return text
+    return _SECRET_ASSIGN_RE.sub(lambda m: f"{m.group(1)}=[redacted]", text)
+
+
+def mind_dir(seat: str) -> Path:
+    d = STATE_DIR / seat / "mind"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def grok_home_dir(seat: str) -> Path:
+    d = STATE_DIR / seat / "grok-home"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def taskboard_db() -> Path:
+    raw = os.environ.get("GCS_TASKBOARD_DB") or os.environ.get("TASKBOARD_DB")
+    if raw:
+        return Path(raw)
+    return STATE_DIR / "taskboard" / "taskboard.db"
+
+
+def _write_pid(seat: str) -> None:
+    try:
+        (mind_dir(seat) / "pid").write_text(str(os.getpid()) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _read_offset(seat: str) -> int:
+    path = mind_dir(seat) / "offset"
+    if not path.is_file():
+        return 0
+    try:
+        return max(0, int(path.read_text(encoding="utf-8").strip() or "0"))
+    except ValueError:
+        return 0
+
+
+def _write_offset(seat: str, offset: int) -> None:
+    path = mind_dir(seat) / "offset"
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(str(offset) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _append_transcript(seat: str, row: dict[str, Any]) -> None:
+    path = mind_dir(seat) / "transcript.jsonl"
+    rec = dict(row)
+    rec.setdefault("ts", _now())
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def _load_transcript(seat: str) -> list[dict[str, Any]]:
+    path = mind_dir(seat) / "transcript.jsonl"
+    if not path.is_file():
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(rec, dict) and rec.get("role"):
+                rows.append(
+                    {
+                        "role": str(rec.get("role")),
+                        "content": str(rec.get("content") or ""),
+                    }
+                )
+    except OSError:
+        return []
+    return rows
+
+
+def _extract_text(parts: Any) -> str:
+    bits: list[str] = []
+    if not isinstance(parts, list):
+        return ""
+    for p in parts:
+        if not isinstance(p, dict):
+            continue
+        if p.get("kind") == "text" or "text" in p:
+            t = p.get("text")
+            if t is not None:
+                bits.append(str(t))
+        elif p.get("kind") == "data" and "data" in p:
+            try:
+                bits.append(json.dumps(p["data"], ensure_ascii=False))
+            except (TypeError, ValueError):
+                bits.append(str(p["data"]))
+    return "\n".join(bits).strip()
+
+
+def _read_new_records(seat: str) -> list[tuple[int, dict[str, Any]]]:
+    path = STATE_DIR / seat / "inbox.jsonl"
+    if not path.is_file():
+        return []
+    size = path.stat().st_size
+    offset = _read_offset(seat)
+    if offset > size:
+        offset = size
+    records: list[tuple[int, dict[str, Any]]] = []
+    with path.open("rb") as fh:
+        fh.seek(offset)
+        while True:
+            line_start = fh.tell()
+            raw = fh.readline()
+            if not raw:
+                break
+            if not raw.endswith(b"\n"):
+                break
+            end = fh.tell()
+            try:
+                rec = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                print(
+                    f"MIND_WARN seat={seat} bad_json offset={line_start}: {e}",
+                    file=sys.stderr,
+                )
+                records.append((end, {"__corrupt__": True}))
+                continue
+            if not isinstance(rec, dict):
+                records.append((end, {"__corrupt__": True}))
+                continue
+            records.append((end, rec))
+    return records
+
+
+def _argv_list(arguments: dict[str, Any]) -> list[str]:
+    raw = arguments.get("argv")
+    if raw is None:
+        raw = arguments.get("args")
+    if raw is None:
+        raw = arguments.get("command")
+    if isinstance(raw, str):
+        return raw.split()
+    if isinstance(raw, list):
+        return [str(x) for x in raw]
+    return []
+
+
+def _run_cmd(cmd: list[str], *, timeout: int = 60) -> str:
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            env={**os.environ, "GCS_ROOT": str(ROOT), "GCS_A2A_STATE": str(STATE_DIR)},
+        )
+    except FileNotFoundError:
+        return f"PLUGIN_ERR missing binary: {cmd[0]}"
+    except subprocess.TimeoutExpired:
+        return f"PLUGIN_ERR timeout after {timeout}s: {cmd[0]}"
+    except OSError as e:
+        return f"PLUGIN_ERR {e}"
+    out = (proc.stdout or "") + (proc.stderr or "")
+    blob = redact(out.strip() or f"rc={proc.returncode}")
+    if proc.returncode != 0 and "PLUGIN_ERR" not in blob:
+        return f"PLUGIN_ERR rc={proc.returncode} {blob}"
+    return blob
+
+
+def plugin_ticket(arguments: dict[str, Any]) -> str:
+    """Exec TASKBOARD_BIN --db GCS_TASKBOARD_DB ticket <argv>."""
+    candidates: list[Path] = []
+    env_bin = (os.environ.get("TASKBOARD_BIN") or "").strip()
+    if env_bin:
+        candidates.append(Path(env_bin))
+    candidates.append(ROOT / "bin" / "taskboard")
+    binary: Path | None = None
+    for cand in candidates:
+        try:
+            if cand.is_file() and os.access(cand, os.X_OK):
+                binary = cand
+                break
+        except OSError:
+            continue
+    if binary is None:
+        return "PLUGIN_ERR ticket: missing TASKBOARD_BIN (set TASKBOARD_BIN)"
+    argv = _argv_list(arguments)
+    db = str(taskboard_db())
+    cmd = [str(binary), "--db", db, "ticket", *argv]
+    return _run_cmd(cmd, timeout=60)
+
+
+def plugin_a2a_send(arguments: dict[str, Any]) -> str:
+    """scripts/a2a/send.sh [--from SEAT] <seat> <text>."""
+    script = ROOT / "scripts" / "a2a" / "send.sh"
+    if not script.is_file():
+        return "PLUGIN_ERR a2a_send: missing scripts/a2a/send.sh"
+    seat = str(arguments.get("seat") or "").strip()
+    text = str(arguments.get("text") or "")
+    if not seat or not text:
+        return "PLUGIN_ERR a2a_send: seat and text are required"
+    cmd = ["bash", str(script)]
+    from_seat = str(arguments.get("from") or arguments.get("from_seat") or "").strip()
+    if from_seat:
+        cmd.extend(["--from", from_seat])
+    cmd.extend([seat, text])
+    return _run_cmd(cmd, timeout=60)
+
+
+def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
+    """scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT."""
+    script = ROOT / "scripts" / "launch-cloud-extra-high.sh"
+    if not script.is_file():
+        return "PLUGIN_ERR cloud_launch: missing scripts/launch-cloud-extra-high.sh"
+    prompt = str(arguments.get("prompt") or "").strip()
+    if not prompt:
+        return "PLUGIN_ERR cloud_launch: prompt is required"
+    cmd = ["bash", str(script)]
+    name = str(arguments.get("name") or "").strip()
+    if name:
+        cmd.extend(["--name", name])
+    cmd.append(prompt)
+    return _run_cmd(cmd, timeout=180)
+
+
+TICKET_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "argv": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Arguments after `ticket`, e.g. [\"list\"] or "
+                "[\"move\", \"T-1\", \"--status\", \"done\"]."
+            ),
+        }
+    },
+    "required": ["argv"],
+    "additionalProperties": False,
+}
+
+A2A_SEND_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "seat": {"type": "string", "description": "Destination seat id"},
+        "text": {"type": "string", "description": "Message body"},
+        "from": {"type": "string", "description": "Optional caller seat for --from"},
+    },
+    "required": ["seat", "text"],
+    "additionalProperties": False,
+}
+
+CLOUD_LAUNCH_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "prompt": {"type": "string"},
+        "name": {"type": "string", "description": "Short Extra High agent name"},
+    },
+    "required": ["prompt"],
+    "additionalProperties": False,
+}
+
+PLUGINS: dict[str, Plugin] = {
+    "ticket": Plugin(schema=TICKET_SCHEMA, call=plugin_ticket),
+    "a2a_send": Plugin(schema=A2A_SEND_SCHEMA, call=plugin_a2a_send),
+    "cloud_launch": Plugin(schema=CLOUD_LAUNCH_SCHEMA, call=plugin_cloud_launch),
+}
+
+
+def call_plugin(name: str, arguments: dict[str, Any] | None = None) -> str:
+    plugin = PLUGINS.get(name)
+    if plugin is None:
+        return f"PLUGIN_ERR unknown plugin: {name}"
+    try:
+        return redact(plugin.call(arguments or {}))
+    except Exception as e:
+        return f"PLUGIN_ERR {name}: {e}"
+
+
+def grok_cli_argv(prompt: str, *, cwd: Path, grok: str | None = None) -> list[str]:
+    """Default one-shot grok CLI. cwd is GCS_ROOT."""
+    binary = grok or os.environ.get("GROK_BIN") or "grok"
+    return [
+        binary,
+        "--permission-mode",
+        "bypassPermissions",
+        "--always-approve",
+        "--trust",
+        "--cwd",
+        str(cwd),
+        "-p",
+        prompt,
+        "--output-format",
+        "plain",
+    ]
+
+
+def compose_prompt(seat: str, messages: list[dict[str, Any]], plugins: dict[str, Plugin]) -> str:
+    schemas = {name: p.schema for name, p in plugins.items()}
+    lines = [
+        f"You are the Grok Cloud Studio seat `{seat}` mind (Grok Build one-shot).",
+        "The harness owns conversation state. This mail is one turn.",
+        "Plugins (emit JSON tool calls, then stop):",
+        json.dumps(schemas, indent=2),
+        'Tool call format: {"name": "ticket", "arguments": {"argv": ["list"]}}',
+        "Never print credentials.",
+        "",
+        "=== TRANSCRIPT ===",
+    ]
+    for msg in messages:
+        lines.append(f"{msg.get('role', 'user')}: {msg.get('content', '')}")
+    return "\n".join(lines)
+
+
+def parse_tool_calls(text: str) -> list[dict[str, Any]]:
+    """Best-effort JSON tool calls from model text. Known plugin names only."""
+    calls: list[dict[str, Any]] = []
+    if not text:
+        return calls
+    for line in text.splitlines():
+        blob = line.strip().strip("`")
+        if not blob.startswith("{") or not blob.endswith("}"):
+            continue
+        try:
+            obj = json.loads(blob)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+        name = str(obj.get("name") or obj.get("tool") or "")
+        if name not in PLUGINS:
+            continue
+        args = obj.get("arguments") or obj.get("args") or {}
+        if not isinstance(args, dict):
+            args = {"argv": args}
+        calls.append({"name": name, "arguments": args})
+    return calls
+
+
+def parse_runner_result(raw: Any) -> tuple[str, list[dict[str, Any]]]:
+    if raw is None:
+        return "", []
+    if isinstance(raw, str):
+        return raw, parse_tool_calls(raw)
+    if isinstance(raw, dict):
+        text = str(raw.get("text") or "")
+        calls = raw.get("tool_calls") or []
+        if not isinstance(calls, list):
+            calls = [calls] if calls else []
+        normalized: list[dict[str, Any]] = []
+        for c in calls:
+            if isinstance(c, dict) and (c.get("name") or c.get("tool")):
+                normalized.append(
+                    {
+                        "name": str(c.get("name") or c.get("tool")),
+                        "arguments": c.get("arguments") or c.get("args") or {},
+                    }
+                )
+        if not normalized:
+            normalized = parse_tool_calls(text)
+        return text, normalized
+    text = str(getattr(raw, "text", raw) or "")
+    calls = list(getattr(raw, "tool_calls", None) or [])
+    return text, calls
+
+
+def grok_cli_runner(
+    messages: list[dict[str, Any]],
+    plugins: dict[str, Plugin],
+    *,
+    seat: str = "",
+    grok_home: Path | None = None,
+    **_kwargs: Any,
+) -> dict[str, Any]:
+    prompt = compose_prompt(seat, messages, plugins)
+    argv = grok_cli_argv(prompt, cwd=ROOT)
+    env = os.environ.copy()
+    env["GCS_ROOT"] = str(ROOT)
+    env["GCS_A2A_STATE"] = str(STATE_DIR)
+    if grok_home is not None:
+        env["GROK_HOME"] = str(grok_home)
+    elif seat:
+        env["GROK_HOME"] = str(grok_home_dir(seat))
+    timeout_raw = os.environ.get("GCS_MIND_TURN_TIMEOUT", "").strip()
+    timeout: float | None = float(timeout_raw) if timeout_raw else None
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=str(ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError:
+        return {"text": "PLUGIN_ERR grok CLI missing on PATH", "tool_calls": []}
+    except subprocess.TimeoutExpired:
+        return {"text": "PLUGIN_ERR grok CLI timeout", "tool_calls": []}
+    except OSError as e:
+        return {"text": f"PLUGIN_ERR grok CLI: {e}", "tool_calls": []}
+    text = redact((proc.stdout or "").strip())
+    if proc.returncode != 0 and proc.stderr:
+        err = redact(proc.stderr.strip())
+        if err:
+            text = f"{text}\n{err}".strip()
+    return {"text": text, "tool_calls": parse_tool_calls(text)}
+
+
+DEFAULT_RUNNER: Callable[..., Any] = grok_cli_runner
+
+
+def _is_skip_seat(seat: str) -> bool:
+    skipped = skip_seats(ROOT)
+    key = canonical_seat(seat, ROOT)
+    return key in skipped or seat.strip().lower() in skipped
+
+
+def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
+    """Consume at most one inbox line: one runner call, then persist. Mail is a turn."""
+    seat = canonical_seat(seat, ROOT)
+    if _is_skip_seat(seat):
+        print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)
+        return {"consumed": 0, "reason": "skipSeats"}
+
+    mind_dir(seat)
+    grok_home = grok_home_dir(seat)
+    records = _read_new_records(seat)
+    if not records:
+        return {"consumed": 0, "reason": "empty", "offset": _read_offset(seat)}
+
+    run = runner if runner is not None else DEFAULT_RUNNER
+    for end_offset, rec in records:
+        if rec.get("__corrupt__"):
+            _write_offset(seat, end_offset)
+            continue
+        task_id = str(rec.get("taskId") or "")
+        context_id = str(rec.get("contextId") or "")
+        text = _extract_text(rec.get("parts"))
+        user_content = text or json.dumps(rec, ensure_ascii=False)
+        messages = _load_transcript(seat)
+        messages.append({"role": "user", "content": user_content})
+        try:
+            raw = run(
+                messages,
+                PLUGINS,
+                seat=seat,
+                grok_home=grok_home,
+                task_id=task_id,
+                context_id=context_id,
+            )
+        except Exception as e:
+            print(f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail err={e}", file=sys.stderr)
+            return {"consumed": 0, "reason": "runner-fail", "task_id": task_id}
+
+        assistant_text, tool_calls = parse_runner_result(raw)
+        _append_transcript(
+            seat,
+            {
+                "role": "user",
+                "content": user_content,
+                "taskId": task_id,
+                "contextId": context_id,
+            },
+        )
+        _append_transcript(seat, {"role": "assistant", "content": assistant_text})
+        for call in tool_calls:
+            name = str(call.get("name") or "")
+            args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
+            result = call_plugin(name, args)
+            _append_transcript(
+                seat,
+                {
+                    "role": "tool",
+                    "name": name,
+                    "arguments": args,
+                    "content": result,
+                },
+            )
+        _write_offset(seat, end_offset)
+        print(
+            f"MIND_TURN seat={seat} task={task_id} offset={end_offset} tools={len(tool_calls)}",
+            flush=True,
+        )
+        return {
+            "consumed": 1,
+            "reason": "ok",
+            "task_id": task_id,
+            "offset": end_offset,
+            "tools": len(tool_calls),
+        }
+
+    return {"consumed": 0, "reason": "no-actionable", "offset": _read_offset(seat)}
+
+
+def wait_for_inbox(seat: str, timeout: float = 30.0) -> None:
+    inbox = STATE_DIR / seat / "inbox.jsonl"
+    offset = _read_offset(seat)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if inbox.is_file() and inbox.stat().st_size > offset:
+                return
+        except OSError:
+            pass
+        time.sleep(0.25)
+
+
+def run_forever(seat: str) -> int:
+    seat = canonical_seat(seat, ROOT)
+    if _is_skip_seat(seat):
+        print(f"MIND_SKIP seat={seat} reason=skipSeats", file=sys.stderr)
+        return 2
+    _write_pid(seat)
+    print(f"MIND_READY seat={seat} state={STATE_DIR} mode=grok-build-mind", flush=True)
+    stopping = False
+
+    def _handle(signum: int, _frame: Any) -> None:
+        nonlocal stopping
+        stopping = True
+        print(f"MIND_STOP seat={seat} signal={signum}", flush=True)
+
+    signal.signal(signal.SIGINT, _handle)
+    signal.signal(signal.SIGTERM, _handle)
+    while not stopping:
+        result = process_once(seat)
+        if result.get("consumed"):
+            continue
+        if result.get("reason") == "runner-fail":
+            end = time.time() + 2.0
+            while not stopping and time.time() < end:
+                time.sleep(0.25)
+            continue
+        wait_for_inbox(seat, timeout=30.0)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Grok Build seat mind (inbox → one-shot grok CLI + plugins)"
+    )
+    parser.add_argument("--seat", required=True, help="Director seat (floor, ops, …)")
+    parser.add_argument("--once", action="store_true", help="Process one pending line then exit")
+    args = parser.parse_args(argv)
+    seat = canonical_seat(args.seat, ROOT)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    if args.once:
+        process_once(seat)
+        return 0
+    return run_forever(seat)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

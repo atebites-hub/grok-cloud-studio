@@ -26,10 +26,13 @@ for p in \
   scripts/directors/acp_inject.py \
   scripts/directors/seat-prompt-acp.sh \
   scripts/directors/seat-wake-loop.sh \
+  scripts/directors/mind.py \
+  scripts/directors/seat-mind-loop.sh \
   scripts/directors/start-seat-daemon.sh \
   scripts/directors/prompt-dir.sh \
   scripts/directors/fleet-shepherd.py \
   docs/studio/TASKBOARD.md \
+  docs/studio/MIND.md \
   scripts/launch-cloud-extra-high.sh \
   scripts/cloud/spawn-waiter.sh \
   scripts/cloud/sdk/wait-notify.ts \
