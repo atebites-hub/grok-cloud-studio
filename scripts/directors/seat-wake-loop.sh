@@ -30,12 +30,8 @@ SD="$(seat_state_dir "$SEAT")"
 WAKE_PY="$ROOT/scripts/a2a/wake-daemon.py"
 PID_FILE="$SD/wake.pid"
 
-export GCS_ROOT="$ROOT"
-export GCS_A2A_STATE="$STATE_DIR"
-export GCS_DIRECTOR_SEAT="$SEAT"
-export GROK_MEMORY="${GROK_MEMORY:-1}"
-export GROK_HOME="${GROK_HOME:-$SD/grok-home}"
-mkdir -p "$GROK_HOME"
+export_seat_serve_env "$SEAT"
+: "${GCS_TASKBOARD_DB:?export_seat_serve_env must set GCS_TASKBOARD_DB}"
 
 echo $$ >"$PID_FILE"
 {
