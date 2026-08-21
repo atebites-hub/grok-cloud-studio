@@ -117,6 +117,8 @@ def test_setup_is_crash_safe_no_daemons() -> None:
     assert "studio.env.example" in text
     assert "13-seat" in text or "13 seat" in text.lower() or "--daemons" in text
     assert "GCS_ACP_SEATS" in text
+    assert "submodule update --init" in text
+    assert "vendor/taskboard" in text
 
 
 def test_cleanup_soft_by_default_and_wipe_flag() -> None:

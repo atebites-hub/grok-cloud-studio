@@ -85,6 +85,7 @@ def test_wipe_kit_files_exist() -> None:
         WIPE,
         REPO / "setup.sh",
         REPO / "cleanup.sh",
+        REPO / ".gitmodules",
         STUDIO_ENV_EXAMPLE,
         START_TB,
         MCP_HTTP,
@@ -271,6 +272,7 @@ def test_doctor_warns_on_missing_host_bins_and_fails_on_ak() -> None:
     assert "FAIL" in text or "bad " in text
     assert ".cursor/mcp.json" in text
     assert "run-mcp.sh" in text
+    assert ".gitmodules" in text
 
 
 def test_wipe_doc_has_host_bootstrap_steps() -> None:
@@ -292,6 +294,9 @@ def test_wipe_doc_has_host_bootstrap_steps() -> None:
     assert "CURSOR_API_KEY" in text
     assert "setup.sh" in text
     assert "cleanup.sh" in text
+    assert "vendor/taskboard" in text
+    assert "--recurse-submodules" in text
+    assert "submodule update --init" in text
 
 
 def test_install_taskboard_uses_brew_or_release_tarball_not_compile() -> None:
@@ -303,6 +308,7 @@ def test_install_taskboard_uses_brew_or_release_tarball_not_compile() -> None:
     assert "compile" in text.lower()
     assert "go build" not in text
     assert "make build" not in text
+    assert "vendor/taskboard" in text
 
 
 def test_tailscale_serve_script_is_secret_free_and_skippable() -> None:
@@ -494,6 +500,7 @@ def test_taskboard_readme_covers_wipe_board_start() -> None:
     assert "Agent Kanban" in text or "ak" in text.lower()
     assert "ak start" not in text
     assert ".cursor/mcp.json" in text or "run-mcp.sh" in text
+    assert "vendor/taskboard" in text or "submodule" in text.lower()
 
 
 _TWO_CATALOG_NEEDLES = (
@@ -607,3 +614,115 @@ def test_run_mcp_execs_taskboard_stdio(tmp_path: Path) -> None:
     assert PRIVATE_GAME not in blob
     assert "CURSOR_API_KEY=" not in blob
     assert "TAILSCALE_AUTH_KEY=" not in blob
+
+
+GITMODULES = REPO / ".gitmodules"
+VENDOR_TB = REPO / "vendor" / "taskboard"
+TASKBOARD_DOC = REPO / "docs" / "studio" / "TASKBOARD.md"
+COMMON_SH = TASKBOARD_DIR / "common.sh"
+SETUP_SH = REPO / "setup.sh"
+PINNED_TASKBOARD_TAG = "v0.6.0"
+
+
+def _elf_or_macho(path: Path) -> bool:
+    head = path.read_bytes()[:4]
+    return head == b"\x7fELF" or head[:4] == b"\xcf\xfa\xed\xfe" or head[:4] == b"\xfe\xed\xfa\xcf"
+
+
+def test_taskboard_gitmodules_pins_v060_not_main() -> None:
+    assert GITMODULES.is_file(), "missing .gitmodules"
+    text = GITMODULES.read_text(encoding="utf-8")
+    assert "vendor/taskboard" in text
+    assert "tcarac/taskboard" in text
+    assert PINNED_TASKBOARD_TAG in text
+    assert "branch = main" not in text
+    assert "branch = master" not in text
+    proc = subprocess.run(
+        ["git", "-C", str(REPO), "ls-files", "-s", "--", "vendor/taskboard"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    assert "160000" in proc.stdout, blob
+    assert "vendor/taskboard" in proc.stdout
+
+
+def test_taskboard_submodule_checkout_is_v060() -> None:
+    assert VENDOR_TB.is_dir(), "missing vendor/taskboard"
+    gitdir = VENDOR_TB / ".git"
+    assert gitdir.exists(), "vendor/taskboard is not an initialized submodule"
+    proc = subprocess.run(
+        ["git", "-C", str(VENDOR_TB), "describe", "--tags", "--exact-match"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    assert proc.stdout.strip() == PINNED_TASKBOARD_TAG
+
+
+def test_taskboard_submodule_has_no_compiled_binary_blob() -> None:
+    assert VENDOR_TB.is_dir()
+    for path in VENDOR_TB.rglob("*"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        if ".git" in path.parts:
+            continue
+        if _elf_or_macho(path):
+            raise AssertionError(f"compiled binary blob in submodule: {path}")
+        if path.name == "taskboard" and path.stat().st_mode & stat.S_IXUSR:
+            # Source pin may contain scripts; ELF/Mach-O already rejected.
+            head = path.read_bytes()[:2]
+            assert head == b"#!" or head[:1] == b"{", f"unexpected binary {path}"
+
+
+def test_docs_and_setup_init_taskboard_submodule() -> None:
+    wipe = WIPE.read_text(encoding="utf-8")
+    doc = TASKBOARD_DOC.read_text(encoding="utf-8")
+    setup = SETUP_SH.read_text(encoding="utf-8")
+    common = COMMON_SH.read_text(encoding="utf-8")
+    for label, text in (("WIPE.md", wipe), ("TASKBOARD.md", doc)):
+        assert "vendor/taskboard" in text, label
+        assert "--recurse-submodules" in text, label
+        assert "submodule update --init" in text, label
+        assert PINNED_TASKBOARD_TAG in text, label
+        assert PRIVATE_GAME not in text
+    assert "submodule update --init" in setup
+    assert "vendor/taskboard" in setup
+    assert "vendor/taskboard" in common
+    assert "agent-kanban" not in setup
+    assert "ak start" not in setup
+
+
+def test_gcs_taskboard_bin_prefers_submodule_prebuilt(tmp_path: Path) -> None:
+    kit = tmp_path / "kit"
+    pre = kit / "vendor" / "taskboard" / "taskboard"
+    _write_exec(pre, "#!/bin/sh\nexit 0\n")
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": str(tmp_path / "home"),
+        "GCS_ROOT": str(kit),
+        "LC_ALL": "C",
+        "TERM": "dumb",
+    }
+    script = (
+        "set -euo pipefail\n"
+        f"source {COMMON_SH}\n"
+        "gcs_taskboard_bin\n"
+    )
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        cwd=str(REPO),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    assert str(pre.resolve()) in proc.stdout.strip() or str(pre) in proc.stdout
+    assert PRIVATE_GAME not in blob
+
