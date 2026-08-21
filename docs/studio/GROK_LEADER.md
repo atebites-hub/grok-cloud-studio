@@ -53,5 +53,4 @@ bash scripts/directors/start-seat-daemon.sh studio-ops
 ## Throughput
 
 Scale with **Cursor Cloud Extra High** (remote), not more local serve seats.
-Directors coordinate via A2A and launch remote grunts. Kanban mirrors Extra High
-cards; it is not a local worker spawner.
+Directors coordinate via A2A and launch remote grunts. The board is tcarac/taskboard, not a local worker spawner.

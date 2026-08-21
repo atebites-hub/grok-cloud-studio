@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-# Start/stop/status for local Grok Cloud Studio A2A hub + inbox dispatch + bot-bridge + fleet shepherd.
-# Optional Agent Kanban fleet-bridge (sync-only) when configured or AGENT_KANBAN_API_KEY /
-# GCS_AGENT_KANBAN_API_KEY is set. Never starts `ak start`. Non-fatal if the bridge dies.
-# Seat ACP daemons are opt-in: GCS_START_SEAT_DAEMONS=1 or `start --daemons`.
+# Start/stop/status for local Grok Cloud Studio A2A hub + leftover dispatch +
+# bot-bridge + fleet-shepherd. Seat ACP daemons are opt-in:
+# GCS_START_SEAT_DAEMONS=1 or `start --daemons`.
+#
+# GROW: one `grok agent serve` per opted-in seat plus seat-wake-loop.sh →
+# wake-daemon.py (inbox.jsonl → ACP session/prompt inside that serve pid).
+# NOT grok --resume. NOT leftover dispatch as the GROW peer-mail path.
+# Host ticker enqueues ACP_PING STATUS/CONTINUE keep-alives (work turns).
+# Agent Kanban / `ak` was removed. Board is tcarac/taskboard (ticket CLI + HTTP /mcp).
+#
 # Usage:
 #   start-studio-bus.sh          # start hub+dispatch+shepherd (idempotent)
 #   start-studio-bus.sh start
@@ -20,25 +26,25 @@ STATE_DIR="${GCS_A2A_STATE:-$ROOT/.a2a-state}"
 HUB_PY="$SCRIPT_DIR/hub.py"
 DISPATCH_PY="$SCRIPT_DIR/dispatch.py"
 BOT_BRIDGE_PY="$SCRIPT_DIR/bot-bridge.py"
-AK_BRIDGE_PY="$ROOT/scripts/studio/agent-kanban/fleet-bridge.py"
 HUB_PID_FILE="$STATE_DIR/hub.pid"
 DISPATCH_PID_FILE="$STATE_DIR/dispatch.pid"
 BOT_BRIDGE_PID_FILE="$STATE_DIR/bot-bridge.pid"
-AK_BRIDGE_PID_FILE="$STATE_DIR/ak-bridge.pid"
-AK_CONFIGURED="$STATE_DIR/agent-kanban/configured"
 HUB_LOG="$STATE_DIR/hub.log"
 DISPATCH_LOG="$STATE_DIR/dispatch.log"
 BOT_BRIDGE_LOG="$STATE_DIR/bot-bridge.log"
-AK_BRIDGE_LOG="$STATE_DIR/ak-bridge.log"
 SHEPHERD_PY="$ROOT/scripts/directors/fleet-shepherd.py"
 SHEPHERD_PID_FILE="$STATE_DIR/fleet-shepherd.pid"
 SHEPHERD_LOG="$STATE_DIR/fleet-shepherd.log"
 START_DAEMON="$ROOT/scripts/directors/start-seat-daemon.sh"
 STOP_DAEMON="$ROOT/scripts/directors/stop-seat-daemon.sh"
 STATUS_DAEMON="$ROOT/scripts/directors/status-seat-daemon.sh"
+WAKE_LOOP="$ROOT/scripts/directors/seat-wake-loop.sh"
+TICKER_PY="$SCRIPT_DIR/host-ticker.py"
+TICKER_PID_FILE="$STATE_DIR/host-ticker.pid"
+TICKER_LOG="$STATE_DIR/host-ticker.log"
 DAEMONS_FLAG="$STATE_DIR/daemons.enabled"
 LIB_PY="$SCRIPT_DIR/lib.py"
-# Comma-separated seats to keep as ACP daemons.
+# Comma-separated seats to keep as ACP daemons + GROW wake.
 # Default floor+ops (studio-ops on product floors) — full registry OOMs ~15GB VMs.
 DEFAULT_ACP_SEATS="floor,studio-ops"
 
@@ -57,17 +63,19 @@ usage() {
 Usage: start-studio-bus.sh [start|stop|status] [--daemons]
 
 start            hub + dispatch + fleet-shepherd (idempotent)
-start --daemons  also start per-seat ACP daemons (writes daemons.enabled)
-stop             stop hub/dispatch/shepherd (leaves seat daemons)
+start --daemons  also start per-seat ACP daemons + GROW wake loops + host ticker
+stop             stop hub/dispatch/shepherd/wake/ticker (leaves seat serve)
 stop --daemons   also stop seat ACP daemons and clear daemons.enabled
-status           print bus + optional daemon flag
+status           print bus + optional daemon / wake / ticker flag
 
-Optional ak-bridge (sync-only fleet → Agent Kanban) when configured or
-AGENT_KANBAN_API_KEY / GCS_AGENT_KANBAN_API_KEY is set. Never runs ak start.
+GROW mail path: seat-wake-loop.sh → wake-daemon.py → seat-prompt-acp.sh
+(session/prompt inside grok agent serve). Dispatch does not own GROW inboxes.
+Host ticker enqueues ACP_PING STATUS/CONTINUE work turns (not PONG, not LAUNCH).
+Board is tcarac/taskboard. Agent Kanban was removed; do not reconnect `ak`.
 
 Opt-in without the flag: GCS_START_SEAT_DAEMONS=1
 Do not spawn a grok agent process per seat by surprise; daemons are explicit.
-See docs/ARCHITECTURE.md.
+See docs/ARCHITECTURE.md and docs/A2A.md.
 EOF
 }
 
@@ -103,17 +111,30 @@ acp_seats() {
   done
 }
 
+wake_seats() {
+  local raw="${GCS_WAKE_SEATS:-${GCS_GROW_SEATS:-}}"
+  if [[ -n "$raw" ]]; then
+    local s known
+    known="$(python3 "$LIB_PY" launch-seats 2>/dev/null || true)"
+    IFS=',' read -r -a parts <<<"$raw"
+    for s in "${parts[@]}"; do
+      s="$(echo "$s" | tr -d '[:space:]')"
+      [[ -n "$s" ]] || continue
+      if printf '%s\n' "$known" | grep -qx "$s"; then
+        echo "$s"
+      elif [[ "$s" == "studio-ops" ]] && printf '%s\n' "$known" | grep -qx "ops"; then
+        echo "ops"
+      fi
+    done
+    return 0
+  fi
+  acp_seats
+}
+
 want_daemons() {
   [[ "${WITH_DAEMONS:-0}" == "1" ]] && return 0
   [[ "${GCS_START_SEAT_DAEMONS:-0}" == "1" ]] && return 0
   [[ -f "$DAEMONS_FLAG" ]] && return 0
-  return 1
-}
-
-ak_bridge_wanted() {
-  [[ -n "${AGENT_KANBAN_API_KEY:-}" ]] && return 0
-  [[ -n "${GCS_AGENT_KANBAN_API_KEY:-}" ]] && return 0
-  [[ -f "$AK_CONFIGURED" ]] && return 0
   return 1
 }
 
@@ -137,32 +158,97 @@ stop_pid_file() {
   rm -f "$pid_file"
 }
 
-start_ak_bridge() {
-  local bridge_pid
-  if ! ak_bridge_wanted; then
-    echo "STUDIO_BUS_AK_BRIDGE_SKIP (set AGENT_KANBAN_API_KEY/GCS_AGENT_KANBAN_API_KEY or configure-ak.sh)"
+start_wake_daemons() {
+  local seat pid pidfile
+  if [[ ! -f "$WAKE_LOOP" ]]; then
+    echo "STUDIO_BUS_WAKE_SKIP missing $WAKE_LOOP" >&2
     return 0
   fi
-  bridge_pid="$(read_pid "$AK_BRIDGE_PID_FILE")"
-  if pid_alive "$bridge_pid"; then
-    echo "STUDIO_BUS_AK_BRIDGE_ALREADY pid=$bridge_pid"
+  while read -r seat; do
+    [[ -z "$seat" ]] && continue
+    mkdir -p "$STATE_DIR/$seat"
+    pidfile="$STATE_DIR/$seat/wake.pid"
+    pid="$(read_pid "$pidfile")"
+    if pid_alive "$pid"; then
+      echo "STUDIO_BUS_WAKE_ALREADY seat=$seat pid=$pid"
+      continue
+    fi
+    rm -f "$pidfile"
+    nohup bash "$WAKE_LOOP" "$seat" >>"$STATE_DIR/$seat/wake.log" 2>&1 &
+    echo $! >"$pidfile"
+    echo "STUDIO_BUS_WAKE_START seat=$seat pid=$(read_pid "$pidfile") log=$STATE_DIR/$seat/wake.log mode=acp-serve"
+  done < <(wake_seats)
+}
+
+stop_wake_daemons() {
+  local seat pid pidfile
+  while read -r seat; do
+    [[ -z "$seat" ]] && continue
+    pidfile="$STATE_DIR/$seat/wake.pid"
+    pid="$(read_pid "$pidfile")"
+    if pid_alive "$pid"; then
+      kill "$pid" 2>/dev/null || true
+      for _ in 1 2 3 4 5; do
+        pid_alive "$pid" || break
+        sleep 0.2
+      done
+      if pid_alive "$pid"; then
+        kill -9 "$pid" 2>/dev/null || true
+      fi
+      echo "STUDIO_BUS_WAKE_STOP seat=$seat pid=$pid"
+    fi
+    rm -f "$pidfile"
+  done < <(wake_seats)
+}
+
+status_wake_daemons() {
+  local seat up=0 down=0 pid
+  while read -r seat; do
+    [[ -z "$seat" ]] && continue
+    pid="$(read_pid "$STATE_DIR/$seat/wake.pid")"
+    if pid_alive "$pid"; then
+      echo "STUDIO_BUS_WAKE_STATUS seat=$seat up pid=$pid"
+      up=$((up + 1))
+    else
+      echo "STUDIO_BUS_WAKE_STATUS seat=$seat down pid=${pid:-none}"
+      down=$((down + 1))
+    fi
+  done < <(wake_seats)
+  echo "STUDIO_BUS_WAKE_SUMMARY up=$up down=$down"
+}
+
+start_host_ticker() {
+  local pid
+  if [[ ! -f "$TICKER_PY" ]]; then
+    echo "STUDIO_BUS_TICKER_SKIP missing $TICKER_PY"
     return 0
   fi
-  rm -f "$AK_BRIDGE_PID_FILE"
-  if [[ ! -f "$AK_BRIDGE_PY" ]]; then
-    echo "STUDIO_BUS_AK_BRIDGE_SKIP missing $AK_BRIDGE_PY"
+  pid="$(read_pid "$TICKER_PID_FILE")"
+  if pid_alive "$pid"; then
+    echo "STUDIO_BUS_TICKER_ALREADY pid=$pid"
     return 0
   fi
-  nohup python3 "$AK_BRIDGE_PY" >>"$AK_BRIDGE_LOG" 2>&1 &
-  echo $! >"$AK_BRIDGE_PID_FILE"
-  bridge_pid="$(read_pid "$AK_BRIDGE_PID_FILE")"
-  sleep 0.2
-  if ! pid_alive "$bridge_pid"; then
-    echo "STUDIO_BUS_AK_BRIDGE_FAIL did not stay up; see $AK_BRIDGE_LOG" >&2
-    rm -f "$AK_BRIDGE_PID_FILE"
-    return 0
+  rm -f "$TICKER_PID_FILE"
+  nohup python3 "$TICKER_PY" >>"$TICKER_LOG" 2>&1 &
+  echo $! >"$TICKER_PID_FILE"
+  echo "STUDIO_BUS_TICKER_START pid=$(read_pid "$TICKER_PID_FILE") log=$TICKER_LOG"
+}
+
+stop_host_ticker() {
+  local pid
+  pid="$(read_pid "$TICKER_PID_FILE")"
+  if pid_alive "$pid"; then
+    kill "$pid" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      pid_alive "$pid" || break
+      sleep 0.2
+    done
+    if pid_alive "$pid"; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+    echo "STUDIO_BUS_TICKER_STOP pid=$pid"
   fi
-  echo "STUDIO_BUS_AK_BRIDGE_START pid=$bridge_pid log=$AK_BRIDGE_LOG"
+  rm -f "$TICKER_PID_FILE"
 }
 
 start_seat_daemons() {
@@ -174,22 +260,27 @@ start_seat_daemons() {
   fi
   if [[ ! -f "$START_DAEMON" ]]; then
     echo "STUDIO_BUS_DAEMONS_SKIP missing $START_DAEMON"
-    return 0
+  else
+    touch "$DAEMONS_FLAG"
+    while read -r seat; do
+      [[ -z "$seat" ]] && continue
+      if bash "$START_DAEMON" "$seat"; then
+        echo "STUDIO_BUS_DAEMON_OK seat=$seat mode=acp-serve"
+      else
+        echo "STUDIO_BUS_DAEMON_FAIL seat=$seat" >&2
+      fi
+    done < <(acp_seats)
   fi
-  touch "$DAEMONS_FLAG"
-  while read -r seat; do
-    [[ -z "$seat" ]] && continue
-    if bash "$START_DAEMON" "$seat"; then
-      :
-    else
-      echo "STUDIO_BUS_DAEMON_FAIL seat=$seat" >&2
-    fi
-  done < <(acp_seats)
+  start_wake_daemons
+  start_host_ticker
 }
 
 stop_seat_daemons() {
   local seat
+  stop_wake_daemons
+  stop_host_ticker
   if [[ ! -f "$STOP_DAEMON" ]]; then
+    rm -f "$DAEMONS_FLAG"
     return 0
   fi
   while read -r seat; do
@@ -200,6 +291,11 @@ stop_seat_daemons() {
 }
 
 status_seat_daemons() {
+  status_wake_daemons || true
+  local tpid tstate="down"
+  tpid="$(read_pid "$TICKER_PID_FILE")"
+  if pid_alive "$tpid"; then tstate="up"; fi
+  echo "STUDIO_BUS_TICKER_STATUS $tstate pid=${tpid:-none}"
   local seat up=0 down=0
   if [[ ! -f "$STATUS_DAEMON" ]]; then
     echo "STUDIO_BUS_DAEMONS_STATUS unavailable"
@@ -325,20 +421,18 @@ case "$cmd" in
       fi
     fi
 
-    start_ak_bridge
-    ak_pid="$(read_pid "$AK_BRIDGE_PID_FILE")"
-
     if want_daemons; then
       start_seat_daemons
     else
       echo "STUDIO_BUS_DAEMONS_SKIP (pass --daemons or GCS_START_SEAT_DAEMONS=1)"
     fi
 
-    echo "STUDIO_BUS_READY hub_pid=$hub_pid dispatch_pid=$disp_pid shepherd_pid=$shep_pid bot_bridge_pid=${bridge_pid:-none} ak_bridge_pid=${ak_pid:-none} state=$STATE_DIR"
+    echo "STUDIO_BUS_READY hub_pid=$hub_pid dispatch_pid=$disp_pid shepherd_pid=$shep_pid bot_bridge_pid=${bridge_pid:-none} state=$STATE_DIR"
     ;;
 
   stop)
-    stop_pid_file "$AK_BRIDGE_PID_FILE" "AK_BRIDGE"
+    stop_wake_daemons
+    stop_host_ticker
     hub_pid="$(read_pid "$HUB_PID_FILE")"
     disp_pid="$(read_pid "$DISPATCH_PID_FILE")"
     shep_pid="$(read_pid "$SHEPHERD_PID_FILE")"
@@ -400,8 +494,16 @@ case "$cmd" in
       echo "STUDIO_BUS_HUB_NOT_RUNNING"
     fi
     rm -f "$HUB_PID_FILE"
+    # GROW wake loops + ticker stop with the bus. Leave grok agent serve running
+    # unless stop --daemons or GCS_ACP_STOP_WITH_BUS=1 (serve is the long-lived seat).
     if [[ "$WITH_DAEMONS" == "1" || "${GCS_ACP_STOP_WITH_BUS:-0}" == "1" ]]; then
-      stop_seat_daemons
+      if [[ -f "$STOP_DAEMON" ]]; then
+        while read -r seat; do
+          [[ -z "$seat" ]] && continue
+          bash "$STOP_DAEMON" "$seat" || true
+        done < <(acp_seats)
+      fi
+      rm -f "$DAEMONS_FLAG"
     else
       echo "STUDIO_BUS_DAEMONS_LEFT_RUNNING (pass stop --daemons to stop)"
     fi
@@ -421,15 +523,9 @@ case "$cmd" in
     bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
     bridge_state="down"
     if pid_alive "$bridge_pid"; then bridge_state="up"; fi
-    ak_pid="$(read_pid "$AK_BRIDGE_PID_FILE")"
-    ak_state="down"
-    if pid_alive "$ak_pid"; then ak_state="up"; fi
-    if [[ "$ak_state" == "down" ]] && ! ak_bridge_wanted; then
-      ak_state="skip"
-    fi
     daemon_flag="off"
     [[ -f "$DAEMONS_FLAG" ]] && daemon_flag="on"
-    echo "STUDIO_BUS_STATUS hub=$hub_state pid=${hub_pid:-none} dispatch=$disp_state pid=${disp_pid:-none} shepherd=$shep_state pid=${shep_pid:-none} bot_bridge=$bridge_state pid=${bridge_pid:-none} ak_bridge=$ak_state pid=${ak_pid:-none} daemons=$daemon_flag state=$STATE_DIR"
+    echo "STUDIO_BUS_STATUS hub=$hub_state pid=${hub_pid:-none} dispatch=$disp_state pid=${disp_pid:-none} shepherd=$shep_state pid=${shep_pid:-none} bot_bridge=$bridge_state pid=${bridge_pid:-none} daemons=$daemon_flag state=$STATE_DIR"
     if [[ "$daemon_flag" == "on" ]] || want_daemons; then
       status_seat_daemons || true
     fi

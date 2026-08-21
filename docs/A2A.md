@@ -1,8 +1,8 @@
 # A2A bus
 
 ```bash
-scripts/a2a/start-studio-bus.sh                 # hub + dispatch + bot-bridge + fleet-shepherd
-scripts/a2a/start-studio-bus.sh start --daemons # ACP daemons for GCS_ACP_SEATS (opt-in)
+scripts/a2a/start-studio-bus.sh                 # hub + leftover dispatch + bot-bridge + fleet-shepherd
+scripts/a2a/start-studio-bus.sh start --daemons # ACP serve + GROW wake loops + host ticker (opt-in)
 scripts/a2a/send.sh ops "ping: hello"
 scripts/a2a/start-studio-bus.sh status
 ```
@@ -13,11 +13,33 @@ Cards/registry: `docs/a2a/`. Runtime state lives in `.a2a-state/` (gitignored).
 
 Hub default: `http://127.0.0.1:8732` (`GCS_A2A_HUB` / `GCS_A2A_PORT`).
 Example seats: `floor`, `ops`, `cloud`, `qa-a`, `qa-b`.
-ACP daemon cap: `GCS_ACP_SEATS` (default `floor,studio-ops`). Mail cannot auto-start seats outside that allowlist. `skipSeats` stay skipped. See `docs/studio/GROK_LEADER.md`.
+ACP / GROW cap: `GCS_ACP_SEATS` / `GCS_GROW_SEATS` (default `floor,studio-ops`; `ops` aliases `studio-ops`). Mail cannot auto-start seats outside that allowlist. `skipSeats` stay skipped. See `docs/studio/GROK_LEADER.md`.
 
-## Inject timeout + dispatch lock TTL
+## GROW wake (Bot-equivalent host OS)
 
-`acp_inject.py` defaults to **180s** (`GCS_ACP_INJECT_TIMEOUT`). As soon as a streamed `RESULT` / `PARK_ACK` / `QA_*_RESULT` line appears, inject duplexes (`scripts/a2a/duplex.py`), prints `ACP_INJECT_OK`, unlinks `acp.inject.stale`, and best-effort `session/cancel` leftover turn — it does **not** wait for the `session/prompt` JSON-RPC result. If the wait times out but a RESULT line already streamed, that is success, not failure. Timeout/failure with **no** RESULT still sends `session/cancel`, writes `acp.inject.stale` (next inject auto force-new session), and exits non-zero. Dispatch lock TTL defaults to **240s** (`GCS_DISPATCH_LOCK_TTL_SEC`). If a lock pid is still alive past TTL, dispatch logs `DISPATCH_LOCK_TTL_KILL`, SIGTERM then SIGKILL that pid, clears the lock, and continues the inbox. Inject launches use `--timeout min(inject_timeout, lock_ttl-30)` so inject dies before the TTL killer races it. A mid-turn inject holding the lock for 10–15+ minutes is a bug we kill.
+xAI grok-build does not accept external PRs, so `deliver_wake()` cannot live inside `grok agent serve`. Closest Bot-equivalent host OS:
+
+1. One persistent `grok agent serve` per seat (`scripts/directors/start-seat-daemon.sh`).
+2. GROW wake: `inbox.jsonl` growth → `scripts/a2a/wake-daemon.py` → `scripts/directors/seat-prompt-acp.sh` → `session/prompt` **inside that serve pid** (never `grok --resume`).
+3. Pin-session: reuse `.a2a-state/<seat>/acp.session`. Do not remint per ping.
+4. Named identity: `docs/studio/directors/souls/<seat>/{SOUL.md,MEMORY.md}` plus `GROK_MEMORY=1` on serve.
+5. Host ticker (`scripts/a2a/host-ticker.py`, interval `GCS_TICKER_SEC` default 600s) enqueues `ACP_PING STATUS/CONTINUE` **work turns** (tools allowed). Not PONG. Not a 45s central assigner. Not a LAUNCH kind.
+
+Dispatch **does not own GROW inboxes** (`DISPATCH_SKIP reason=wake-owns-inbox`). A live `wake.pid` also skips leftover inject. Do **not** advance `dispatch.offset` on those skips (wake consumes `wake.offset`).
+
+Non-GROW seats may still use leftover `acp_inject.py` (no `--pin-session`).
+
+## Leftover ACP / pin-session rules
+
+`scripts/directors/acp_inject.py --pin-session` (GROW):
+
+- **HANDOFF** only after a real start: STATUS / substantial text. **Never** 1s silence. **Never** `x.ai/queue/changed` alone.
+- If the actor **did** start (this-prompt tool or non-RESULT update): **stay connected** until `seat_produced_work` or `session/prompt` RPC completes. First tool + short text is **not** a reason to hang up. Accept is not a reason to hang up.
+- Dead session: after N consecutive no-accepts (`GCS_ACP_DEAD_STREAK`, default 1) with no tool / no non-RESULT update within `GCS_ACP_ACCEPT_DEADLINE` (default 30s), **one** `session/new`. Log `ACP_INJECT_SESSION_DEAD`. Clear the streak on real work. Silence / queue-only is `ACP_INJECT_TIMEOUT reason=no-accept`, not HANDOFF. If the actor started, stay until STATUS/work or `session/prompt` RPC, up to `GCS_ACP_INJECT_TIMEOUT` (default 180s).
+- **RESULT is duplex, not success.** Leftover tools + empty text is not work. RESULT-only is `reason=hangup-only`. Do **not** `session/cancel` a live turn you handed off.
+- Authenticate ACP `cached_token` after initialize. Copy host `~/.grok/auth.json` into seat `GROK_HOME` (never print the token). Log `ACP_INJECT_AUTH` / `SEAT_GROK_AUTH_OK`.
+
+Leftover dispatch (no `--pin-session`) still harvests work/STATUS and `session/cancel`s on timeout so grok 1.0.3 is not `start_blocked`.
 
 ## Grok Bot seats (orchestrator)
 
@@ -45,4 +67,4 @@ Reply via `scripts/a2a/send.sh <seat> "…"`. This seat is NOT an ACP inject tar
 
 Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh donald` still works if you keep that seat name). Do not launch Bot CloudAgent for this path.
 
-Optional **Agent Kanban** fleet-bridge (sync-only, never `ak start`) starts when `AGENT_KANBAN_API_KEY` / `GCS_AGENT_KANBAN_API_KEY` is set or `.a2a-state/agent-kanban/configured` exists. See `docs/studio/AGENT_KANBAN.md`. The local HTML dashboard under `scripts/studio/dashboard/` is LEGACY.
+Board is **tcarac/taskboard** (ticket CLI + HTTP `/mcp`). See `docs/studio/TASKBOARD.md`. Agent Kanban was removed; do not reconnect `ak`. The local HTML dashboard under `scripts/studio/dashboard/` is LEGACY.

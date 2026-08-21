@@ -43,10 +43,10 @@ chmod +x \
   "$ROOT"/scripts/cloud/sdk/*.sh \
   "$ROOT"/scripts/directors/*.sh \
   "$ROOT"/scripts/webhook/*.sh \
-  "$ROOT"/scripts/studio/agent-kanban/*.sh \
   2>/dev/null || true
 
-chmod +x "$ROOT/scripts/a2a/bot-bridge.py" "$ROOT/scripts/a2a/bind-bot-agent.sh" "$ROOT/scripts/studio/agent-kanban/fleet-bridge.py" 2>/dev/null || true
+chmod +x "$ROOT/scripts/a2a/bot-bridge.py" "$ROOT/scripts/a2a/bind-bot-agent.sh" \
+  "$ROOT/scripts/a2a/wake-daemon.py" "$ROOT/scripts/a2a/host-ticker.py" 2>/dev/null || true
 mkdir -p "$ROOT/.a2a-state"
 
 if [[ -n "${GCS_BOT_AGENT_ID:-}" ]]; then
@@ -58,5 +58,5 @@ else
 fi
 
 echo "install ok — run ./doctor.sh then .venv/bin/pytest -q"
-echo "A2A: scripts/a2a/start-studio-bus.sh (hub+dispatch+bot-bridge+shepherd); Bot seats: docs/a2a/bot-agents.json"
+echo "A2A: scripts/a2a/start-studio-bus.sh (hub+dispatch+bot-bridge+shepherd); GROW: start --daemons"
 echo "ACP inject timeout default 180s (GCS_ACP_INJECT_TIMEOUT); dispatch lock TTL 240s (GCS_DISPATCH_LOCK_TTL_SEC)"

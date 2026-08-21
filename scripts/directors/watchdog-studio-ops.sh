@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Watchdog: keep A2A bus up, opted-in seat ACP daemons up, and the ops seat alive.
-# Loop every 10 minutes. Logs under .a2a-state/ops/.
+# Watchdog: keep A2A bus up, opted-in seat ACP daemons up, GROW wake loops up,
+# and the host ticker alive. Loop every 10 minutes. Logs under .a2a-state/<seat>/.
+# Clock is host-ticker.py / host-clock-ticker.sh (inbox ACP_PING STATUS/CONTINUE).
+# Not ACP inject. Tools allowed. Do not emit a LAUNCH kind.
+# If serve dies: restart serve (start-seat-daemon.sh). Never grok --resume.
 set -euo pipefail
 
 export PATH="${HOME}/.grok/bin:${PATH:-}"
@@ -11,10 +14,11 @@ STATE_DIR="${GCS_A2A_STATE:-$ROOT/.a2a-state}"
 SEAT="${GCS_WATCHDOG_SEAT:-ops}"
 LOG_DIR="$STATE_DIR/$SEAT"
 LOG="$LOG_DIR/watchdog.log"
-LOCK="$STATE_DIR/$SEAT/dispatch.lock"
 PIDFILE="$LOG_DIR/watchdog.pid"
-LAUNCHER="$ROOT/scripts/directors/launch-director.sh"
 BUS="$ROOT/scripts/a2a/start-studio-bus.sh"
+WAKE_LOOP="$ROOT/scripts/directors/seat-wake-loop.sh"
+START_DAEMON="$ROOT/scripts/directors/start-seat-daemon.sh"
+TICKER_PY="$ROOT/scripts/a2a/host-ticker.py"
 LIB_PY="$ROOT/scripts/a2a/lib.py"
 
 mkdir -p "$LOG_DIR" "$STATE_DIR/$SEAT"
@@ -41,56 +45,45 @@ pid_alive() {
   return 0
 }
 
+read_pid() {
+  local f="$1"
+  if [[ -f "$f" ]]; then
+    tr -d '[:space:]' < "$f" || true
+  fi
+}
+
 seat_alive() {
-  if bash "$ROOT/scripts/directors/status-seat-daemon.sh" "$SEAT" >/dev/null 2>&1; then
-    return 0
-  fi
-  if [[ -f "$LOCK" ]]; then
-    local lp
-    lp="$(tr -d '[:space:]' <"$LOCK" || true)"
-    if pid_alive "$lp"; then
-      return 0
-    fi
-  fi
-  if pgrep -f "launch-director\.sh[[:space:]]+${SEAT}" >/dev/null 2>&1; then
-    return 0
-  fi
-  return 1
+  local wp
+  wp="$(read_pid "$STATE_DIR/$SEAT/wake.pid")"
+  pid_alive "$wp"
 }
 
-WAKE_PROMPT='WATCHDOG_WAKE: ops seat is down. Restore bus health, wake idle Directors if assigned, continue Extra High waiters. RESULT line.'
-
-log "WATCHDOG_START pid=$$ root=$ROOT seat=$SEAT"
-
-reap_launches() {
-  if [[ -f "$LOG_DIR/launch.pid" ]]; then
-    local lp
-    lp="$(tr -d '[:space:]' <"$LOG_DIR/launch.pid" || true)"
-    if [[ -n "$lp" ]] && ! pid_alive "$lp"; then
-      wait "$lp" 2>/dev/null || true
-      rm -f "$LOG_DIR/launch.pid"
-      log "REAPED launch_pid=$lp"
-    fi
-  fi
-  while wait -n 2>/dev/null; do
-    :
-  done
+serve_alive() {
+  local dp
+  dp="$(read_pid "$STATE_DIR/$SEAT/daemon.pid")"
+  pid_alive "$dp"
 }
+
+ticker_alive() {
+  local tp
+  tp="$(read_pid "$STATE_DIR/host-ticker.pid")"
+  pid_alive "$tp"
+}
+
+log "WATCHDOG_START pid=$$ root=$ROOT seat=$SEAT grow=serve+wake-loop+ticker"
 
 while true; do
-  reap_launches
-
   if ! bash "$BUS" start >>"$LOG" 2>&1; then
     log "BUS_START_FAIL"
   else
     log "BUS_OK"
   fi
 
-  if [[ -f "$ROOT/scripts/directors/start-seat-daemon.sh" && -f "$STATE_DIR/daemons.enabled" ]]; then
+  if [[ -f "$START_DAEMON" && -f "$STATE_DIR/daemons.enabled" ]]; then
     while IFS= read -r _seat; do
       [[ -z "$_seat" ]] && continue
       if ! bash "$ROOT/scripts/directors/status-seat-daemon.sh" "$_seat" >/dev/null 2>&1; then
-        if bash "$ROOT/scripts/directors/start-seat-daemon.sh" "$_seat" >>"$LOG" 2>&1; then
+        if bash "$START_DAEMON" "$_seat" >>"$LOG" 2>&1; then
           log "DAEMON_START seat=$_seat"
         else
           log "DAEMON_START_FAIL seat=$_seat"
@@ -111,23 +104,40 @@ while true; do
     )
   fi
 
-  if seat_alive; then
-    log "SEAT_ALIVE $SEAT"
+  if serve_alive; then
+    log "SERVE_ALIVE $SEAT daemon.pid"
   else
-    log "SEAT_DOWN ensuring $SEAT ACP daemon + wake"
-    bash "$ROOT/scripts/directors/start-seat-daemon.sh" "$SEAT" >>"$LOG" 2>&1 || true
-    (
-      export PATH="${HOME}/.grok/bin:${PATH:-}"
-      export GCS_ROOT="$ROOT"
-      cd "$ROOT"
-      if bash "$ROOT/scripts/directors/status-seat-daemon.sh" "$SEAT" >/dev/null 2>&1; then
-        python3 "$ROOT/scripts/directors/acp_inject.py" "$SEAT" "$WAKE_PROMPT" >>"$LOG_DIR/launch.log" 2>&1
+    log "SERVE_DOWN ensuring $SEAT grok agent serve"
+    if [[ -f "$START_DAEMON" ]]; then
+      if bash "$START_DAEMON" "$SEAT" >>"$LOG" 2>&1; then
+        log "SERVE_START seat=$SEAT pid=$(read_pid "$STATE_DIR/$SEAT/daemon.pid")"
       else
-        bash "$LAUNCHER" "$SEAT" "$WAKE_PROMPT" >>"$LOG_DIR/launch.log" 2>&1
+        log "SERVE_START_FAIL seat=$SEAT"
       fi
-    ) &
-    echo $! >"$LOG_DIR/launch.pid"
-    log "SEAT_LAUNCHED launch_pid=$(cat "$LOG_DIR/launch.pid")"
+    fi
+  fi
+
+  if seat_alive; then
+    log "SEAT_ALIVE $SEAT wake.pid"
+  else
+    log "SEAT_DOWN ensuring $SEAT seat-wake-loop"
+    mkdir -p "$STATE_DIR/$SEAT"
+    if [[ -f "$WAKE_LOOP" ]]; then
+      nohup bash "$WAKE_LOOP" "$SEAT" >>"$STATE_DIR/$SEAT/wake.log" 2>&1 &
+      echo $! >"$STATE_DIR/$SEAT/wake.pid"
+      log "WAKE_START seat=$SEAT pid=$(read_pid "$STATE_DIR/$SEAT/wake.pid")"
+    fi
+  fi
+
+  if ticker_alive; then
+    log "TICKER_ALIVE"
+  else
+    log "TICKER_DOWN restarting host-ticker"
+    if [[ -f "$TICKER_PY" ]]; then
+      nohup python3 "$TICKER_PY" >>"$STATE_DIR/host-ticker.log" 2>&1 &
+      echo $! >"$STATE_DIR/host-ticker.pid"
+      log "TICKER_START pid=$(read_pid "$STATE_DIR/host-ticker.pid")"
+    fi
   fi
 
   sleep 600
