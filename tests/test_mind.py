@@ -159,6 +159,98 @@ def _write_fake_grok(
     return _write_exec(tmp_path / "fake-bin" / "grok", script)
 
 
+CURSOR_MIND_MODEL = "cursor-grok-4.6-xhigh"
+_CURSOR_CHAT_ID = "11111111-2222-3333-4444-555555555555"
+
+
+def _cursor_session_id(state: Path, seat: str) -> str:
+    path = state / seat / "mind" / "cursor-session"
+    assert path.is_file(), "pinned cursor chat id missing"
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _cursor_law_argv(binary: str, chat_id: str, prompt: str) -> list[str]:
+    return [
+        binary,
+        "--resume",
+        chat_id,
+        "-p",
+        "--force",
+        "--output-format",
+        "json",
+        "--trust",
+        "--approve-mcps",
+        "--model",
+        CURSOR_MIND_MODEL,
+        prompt,
+    ]
+
+
+def _assert_cursor_clap(argv: list[str], *, chat_id: str, prompt: str) -> None:
+    assert "--resume" in argv
+    assert _flag_value(argv, "--resume") == chat_id
+    assert argv.count("--resume") == 1
+    assert "-p" in argv or "--print" in argv
+    assert "--force" in argv or "--yolo" in argv
+    assert "--output-format" in argv
+    assert _flag_value(argv, "--output-format") == "json"
+    assert "--trust" in argv
+    assert "--approve-mcps" in argv
+    assert "--model" in argv
+    assert _flag_value(argv, "--model") == CURSOR_MIND_MODEL
+    assert argv[-1] == prompt
+    assert "--prompt-file" not in argv
+    assert "--session-id" not in argv
+    assert "--continue" not in argv
+    assert "--fork-session" not in argv
+    assert "--plugin-dir" not in argv
+    assert "--agent-profile" not in argv
+    assert not any(a == "-1" or a.startswith("--resume=") for a in argv)
+    joined = " ".join(argv)
+    assert "--resume=-1" not in joined
+    assert CURSOR_MIND_MODEL in argv
+    assert "composer-2" not in argv
+    assert "grok-4.6" not in argv or CURSOR_MIND_MODEL in argv
+
+
+def _write_fake_cursor_agent(
+    tmp_path: Path,
+    log: Path,
+    *,
+    chat_id: str = _CURSOR_CHAT_ID,
+    rc: int = 0,
+    stdout: str | None = None,
+    stderr: str = "",
+    create_chat_rc: int = 0,
+    name: str = "agent",
+) -> Path:
+    blob = stdout if stdout is not None else json.dumps({"ok": True, "runner": "cursor"})
+    script = (
+        "#!/usr/bin/env python3\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        f"log = Path({str(log)!r})\n"
+        f"chat_id = {chat_id!r}\n"
+        "rows = json.loads(log.read_text()) if log.is_file() else []\n"
+        "rows.append({\n"
+        "    'argv': sys.argv[1:],\n"
+        "    'cwd': os.getcwd(),\n"
+        "    'GROK_HOME': os.environ.get('GROK_HOME'),\n"
+        "    'GROK_MEMORY': os.environ.get('GROK_MEMORY'),\n"
+        "    'has_cursor_api_key': bool(os.environ.get('CURSOR_API_KEY')),\n"
+        "})\n"
+        "log.write_text(json.dumps(rows))\n"
+        "if 'create-chat' in sys.argv[1:]:\n"
+        "    sys.stdout.write(chat_id + '\\n')\n"
+        f"    sys.stderr.write({stderr!r})\n"
+        f"    raise SystemExit({int(create_chat_rc)})\n"
+        f"sys.stderr.write({stderr!r})\n"
+        f"sys.stdout.write({blob!r})\n"
+        f"raise SystemExit({int(rc)})\n"
+    )
+    return _write_exec(tmp_path / "fake-bin" / name, script)
+
+
 def _prep_mind(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -166,6 +258,7 @@ def _prep_mind(
     unique: str,
     runner=None,
     grok: Path | None = None,
+    cursor: Path | None = None,
 ) -> tuple[ModuleType, Path]:
     mind = _load(MIND_PY, f"gcs_mind_{unique}")
     state = tmp_path / "a2a-state"
@@ -178,8 +271,12 @@ def _prep_mind(
     monkeypatch.setenv("GCS_A2A_STATE", str(state))
     monkeypatch.setenv("GCS_ROOT", str(REPO))
     monkeypatch.setenv("GCS_TASKBOARD_DB", str(db))
+    monkeypatch.delenv("GCS_MIND_RUNNER", raising=False)
+    monkeypatch.delenv("GCS_CURSOR_BIN", raising=False)
     if grok is not None:
         monkeypatch.setenv("GROK_BIN", str(grok))
+    if cursor is not None:
+        monkeypatch.setenv("GCS_CURSOR_BIN", str(cursor))
     if runner is not None:
         monkeypatch.setattr(mind, "DEFAULT_RUNNER", runner)
     return mind, state
@@ -236,6 +333,20 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "palemon" not in doc.lower()
     assert "already in use" in doc.lower()
     assert "240" in doc
+    assert "cursor-session" in src
+    assert "cursor-session" in doc
+    assert "create-chat" in src
+    assert "create-chat" in doc
+    assert CURSOR_MIND_MODEL in src
+    assert CURSOR_MIND_MODEL in doc
+    assert "usage balance exhausted" in doc.lower()
+    assert "GCS_MIND_RUNNER" in src
+    assert "GCS_MIND_RUNNER" in doc
+    assert "--verbatim" in doc
+    assert "--always-approve" in doc
+    assert "bypassPermissions" in doc
+    assert "--max-turns" in doc
+    assert "do not transfer" in doc.lower() or "does not transfer" in doc.lower() or "do not transfer" in src.lower()
 
 
 def test_fake_grok_mints_then_resumes_same_uuid(
@@ -818,3 +929,226 @@ def test_studio_mind_plugin_lists_tools() -> None:
     reply = json.loads(proc.stdout.splitlines()[0])
     names = {t["name"] for t in reply["result"]["tools"]}
     assert names == {"ticket", "a2a_send", "cloud_launch"}
+
+
+def test_cursor_cli_argv_pins_model_and_never_continues() -> None:
+    mind = _load(MIND_PY, "gcs_mind_cursor_argv")
+    prompt = "mail line from ops"
+    argv = mind.cursor_cli_argv(
+        chat_id=_CURSOR_CHAT_ID,
+        prompt=prompt,
+        binary="agent",
+    )
+    assert argv == _cursor_law_argv("agent", _CURSOR_CHAT_ID, prompt)
+    _assert_cursor_clap(argv, chat_id=_CURSOR_CHAT_ID, prompt=prompt)
+    create = mind.cursor_create_chat_argv(binary="agent")
+    assert create == ["agent", "create-chat"]
+    assert "--resume" not in create
+    assert "--session-id" not in create
+    assert "--continue" not in create
+    src = MIND_PY.read_text(encoding="utf-8")
+    assert "--continue" not in src
+    assert "cursor-session" in src
+    assert "mind/session" in src or "cursor-session" in src
+    assert mind.CURSOR_MIND_MODEL == CURSOR_MIND_MODEL
+
+
+def test_cursor_cli_binary_prefers_cursor_grok_wrapper(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bindir = tmp_path / "path-bin"
+    _write_exec(bindir / "agent", "#!/bin/sh\nexit 1\n")
+    wrapper = _write_exec(bindir / "cursor-grok", "#!/bin/sh\nexit 0\n")
+    monkeypatch.delenv("GCS_CURSOR_BIN", raising=False)
+    monkeypatch.setenv("PATH", f"{bindir}:/usr/bin:/bin")
+    mind = _load(MIND_PY, "gcs_mind_which_cursor")
+    chosen = Path(mind.cursor_cli_binary())
+    assert chosen.resolve() == wrapper.resolve()
+    monkeypatch.setenv("GCS_CURSOR_BIN", "/tmp/explicit-cursor-bin")
+    assert mind.cursor_cli_binary() == "/tmp/explicit-cursor-bin"
+
+
+def test_cursor_create_chat_then_resume_separate_pin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = _write_fake_grok(tmp_path, grok_log)
+    cursor = _write_fake_cursor_agent(tmp_path, cursor_log)
+    monkeypatch.setenv("CURSOR_API_KEY", "test-cursor-api-key-not-leaked")
+    monkeypatch.setenv("GROK_HOME", str(tmp_path / "ambient-grok-home"))
+    mind, state = _prep_mind(
+        tmp_path, monkeypatch, unique="cursorpin", grok=grok, cursor=cursor
+    )
+    monkeypatch.setenv("GCS_MIND_RUNNER", "cursor")
+    _append_inbox(state, "floor", "task-cur-1", "cursor first mail")
+    first = mind.process_once("floor")
+    assert first["consumed"] == 1
+    assert _offset(state, "floor") > 0
+    grok_sid = _session_id(state, "floor") if (state / "floor" / "mind" / "session").is_file() else ""
+    chat_id = _cursor_session_id(state, "floor")
+    assert chat_id == _CURSOR_CHAT_ID
+    assert chat_id != grok_sid
+    assert not (state / "floor" / "mind" / "session.minted").is_file()
+    rows = _argv_log(cursor_log)
+    assert [r["argv"] for r in rows][0] == ["create-chat"]
+    turn = rows[1]["argv"]
+    _assert_cursor_clap(turn, chat_id=chat_id, prompt="cursor first mail")
+    assert rows[1]["cwd"] == str(REPO)
+    assert rows[1]["GROK_HOME"] is None
+    assert rows[1]["has_cursor_api_key"] is True
+    assert _argv_log(grok_log) == []
+    mail = state / "floor" / "mind" / "mail.txt"
+    assert mail.is_file()
+    assert "cursor first mail" in mail.read_text(encoding="utf-8")
+
+    _append_inbox(state, "floor", "task-cur-2", "cursor second mail")
+    second = mind.process_once("floor")
+    assert second["consumed"] == 1
+    assert _cursor_session_id(state, "floor") == chat_id
+    rows2 = _argv_log(cursor_log)
+    assert len(rows2) == 3
+    assert rows2[2]["argv"][0:2] != ["create-chat"]
+    _assert_cursor_clap(rows2[2]["argv"], chat_id=chat_id, prompt="cursor second mail")
+    assert "create-chat" not in rows2[2]["argv"]
+
+
+def test_grok_402_falls_back_to_cursor_without_reminting_grok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = _write_fake_grok(
+        tmp_path,
+        grok_log,
+        rc=1,
+        stdout="",
+        stderr="Error: HTTP 402 usage balance exhausted",
+    )
+    cursor = _write_fake_cursor_agent(tmp_path, cursor_log)
+    monkeypatch.setenv("CURSOR_API_KEY", "test-cursor-api-key-not-leaked")
+    mind, state = _prep_mind(
+        tmp_path, monkeypatch, unique="402ok", grok=grok, cursor=cursor
+    )
+    _append_inbox(state, "floor", "task-402-1", "still do the mail")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 1
+    assert result.get("reason") == "ok"
+    assert _offset(state, "floor") > 0
+    grok_sid = _session_id(state, "floor")
+    uuid.UUID(grok_sid)
+    chat_id = _cursor_session_id(state, "floor")
+    assert chat_id == _CURSOR_CHAT_ID
+    assert chat_id != grok_sid
+    assert not (state / "floor" / "mind" / "session.minted").is_file()
+    grok_argv = _argv_log(grok_log)[0]["argv"]
+    assert "--session-id" in grok_argv
+    assert _flag_value(grok_argv, "--session-id") == grok_sid
+    cursor_rows = _argv_log(cursor_log)
+    assert cursor_rows[0]["argv"] == ["create-chat"]
+    _assert_cursor_clap(
+        cursor_rows[1]["argv"], chat_id=chat_id, prompt="still do the mail"
+    )
+    assert grok_sid not in cursor_rows[1]["argv"]
+    captured = capsys.readouterr()
+    assert "MIND_FALLBACK" in captured.out + captured.err
+    rows = _transcript_rows(state, "floor")
+    assert any(r.get("role") == "assistant" for r in rows)
+
+    _append_inbox(state, "floor", "task-402-2", "second 402 mail")
+    again = mind.process_once("floor")
+    assert again["consumed"] == 1
+    assert _session_id(state, "floor") == grok_sid
+    assert _cursor_session_id(state, "floor") == chat_id
+    grok_rows = _argv_log(grok_log)
+    assert _flag_value(grok_rows[-1]["argv"], "--session-id") == grok_sid
+    assert "--resume" not in grok_rows[-1]["argv"]
+    cursor_rows2 = _argv_log(cursor_log)
+    assert sum(1 for r in cursor_rows2 if r["argv"] == ["create-chat"]) == 1
+    _assert_cursor_clap(
+        cursor_rows2[-1]["argv"], chat_id=chat_id, prompt="second 402 mail"
+    )
+
+
+def test_offset_not_advanced_on_402_when_cursor_also_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = _write_fake_grok(
+        tmp_path,
+        grok_log,
+        rc=2,
+        stdout="",
+        stderr="HTTP 402: usage balance exhausted",
+    )
+    cursor = _write_fake_cursor_agent(
+        tmp_path, cursor_log, rc=1, stdout="", stderr="cursor boom"
+    )
+    monkeypatch.setenv("CURSOR_API_KEY", "test-cursor-api-key-not-leaked")
+    mind, state = _prep_mind(
+        tmp_path, monkeypatch, unique="402fail", grok=grok, cursor=cursor
+    )
+    _append_inbox(state, "floor", "task-402-fail", "do work")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 0
+    assert result.get("reason") == "runner-fail"
+    assert _offset(state, "floor") == 0
+    assert _transcript_rows(state, "floor") == []
+    grok_sid = _session_id(state, "floor")
+    assert not (state / "floor" / "mind" / "session.minted").is_file()
+    chat_id = _cursor_session_id(state, "floor")
+    assert chat_id == _CURSOR_CHAT_ID
+    assert chat_id != grok_sid
+    err = capsys.readouterr().err
+    assert "MIND_FAIL" in err
+    assert "test-cursor-api-key-not-leaked" not in err
+
+
+def test_non_402_grok_failure_does_not_call_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = _write_fake_grok(tmp_path, grok_log, rc=1, stderr="clap: unknown flag")
+    cursor = _write_fake_cursor_agent(tmp_path, cursor_log)
+    monkeypatch.setenv("CURSOR_API_KEY", "test-cursor-api-key-not-leaked")
+    mind, state = _prep_mind(
+        tmp_path, monkeypatch, unique="nofallback", grok=grok, cursor=cursor
+    )
+    _append_inbox(state, "floor", "task-no-fb", "do work")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 0
+    assert result.get("reason") == "runner-fail"
+    assert _offset(state, "floor") == 0
+    assert _argv_log(cursor_log) == []
+    assert not (state / "floor" / "mind" / "cursor-session").is_file()
+
+
+def test_cursor_runner_sources_agent_env_without_printing_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = _write_fake_grok(tmp_path, grok_log)
+    cursor = _write_fake_cursor_agent(tmp_path, cursor_log)
+    env_file = tmp_path / "cursor-agent.env"
+    key = "test-cursor-api-key-from-envfile"
+    env_file.write_text(f"export CURSOR_API_KEY={key}\n", encoding="utf-8")
+    monkeypatch.delenv("CURSOR_API_KEY", raising=False)
+    monkeypatch.setenv("CURSOR_AGENT_ENV", str(env_file))
+    mind, state = _prep_mind(
+        tmp_path, monkeypatch, unique="agentenv", grok=grok, cursor=cursor
+    )
+    monkeypatch.setenv("GCS_MIND_RUNNER", "cursor")
+    _append_inbox(state, "floor", "task-env-1", "from env file")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 1
+    rows = _argv_log(cursor_log)
+    assert rows[1]["has_cursor_api_key"] is True
+    captured = capsys.readouterr()
+    assert key not in captured.out
+    assert key not in captured.err
+    transcript = (state / "floor" / "mind" / "transcript.jsonl").read_text(encoding="utf-8")
+    assert key not in transcript
+

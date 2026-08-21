@@ -3,13 +3,17 @@
 
 Python is not the agent. It harvests one inbox line, pins a grok session UUID,
 runs one `grok --prompt-file` turn, persists json stdout, and stays up. Grok is
-the agent for that turn (its own tool loop, `--max-turns 40`).
+the agent for that turn (its own tool loop, `--max-turns 40`). On grok HTTP 402
+/ usage balance exhausted (or `GCS_MIND_RUNNER=cursor`), the same mail line
+runs Cursor CLI with a separate `mind/cursor-session` pin. Never remint the grok
+UUID because harvest was empty or because we fell back.
 
 Do not parse grok stdout for function calls. Do not run a second tool-calling
 loop. Do not use grok agent serve or leftover ACP inject on opted-in mind
 seats. Pin one UUID in mind/session; first turn `--session-id`, later turns
-`--resume` that id. Never remint because harvest was empty. Never bare `-p`
-(`--single` requires a prompt; `--prompt-file` is the prompt). `--agent-profile`,
+`--resume` that id. Never remint because harvest was empty. Never bare `-p` on
+grok (`--single` requires a prompt; `--prompt-file` is the prompt). Cursor
+fallback uses `-p` (print mode) and a positional prompt. `--agent-profile`,
 `--trust`, and `--plugin-dir` are grok agent flags, not grok headless.
 
 Stdlib only. Donald/orchestrator (skipSeats) are not mind seats.
@@ -20,6 +24,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -46,7 +51,12 @@ _SESSION_IN_USE_RE = re.compile(
     r"session.*already in use|already in use.*session",
     re.IGNORECASE | re.DOTALL,
 )
+_USAGE_EXHAUSTED_RE = re.compile(
+    r"usage balance exhausted|\bHTTP\s*402\b",
+    re.IGNORECASE,
+)
 MIND_FAIL_STDERR_CHARS = 240
+CURSOR_MIND_MODEL = "cursor-grok-4.6-xhigh"
 
 
 @dataclass(frozen=True)
@@ -159,6 +169,31 @@ def session_is_minted(seat: str) -> bool:
 
 def mark_session_minted(seat: str) -> None:
     session_minted_file(seat).write_text("1\n", encoding="utf-8")
+
+
+def cursor_session_file(seat: str) -> Path:
+    return mind_dir(seat) / "cursor-session"
+
+
+def load_cursor_session(seat: str) -> str:
+    """Pinned Cursor chat id. Separate from grok mind/session. Never -1."""
+    path = cursor_session_file(seat)
+    if not path.is_file():
+        return ""
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    if not raw or raw == "-1":
+        return ""
+    return raw
+
+
+def save_cursor_session(seat: str, chat_id: str) -> None:
+    path = cursor_session_file(seat)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(chat_id + "\n", encoding="utf-8")
+    tmp.replace(path)
 
 
 def soul_profile(seat: str) -> str | None:
@@ -495,10 +530,243 @@ def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str,
     ):
         mark_session_minted(seat)
         result = _run(True)
+    if isinstance(result, dict):
+        result.setdefault("backend", "grok")
     return result
 
 
-DEFAULT_RUNNER: Callable[..., Any] = grok_cli_runner
+def grok_usage_exhausted(text: str, stderr: str = "") -> bool:
+    """True when grok refused the turn for HTTP 402 / usage balance exhausted."""
+    blob = f"{text}\n{stderr}"
+    return bool(_USAGE_EXHAUSTED_RE.search(blob))
+
+
+def cursor_agent_env_path() -> Path:
+    raw = (os.environ.get("CURSOR_AGENT_ENV") or "").strip()
+    if raw:
+        return Path(raw)
+    return Path.home() / ".config" / "cursor" / "agent.env"
+
+
+def load_cursor_api_key() -> str:
+    """CURSOR_API_KEY from the environment or agent.env. Never print the value."""
+    existing = (os.environ.get("CURSOR_API_KEY") or "").strip()
+    if existing:
+        return existing
+    path = cursor_agent_env_path()
+    if not path.is_file():
+        return ""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.match(r"^(?:export\s+)?CURSOR_API_KEY\s*=\s*(.*)$", line)
+        if not match:
+            continue
+        value = match.group(1).strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        value = value.strip()
+        if value:
+            return value
+    return ""
+
+
+def cursor_cli_binary() -> str:
+    """Prefer GCS_CURSOR_BIN, then cursor-grok on PATH, else agent."""
+    explicit = (os.environ.get("GCS_CURSOR_BIN") or "").strip()
+    if explicit:
+        return explicit
+    found = shutil.which("cursor-grok")
+    if found:
+        return found
+    return "agent"
+
+
+def cursor_create_chat_argv(*, binary: str | None = None) -> list[str]:
+    return [binary or cursor_cli_binary(), "create-chat"]
+
+
+def cursor_cli_argv(
+    *,
+    chat_id: str,
+    prompt: str,
+    binary: str | None = None,
+) -> list[str]:
+    """Pinned-chat Cursor CLI. Mint with create-chat; every turn resumes that id.
+
+    Headless law (model pin is cursor-grok-4.6-xhigh only; never grok UUID;
+    never latest-in-cwd; Cursor has no --session-id / --prompt-file):
+
+        agent --resume $CHAT_ID -p --force --output-format json --trust \\
+            --approve-mcps --model cursor-grok-4.6-xhigh $PROMPT
+    """
+    exe = binary or cursor_cli_binary()
+    return [
+        exe,
+        "--resume",
+        chat_id,
+        "-p",
+        "--force",
+        "--output-format",
+        "json",
+        "--trust",
+        "--approve-mcps",
+        "--model",
+        CURSOR_MIND_MODEL,
+        prompt,
+    ]
+
+
+def parse_create_chat_id(stdout: str, stderr: str = "") -> str:
+    """Best-effort parse of `agent create-chat` stdout. Reject empty and -1."""
+    for blob in ((stdout or "").strip(), (stderr or "").strip()):
+        if not blob:
+            continue
+        data: Any = None
+        try:
+            data = json.loads(blob)
+        except json.JSONDecodeError:
+            data = None
+        if isinstance(data, dict):
+            for key in ("id", "chatId", "chat_id", "sessionId", "session_id"):
+                val = str(data.get(key) or "").strip()
+                if val and val != "-1":
+                    return val
+        elif isinstance(data, str) and data.strip() and data.strip() != "-1":
+            return data.strip()
+        line = blob.splitlines()[0].strip()
+        parts = line.split()
+        token = parts[-1].strip().strip("'\"") if parts else ""
+        if token and token not in {"-1", "create-chat"}:
+            return token
+    return ""
+
+
+def _cursor_subprocess_env() -> dict[str, str]:
+    env = os.environ.copy()
+    env["GCS_ROOT"] = str(ROOT)
+    env["GCS_A2A_STATE"] = str(STATE_DIR)
+    env.pop("GROK_HOME", None)
+    env.pop("GROK_MEMORY", None)
+    key = load_cursor_api_key()
+    if key:
+        env["CURSOR_API_KEY"] = key
+    return env
+
+
+def _run_cursor_cmd(
+    argv: list[str],
+    *,
+    env: dict[str, str],
+    timeout: float | None,
+) -> dict[str, Any]:
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=str(ROOT),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError:
+        return {
+            "text": "PLUGIN_ERR cursor CLI missing on PATH",
+            "returncode": 127,
+            "stderr": "",
+            "backend": "cursor",
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "text": "PLUGIN_ERR cursor CLI timeout",
+            "returncode": 124,
+            "stderr": "",
+            "backend": "cursor",
+        }
+    except OSError as e:
+        return {
+            "text": f"PLUGIN_ERR cursor CLI: {e}",
+            "returncode": 1,
+            "stderr": "",
+            "backend": "cursor",
+        }
+    return {
+        "text": redact((proc.stdout or "").strip()),
+        "returncode": int(proc.returncode),
+        "stderr": redact((proc.stderr or "").strip()),
+        "backend": "cursor",
+    }
+
+
+def cursor_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str, Any]:
+    """One Cursor CLI turn. Pins mind/cursor-session, not grok mind/session."""
+    mind_dir(seat)
+    mail_path = mind_dir(seat) / "mail.txt"
+    mail_path.write_text(prompt, encoding="utf-8")
+    env = _cursor_subprocess_env()
+    if not (env.get("CURSOR_API_KEY") or "").strip():
+        return {
+            "text": (
+                "PLUGIN_ERR CURSOR_API_KEY missing "
+                "(export it or source ~/.config/cursor/agent.env)"
+            ),
+            "returncode": 1,
+            "stderr": "",
+            "backend": "cursor",
+        }
+    timeout_raw = os.environ.get("GCS_MIND_TURN_TIMEOUT", "").strip()
+    timeout: float | None = float(timeout_raw) if timeout_raw else None
+    create_timeout = timeout if timeout is not None else 60.0
+    binary = cursor_cli_binary()
+    chat_id = load_cursor_session(seat)
+    if not chat_id:
+        minted = _run_cursor_cmd(
+            cursor_create_chat_argv(binary=binary),
+            env=env,
+            timeout=create_timeout,
+        )
+        if int(minted.get("returncode") or 0) != 0:
+            return minted
+        chat_id = parse_create_chat_id(
+            str(minted.get("text") or ""), str(minted.get("stderr") or "")
+        )
+        if not chat_id:
+            return {
+                "text": "PLUGIN_ERR cursor create-chat did not return a chat id",
+                "returncode": 1,
+                "stderr": str(minted.get("stderr") or ""),
+                "backend": "cursor",
+            }
+        save_cursor_session(seat, chat_id)
+    argv = cursor_cli_argv(chat_id=chat_id, prompt=prompt, binary=binary)
+    return _run_cursor_cmd(argv, env=env, timeout=timeout)
+
+
+def mind_turn_runner(prompt: str, *, seat: str = "", **kwargs: Any) -> dict[str, Any]:
+    """Grok first. Cursor CLI on GCS_MIND_RUNNER=cursor or grok HTTP 402."""
+    prefer = (os.environ.get("GCS_MIND_RUNNER") or "").strip().lower()
+    if prefer == "cursor":
+        return cursor_cli_runner(prompt, seat=seat, **kwargs)
+    grok_result = grok_cli_runner(prompt, seat=seat, **kwargs)
+    text, rc, stderr = _runner_payload(grok_result)
+    if rc == 0:
+        return grok_result
+    if grok_usage_exhausted(text, stderr):
+        print(
+            f"MIND_FALLBACK seat={seat} reason=grok-402 runner=cursor",
+            flush=True,
+        )
+        return cursor_cli_runner(prompt, seat=seat, **kwargs)
+    return grok_result
+
+
+DEFAULT_RUNNER: Callable[..., Any] = mind_turn_runner
 
 
 def _runner_payload(raw: Any) -> tuple[str, int, str]:
@@ -525,7 +793,7 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """One inbox line → one grok turn. Offset advances only on grok exit 0."""
+    """One inbox line → one agent turn. Offset advances only on runner exit 0."""
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
         print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)
@@ -570,7 +838,11 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
                 "returncode": returncode,
             }
 
-        mark_session_minted(seat)
+        backend = ""
+        if isinstance(raw, dict):
+            backend = str(raw.get("backend") or "")
+        if backend != "cursor":
+            mark_session_minted(seat)
         _append_transcript(
             seat,
             {
