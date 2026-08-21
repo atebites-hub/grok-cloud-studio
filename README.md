@@ -18,7 +18,7 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 | Webhook harness | `scripts/cloud/webhook_receiver.py`, `webhook-harness.sh` |
 | Board | `docs/studio/TASKBOARD.md` (tcarac/taskboard ticket CLI + HTTP `/mcp`) |
 
-Example seats (edit `docs/a2a/registry.json`): `orchestrator` (Grok Bot, ACP-skipped), `floor`, `ops`, `cloud`, `qa-a`, `qa-b`. Hub: `127.0.0.1:8732`. ACP ports: `8740+`.
+Example seats (edit `docs/a2a/registry.json`): `orchestrator` (Grok Bot, ACP-skipped), `floor`, `ops`, `cloud`, plus Palemon-floor first-class `floor-ops`, `studio-ops`, `art`, `content`, `systems`, `qa-a`, `qa-b`. Hub: `127.0.0.1:8732`. ACP ports: live Palemon values in the registry. Crash-safe default `GCS_ACP_SEATS=floor,studio-ops` — never auto-spawn the full registry as `grok agent serve`.
 
 ## Quick start
 
@@ -31,6 +31,10 @@ export GCS_BOT_AGENT_ID='your-grok-bot-agent-id'   # from Grok Bot settings
 ```
 
 `./install.sh` without `GCS_BOT_AGENT_ID` still bootstraps Python, then **WARN**s. Re-run install or `scripts/a2a/bind-bot-agent.sh` after setting the id. `./doctor.sh` **FAIL**s while `docs/a2a/bot-agents.json` still has an empty or `REPLACE_WITH_YOUR_GROK_BOT_AGENT_ID` agentId. Pure CI clone checks may set `GCS_BOT_BIND_OPTIONAL=1`.
+
+### Palemon studio wipe
+
+Recover today's Palemon floor (8-seat mind, taskboard UI/MCP, no `--daemons`) from a clean machine: **[docs/studio/WIPE.md](docs/studio/WIPE.md)**. Copy `studio.env.example` to `$GCS_A2A_STATE/studio.env` (not committed). Host board: `scripts/studio/taskboard/`.
 
 ```bash
 cp .env.example .env   # fill GCS_CLOUD_REPO + GCS_BOT_AGENT_ID; never commit .env

@@ -33,6 +33,14 @@ for p in \
   scripts/directors/fleet-shepherd.py \
   docs/studio/TASKBOARD.md \
   docs/studio/MIND.md \
+  docs/studio/WIPE.md \
+  studio.env.example \
+  scripts/studio/taskboard/start-taskboard.sh \
+  scripts/studio/taskboard/mcp-http.sh \
+  scripts/studio/taskboard/mcp_http_gateway.py \
+  scripts/studio/taskboard/install-taskboard.sh \
+  scripts/studio/taskboard/start-tailscale-serve.sh \
+  scripts/host/cursor-grok \
   scripts/launch-cloud-extra-high.sh \
   scripts/cloud/spawn-waiter.sh \
   scripts/cloud/sdk/wait-notify.ts \
@@ -93,13 +101,29 @@ fi
 if command -v grok >/dev/null 2>&1; then
   ok "grok CLI on PATH"
 else
-  printf 'WARN grok CLI not on PATH (ACP daemons / launch-director need it)\n'
+  printf 'WARN grok CLI not on PATH (ACP daemons / launch-director / mind need it)\n'
+fi
+
+if command -v cursor-grok >/dev/null 2>&1 || command -v agent >/dev/null 2>&1; then
+  ok "Cursor Agent CLI (agent/cursor-grok) on PATH"
+else
+  printf 'WARN agent/cursor-grok not on PATH (mind 402 fallback + Extra High host CLI; see docs/studio/WIPE.md)\n'
+fi
+
+if command -v taskboard >/dev/null 2>&1 || [[ -x "$ROOT/bin/taskboard" ]]; then
+  ok "taskboard on PATH"
+else
+  printf 'WARN taskboard not on PATH (board UI/MCP; run scripts/studio/taskboard/install-taskboard.sh)\n'
 fi
 
 if command -v node >/dev/null 2>&1; then
   ok "node $(node -v 2>/dev/null || true)"
 else
   printf 'WARN node missing (SDK will try ~/.cache/gcs-node or REST fallback)\n'
+fi
+
+if [[ -e "$ROOT/scripts/studio/agent-kanban" ]]; then
+  bad "Agent Kanban tree reappeared (scripts/studio/agent-kanban) — do not reconnect ak"
 fi
 
 if python3 "$ROOT/scripts/secret_scan.py" --root "$ROOT"; then

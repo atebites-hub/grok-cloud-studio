@@ -17,6 +17,9 @@
 # fleet-shepherd, seat minds, host ticker, or grok agent serve.
 # Host ticker enqueues ACP_PING STATUS/CONTINUE keep-alives (work turns).
 # Agent Kanban / `ak` was removed. Board is tcarac/taskboard (ticket CLI + HTTP /mcp).
+# Host board after a wipe: scripts/studio/taskboard/start-taskboard.sh start
+# and mcp-http.sh start. Full Palemon floor recreate: docs/studio/WIPE.md.
+# start (no --daemons) never auto-spawns a 13-seat grok serve floor on a ~15GB box.
 #
 # Usage:
 #   start-studio-bus.sh          # start hub+dispatch+shepherd (idempotent)
@@ -90,7 +93,8 @@ Board is tcarac/taskboard. Agent Kanban was removed; do not reconnect `ak`.
 
 Opt-in without the flag: GCS_START_SEAT_DAEMONS=1
 Do not spawn a grok agent process per seat by surprise; daemons are explicit.
-See docs/ARCHITECTURE.md, docs/A2A.md, and docs/studio/MIND.md.
+See docs/ARCHITECTURE.md, docs/A2A.md, docs/studio/MIND.md, and docs/studio/WIPE.md.
+Host board: scripts/studio/taskboard/start-taskboard.sh (UI :3010) + mcp-http.sh (:3011).
 EOF
 }
 

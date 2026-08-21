@@ -1,0 +1,121 @@
+# Palemon studio wipe
+
+Recover today's Palemon floor from a **clean machine** using only this
+repository plus BYO secrets (grok login, `CURSOR_API_KEY`, optional Tailscale
+already-joined). Do not reconnect Agent Kanban. Do not print keys.
+
+Generic extract start (hub + dispatch only, empty `GCS_MIND_SEATS`) is still
+the README quick start. This page is the Palemon-floor path.
+
+## Recovered-studio layout (live box)
+
+Do **not** hard-require these absolute paths in scripts. They are the layout
+on the recovered studio box:
+
+```text
+GCS_ROOT=/workspace/palemon-floor-main          # deploy / code tree
+GCS_A2A_STATE=/workspace/palemon/.a2a-state     # live state; never the deploy-tree .a2a-state
+```
+
+A wipe clone of grok-cloud-studio can keep `GCS_ROOT` as the checkout and set
+`GCS_A2A_STATE` to a sibling state dir. Copy `studio.env.example` there.
+
+## Steps
+
+1. Clone this repo. Python 3.11+.
+
+   ```bash
+   git clone https://github.com/atebites-hub/grok-cloud-studio
+   cd grok-cloud-studio
+   ./install.sh          # Python venv + chmod; bind Bot if GCS_BOT_AGENT_ID is set
+   cp .env.example .env  # fill GCS_CLOUD_REPO + GCS_BOT_AGENT_ID; never commit .env
+   ```
+
+2. Live knobs live in **`$GCS_A2A_STATE/studio.env`**, not in git.
+
+   ```bash
+   mkdir -p "${GCS_A2A_STATE:-.a2a-state}"
+   cp studio.env.example "${GCS_A2A_STATE:-.a2a-state}/studio.env"
+   # Edit recovered GCS_ROOT / GCS_A2A_STATE paths if this is that box.
+   ```
+
+   `start-studio-bus.sh` sources `$GCS_A2A_STATE/studio.env`. Do not commit
+   `studio.env`.
+
+3. Install grok CLI and log in (BYO). Never commit `~/.grok/auth.json`.
+
+4. Install Cursor Agent CLI so `agent` is on PATH:
+
+   ```bash
+   curl https://cursor.com/install -fsS | bash
+   ```
+
+   Optional wrapper (mind Cursor 402 fallback looks for `cursor-grok` first):
+
+   ```bash
+   mkdir -p "$HOME/.local/bin"
+   ln -sf "$PWD/scripts/host/cursor-grok" "$HOME/.local/bin/cursor-grok"
+   ```
+
+   `scripts/host/cursor-grok` prepends `$HOME/.local/bin`, sources
+   `$HOME/.config/cursor/agent.env`, then `exec agent --model cursor-grok-4.6-xhigh`.
+
+5. Set `CURSOR_API_KEY` in the environment or `~/.config/cursor/agent.env`.
+   Never print it. Never commit it.
+
+6. Board + MCP HTTP (tcarac/taskboard v0.6.0; do not compile; do not vendor):
+
+   ```bash
+   bash scripts/studio/taskboard/install-taskboard.sh
+   bash scripts/studio/taskboard/start-taskboard.sh start   # UI 127.0.0.1:3010
+   bash scripts/studio/taskboard/mcp-http.sh start          # MCP 127.0.0.1:3011
+   ```
+
+   DB is `$GCS_A2A_STATE/taskboard/taskboard.db` (`PALEMON_A2A_STATE` alias
+   accepted). Details: `scripts/studio/taskboard/README.md`.
+
+7. Mind seats come from `studio.env` (`GCS_MIND_SEATS` eight first-class
+   names). Start the bus **without** `--daemons`:
+
+   ```bash
+   scripts/a2a/start-studio-bus.sh start
+   ```
+
+   That is hub + leftover dispatch + bot-bridge + shepherd + **mind loops**.
+   It does **not** spawn `grok agent serve` per seat. Never auto-spawn a
+   13-seat grok serve floor on a ~15GB box.
+
+8. Tailscale Serve only if the node is **already joined**:
+
+   ```bash
+   bash scripts/studio/taskboard/start-tailscale-serve.sh start
+   ```
+
+   Serves `/` → `:3010` and `/mcp` → `:3011`. Funnel off. Host default
+   `palemon-studio.panther-arctic.ts.net`. Skip with `PALEMON_TAILSCALE_SERVE=0`
+   or if `tailscale` is missing. Never write Tailscale auth key values.
+
+9. Higgsfield: Art uses **Cursor Agents MCP login** when it needs generate.
+   The Grok Bot catalog is a different catalog. Do not encode OAuth secrets.
+
+10. Grok Build HTTP 402: `mind.py` already falls back to Cursor CLI
+    (`cursor-grok` or `agent --model cursor-grok-4.6-xhigh`). Not a wipe blocker.
+
+## Check
+
+```bash
+./doctor.sh
+.venv/bin/pytest -q
+python3 scripts/secret_scan.py
+```
+
+`./doctor.sh` **WARN**s (does not FAIL) if `grok`, `agent`/`cursor-grok`, or
+`taskboard` is missing. It **FAIL**s if `scripts/studio/agent-kanban` reappears.
+
+## Seats (first-class)
+
+`floor` (8740), `floor-ops` (8753), `studio-ops` (8752), `art` (8746),
+`content` (8742), `systems` (8744), `qa-a` (8748), `qa-b` (8751).
+`skipSeats`: `orchestrator`, `donald`. Generic extract still ships `ops` and
+`cloud`. ACP/GROW cap stays crash-safe (`GCS_ACP_SEATS` default
+`floor,studio-ops` unless `studio.env` overlays the Palemon list).

@@ -38,4 +38,6 @@ That is the grok serve config. Isolated `GROK_HOME` does not inherit `~/.grok/co
 
 This repository does not vendor the taskboard binary. Point seats at your local taskboard checkout the same way you point Extra High at `GCS_CLOUD_REPO`.
 
+Host process scripts (wipe box): `scripts/studio/taskboard/` — `install-taskboard.sh`, `start-taskboard.sh` (UI `127.0.0.1:3010`), `mcp-http.sh` (MCP `127.0.0.1:3011`). Palemon floor recreate: `docs/studio/WIPE.md`.
+
 The HTML files under `scripts/studio/dashboard/` remain LEGACY and are not the board.
