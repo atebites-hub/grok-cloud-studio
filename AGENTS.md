@@ -8,6 +8,6 @@ Public control plane for Grok Build CLI Directors and Cursor Cloud Extra High gr
 - ACP daemons are opt-in: `scripts/a2a/start-studio-bus.sh start --daemons`. That starts one `grok agent serve` per GROW seat plus `seat-wake-loop.sh` / `wake-daemon.py` (inbox → `session/prompt` inside that serve pid; never `grok --resume`) and `host-ticker.py` keep-alives.
 - Pin `acp.session`. HANDOFF only on this-prompt STATUS (`reason=status`) or a this-prompt work tool on invoked argv (`reason=work`). Stay connected through keep-alive chatter, inspect tools, payload blobs, silence, leftover tools, RESULT-only, and `queue/changed`. Dead session: one `session/new` after 3 no-start nacks (`ACP_INJECT_SESSION_DEAD`; nack 120s). RESULT is duplex, not success. Do not `session/cancel` a handed-off live turn.
 - After `CLOUD_LAUNCH_OK`, do not block on watch; the waiter A2A-pings the owning seat.
-- MCP = tools (`plugins/a2a`, `plugins/cursor-cloud`). A2A = seat-to-seat.
+- MCP = tools (`plugins/a2a`, `plugins/cursor-cloud`). Seat taskboard stdio MCP lives in each isolated `GROK_HOME/config.toml` (`taskboard --db $GCS_TASKBOARD_DB mcp`), never Cursor `${workspaceFolder}`. A2A = seat-to-seat.
 - Board is tcarac/taskboard (ticket CLI + HTTP `/mcp`). Agent Kanban was removed.
 - Ship gate: `.venv/bin/pytest -q` and `python3 scripts/secret_scan.py`.

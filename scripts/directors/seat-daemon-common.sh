@@ -171,6 +171,89 @@ EOF
   chmod +x "$dest"
 }
 
+_gcs_abs_path() {
+  python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$1"
+}
+
+_write_seat_taskboard_mcp_config() {
+  # Merge stdio MCP into GROK_HOME/config.toml. Equivalent to:
+  #   GROK_HOME=$gh grok mcp add taskboard -- "$bin" --db "$db" mcp
+  # Cursor workspace MCP JSON is not the serve config and is not inherited.
+  local dest="$1" command="$2" db="$3"
+  python3 - "$dest" "$command" "$db" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+dest = pathlib.Path(sys.argv[1])
+command, db = sys.argv[2], sys.argv[3]
+start = "# gcs-seat-taskboard-mcp"
+end = "# gcs-seat-taskboard-mcp-end"
+
+
+def q(s: str) -> str:
+    return json.dumps(s)
+
+
+block = (
+    f"{start}\n"
+    "[compat.cursor]\n"
+    "mcps = false\n"
+    "\n"
+    "[mcp_servers.taskboard]\n"
+    f"command = {q(command)}\n"
+    f"args = [{q('--db')}, {q(db)}, {q('mcp')}]\n"
+    f"{end}\n"
+)
+text = dest.read_text(encoding="utf-8") if dest.is_file() else ""
+text = re.sub(
+    re.escape(start) + r"\n.*?" + re.escape(end) + r"\n?",
+    "",
+    text,
+    flags=re.S,
+)
+text = text.rstrip()
+if text:
+    text += "\n\n"
+text += block
+dest.parent.mkdir(parents=True, exist_ok=True)
+dest.write_text(text, encoding="utf-8")
+PY
+}
+
+install_seat_grok_mcp() {
+  # Register stdio MCP in this seat's isolated GROK_HOME/config.toml:
+  #   <absolute taskboard> --db $GCS_TASKBOARD_DB mcp
+  # User-scope ~/.grok/config.toml is not inherited. Do not remint serve.
+  local seat="${1:-}"
+  local sd gh db bin cfg
+  sd="$(seat_state_dir "${seat:-floor}")"
+  gh="${GROK_HOME:-$sd/grok-home}"
+  db="${GCS_TASKBOARD_DB:-${TASKBOARD_DB:-$STATE_DIR/taskboard/taskboard.db}}"
+  mkdir -p "$gh"
+  bin="$(resolve_taskboard_bin || true)"
+  if [[ -z "$bin" ]]; then
+    bin="${TASKBOARD_BIN:-$ROOT/bin/taskboard}"
+    echo "SEAT_GROK_MCP_SKIP seat=${seat:-?} missing host binary; config still written bin=$bin db=$db" >&2
+  fi
+  bin="$(_gcs_abs_path "$bin")"
+  db="$(_gcs_abs_path "$db")"
+  case "$bin$db" in
+    *'${'*)
+      echo "SEAT_GROK_MCP_FAIL seat=${seat:-?} refusing unexpanded interpolation in MCP argv" >&2
+      return 1
+      ;;
+  esac
+  if [[ "$bin" != /* || "$db" != /* ]]; then
+    echo "SEAT_GROK_MCP_FAIL seat=${seat:-?} MCP argv must be absolute" >&2
+    return 1
+  fi
+  cfg="$gh/config.toml"
+  _write_seat_taskboard_mcp_config "$cfg" "$bin" "$db"
+  echo "SEAT_GROK_MCP_OK seat=${seat:-?} command=$bin db=$db dest=$cfg" >&2
+}
+
 install_seat_taskboard_cli() {
   # Put taskboard / ticket / tb on the grok serve PATH (~/.grok/bin and
   # GROK_HOME/bin). Wrappers bake --db to the state-dir board so a Director
@@ -223,6 +306,7 @@ install_seat_identity() {
   mkdir -p "$sd/grok-home"
   install_seat_grok_auth "$seat"
   install_seat_taskboard_cli "$seat"
+  install_seat_grok_mcp "$seat"
   if [[ -f "$src/SOUL.md" ]]; then
     cp "$src/SOUL.md" "$sd/SOUL.md"
   elif [[ -f "$alias/SOUL.md" ]]; then
