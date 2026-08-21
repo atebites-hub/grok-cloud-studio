@@ -22,6 +22,9 @@ fails on the same acp.session id, one session/new (SESSION_DEAD).
 Do not session/cancel a handed-off live turn. Not leftover-mint-per-ping.
 ACP_INJECT_HANDOFF logs reason=status|work (never queue,tool,harvest,
 never substantial).
+Work-tool match is invoked argv (tool name + args), not a flattened
+payload blob: Shell ls/cat/rg of launch-cloud-extra-high.sh or send.sh
+is not work.
 
 Leftover dispatch (no pin): completes on streamed work/STATUS (or this-prompt
 tool+text), not on session/prompt RPC end. Timeout and prompt-fail
@@ -68,12 +71,22 @@ _STATUS_LINE_RE = re.compile(r"^STATUS\b", re.MULTILINE)
 _PONG_ONLY_RE = re.compile(r"^\s*(PONG|pong|ok|OK)\s*$")
 _WORK_UPDATES = frozenset({"tool_call", "tool_call_update", "agent_thought_chunk"})
 # Inspect-only tools. list_dir / read / grep of a path (including one
-# containing "taskboard") is not a this-prompt mutation.
-_INSPECT_TOOL_NAMES = frozenset({"list_dir", "listdir", "read", "grep"})
+# containing "taskboard") is not a this-prompt mutation. Shell ls/cat/rg
+# of a path is the same class — not a mutation even if the path names a
+# work script.
+_INSPECT_TOOL_NAMES = frozenset(
+    {"list_dir", "listdir", "read", "grep", "ls", "cat", "rg"}
+)
 _INSPECT_TOOL_KINDS = frozenset({"read", "search"})
+# Invoked program is ls/cat/rg/grep (optional env assignments / dir prefix).
+_INSPECT_ARGV_RE = re.compile(
+    r"(?im)^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*"
+    r"(?:\S*/)?"
+    r"(?:ls|cat|rg|grep)\b"
+)
 # This-prompt Director mutations — ticket/tb CLI, send.sh / A2A message:send,
-# launch-cloud. Not leftover read/search, not keep-alive chatter, not the
-# word "taskboard" in a path or cwd.
+# launch-cloud. Matched on invoked command/argv (tool name + args), not a
+# flattened payload blob (cwd / description / path / locations).
 _WORK_TOOL_RE = re.compile(
     r"(?:"
     r"\bticket\s+(?:move|create)\b|"
@@ -143,31 +156,60 @@ def seat_produced_work(text: str, *, tool_events: int = 0) -> bool:
     return len(body) >= 40
 
 
-def _tool_update_blob(update: dict[str, Any]) -> str:
-    """Flatten a session/update tool payload for work-tool matching."""
+def _join_argv(val: Any) -> str:
+    """Stringify a command string or argv list. Empty if unused."""
+    if isinstance(val, str) and val.strip():
+        return val.strip()
+    if isinstance(val, (list, tuple)):
+        bits = [str(x).strip() for x in val if x is not None and str(x).strip()]
+        return " ".join(bits)
+    return ""
+
+
+def _tool_name_fields(update: dict[str, Any]) -> list[str]:
+    """ACP tool identity: name / toolName / title (not description)."""
     parts: list[str] = []
+    for key in ("name", "toolName", "title"):
+        raw = update.get(key)
+        if isinstance(raw, str) and raw.strip():
+            parts.append(raw.strip())
+    return parts
 
-    def _walk(obj: Any) -> None:
-        if obj is None:
-            return
-        if isinstance(obj, str):
-            if obj:
-                parts.append(obj)
-            return
-        if isinstance(obj, dict):
-            for value in obj.values():
-                _walk(value)
-            return
-        if isinstance(obj, (list, tuple)):
-            for value in obj:
-                _walk(value)
 
-    _walk(update)
-    return "\n".join(parts)
+def _invoked_command(update: dict[str, Any]) -> str:
+    """Invoked command / argv only — not cwd, path, description, or locations."""
+    chunks: list[str] = []
+
+    def _from_mapping(obj: Any) -> None:
+        if not isinstance(obj, dict):
+            return
+        for key in ("command", "cmd"):
+            joined = _join_argv(obj.get(key))
+            if joined:
+                chunks.append(joined)
+        for key in ("argv", "args", "arguments"):
+            val = obj.get(key)
+            if isinstance(val, (list, tuple)):
+                joined = _join_argv(val)
+                if joined:
+                    chunks.append(joined)
+
+    _from_mapping(update)
+    for nested in ("rawInput", "input", "params"):
+        _from_mapping(update.get(nested))
+    return "\n".join(chunks)
+
+
+def _is_inspect_argv(command: str) -> bool:
+    """True when every invoked argv line is ls/cat/rg/grep (path args are not work)."""
+    lines = [ln.strip() for ln in str(command or "").splitlines() if ln.strip()]
+    if not lines:
+        return False
+    return all(bool(_INSPECT_ARGV_RE.search(ln)) for ln in lines)
 
 
 def _is_inspect_only_tool(update: dict[str, Any]) -> bool:
-    """True for list_dir / read / grep (and ACP kind read|search)."""
+    """True for list_dir / read / grep / ls / cat / rg (and ACP kind read|search)."""
     kind = str(update.get("kind") or "").strip().lower()
     if kind in _INSPECT_TOOL_KINDS:
         return True
@@ -188,9 +230,10 @@ def is_this_prompt_work_tool(update: dict[str, Any] | None) -> bool:
     """True for a new tool_call that mutates the board or pings/launches.
 
     Matches ticket move|create, tb move|create, send.sh / a2a message send,
-    and launch-cloud-extra-high. Leftover tool_call_update, list_dir/read/grep,
-    and a path containing the word taskboard are not this-prompt work.
-    Keep-alive assistant text is not a tool.
+    and launch-cloud-extra-high on the invoked command/argv (tool name + args).
+    Leftover tool_call_update, list_dir/read/grep, Shell ls/cat/rg of a path
+    (including launch-cloud-extra-high.sh or send.sh), a path containing
+    taskboard, and keep-alive assistant text are not this-prompt work.
     """
     if not isinstance(update, dict):
         return False
@@ -199,7 +242,11 @@ def is_this_prompt_work_tool(update: dict[str, Any] | None) -> bool:
         return False
     if _is_inspect_only_tool(update):
         return False
-    return bool(_WORK_TOOL_RE.search(_tool_update_blob(update)))
+    command = _invoked_command(update)
+    if _is_inspect_argv(command):
+        return False
+    haystack = "\n".join([*_tool_name_fields(update), command])
+    return bool(_WORK_TOOL_RE.search(haystack))
 
 
 def pin_session_ready_to_leave(

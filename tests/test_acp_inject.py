@@ -30,6 +30,10 @@ AGENTS_DOC = REPO / "AGENTS.md"
 RESULT_LINE = "RESULT bc-id=none pr=none a2a=task-1 notes=park-ok"
 STATUS_LINE = "STATUS quoting token tick-1. Working."
 KEEP_ALIVE_LINE = "Keep-alive received. Scanning A2A inboxes, fleet ledgers"
+KEEP_ALIVE_PARK_LINE = (
+    "Keep-alive received. I'll check PARK, ownership, and current fleet/board "
+    "state before deciding whether to launch or stay with existing work."
+)
 
 
 def _load(path: Path, name: str) -> ModuleType:
@@ -371,6 +375,17 @@ def test_keep_alive_scanning_sentence_is_not_ready_to_leave() -> None:
     assert mod.pin_session_handoff_reason(sentence) is None
 
 
+def test_keep_alive_park_sentence_is_not_ready_to_leave() -> None:
+    """LIVE 2026-08-21T05:23:44Z 140-char keep-alive must not HANDOFF."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_keepalive_park")
+    sentence = KEEP_ALIVE_PARK_LINE
+    assert len(sentence) == 140
+    assert mod.pin_session_ready_to_leave(sentence) is False
+    assert mod.pin_session_ready_to_leave(sentence, tool_events=2) is False
+    assert mod.pin_session_handoff_reason(sentence) is None
+    assert mod.pin_session_handoff_reason(sentence, work_tools=0) is None
+
+
 def test_this_prompt_work_tool_is_not_leftover() -> None:
     mod = _load(ACP_INJECT, "gcs_acp_inject_work_tool_fn")
     send = {
@@ -440,6 +455,53 @@ def test_list_dir_on_taskboard_path_is_not_this_prompt_work() -> None:
     assert mod.is_this_prompt_work_tool(grep_board) is False
     assert mod.is_this_prompt_work_tool(cwd_ls) is False
     assert mod.is_this_prompt_work_tool(read_send) is False
+
+
+def test_shell_inspect_of_work_script_path_is_not_this_prompt_work() -> None:
+    """LIVE: Shell ls/cat/rg of launch-cloud-extra-high.sh or send.sh is not work.
+
+    Matching the flattened tool_call blob treats a path/help string as a
+    mutation. Work must be the invoked argv, not cwd/description/path.
+    """
+    mod = _load(ACP_INJECT, "gcs_acp_inject_shell_inspect_argv")
+    ls_launch = {
+        "sessionUpdate": "tool_call",
+        "title": "Shell",
+        "kind": "execute",
+        "rawInput": {"command": "ls scripts/launch-cloud-extra-high.sh"},
+    }
+    cat_send = {
+        "sessionUpdate": "tool_call",
+        "title": "Shell",
+        "kind": "execute",
+        "rawInput": {"command": "cat scripts/a2a/send.sh"},
+    }
+    rg_launch = {
+        "sessionUpdate": "tool_call",
+        "title": "bash",
+        "kind": "execute",
+        "rawInput": {"command": "rg launch-cloud-extra-high scripts/"},
+    }
+    help_blob = {
+        "sessionUpdate": "tool_call",
+        "title": "Shell",
+        "kind": "execute",
+        "rawInput": {
+            "command": "ls scripts/",
+            "description": "help: launch-cloud-extra-high.sh and send.sh",
+            "working_directory": "/workspace",
+        },
+    }
+    argv_ls = {
+        "sessionUpdate": "tool_call",
+        "title": "Shell",
+        "rawInput": {"argv": ["ls", "scripts/launch-cloud-extra-high.sh"]},
+    }
+    assert mod.is_this_prompt_work_tool(ls_launch) is False
+    assert mod.is_this_prompt_work_tool(cat_send) is False
+    assert mod.is_this_prompt_work_tool(rg_launch) is False
+    assert mod.is_this_prompt_work_tool(help_blob) is False
+    assert mod.is_this_prompt_work_tool(argv_ls) is False
 
 
 def test_ticket_move_cli_is_this_prompt_work() -> None:
@@ -673,6 +735,45 @@ def test_pin_session_list_dir_taskboard_does_not_handoff(
     assert "reason=no-accept" in blob
     assert ws.cancel_sessions == []
     assert elapsed >= 0.35, f"waited {elapsed:.2f}s; list_dir taskboard must not disconnect"
+
+
+def test_pin_session_shell_ls_launch_script_does_not_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """LIVE hang-up: keep-alive + Shell ls launch-cloud-extra-high.sh is not reason=work."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_shell_ls_launch")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=[KEEP_ALIVE_PARK_LINE],
+        prompt_updates=[
+            _queue_changed(),
+            _tool_update(
+                "tc-ls-launch",
+                "Shell",
+                command="ls scripts/launch-cloud-extra-high.sh",
+            ),
+        ],
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "ACP_PING STATUS/CONTINUE", timeout=0.45, pin_session=True))
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 1, blob
+    assert flags and flags[0]["chars"] == 140
+    assert flags[0]["work_tools"] == 0
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "reason=work" not in blob
+    assert "ACP_INJECT_OK" not in out.out
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert "reason=no-accept" in blob
+    assert ws.cancel_sessions == []
+    assert elapsed >= 0.35, f"waited {elapsed:.2f}s; Shell ls of launch script must not disconnect"
 
 
 def test_pin_session_work_tool_handoff_reason_work(
