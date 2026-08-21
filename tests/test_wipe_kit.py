@@ -22,10 +22,13 @@ DOCTOR = REPO / "doctor.sh"
 INSTALL = REPO / "install.sh"
 README = REPO / "README.md"
 WIPE = REPO / "docs" / "studio" / "WIPE.md"
+MIND_DOC = REPO / "docs" / "studio" / "MIND.md"
+CURSOR_MCP = REPO / ".cursor" / "mcp.json"
 STUDIO_ENV_EXAMPLE = REPO / "studio.env.example"
 DOT_ENV_EXAMPLE = REPO / ".env.example"
 REGISTRY = REPO / "docs" / "a2a" / "registry.json"
 TASKBOARD_DIR = REPO / "scripts" / "studio" / "taskboard"
+RUN_MCP = TASKBOARD_DIR / "run-mcp.sh"
 START_TB = TASKBOARD_DIR / "start-taskboard.sh"
 MCP_HTTP = TASKBOARD_DIR / "mcp-http.sh"
 MCP_GW = TASKBOARD_DIR / "mcp_http_gateway.py"
@@ -87,6 +90,9 @@ def test_wipe_kit_files_exist() -> None:
         INSTALL_TB,
         TS_SERVE,
         TB_README,
+        RUN_MCP,
+        CURSOR_MCP,
+        MIND_DOC,
         CURSOR_GROK,
         REPO / "docs" / "a2a" / "cards" / "art.json",
         REPO / "docs" / "a2a" / "cards" / "floor-ops.json",
@@ -259,6 +265,8 @@ def test_doctor_warns_on_missing_host_bins_and_fails_on_ak() -> None:
     assert "cursor-grok" in text or "agent" in text
     assert "agent-kanban" in text
     assert "FAIL" in text or "bad " in text
+    assert ".cursor/mcp.json" in text
+    assert "run-mcp.sh" in text
 
 
 def test_wipe_doc_has_host_bootstrap_steps() -> None:
@@ -479,3 +487,117 @@ def test_taskboard_readme_covers_wipe_board_start() -> None:
     assert "install-taskboard.sh" in text
     assert "Agent Kanban" in text or "ak" in text.lower()
     assert "ak start" not in text
+    assert ".cursor/mcp.json" in text or "run-mcp.sh" in text
+
+
+_TWO_CATALOG_NEEDLES = (
+    "two catalogs",
+    "inbox.jsonl",
+    "mind/offset",
+    "GROK_HOME",
+    "Never fake a transfer",
+    "ticket",
+    "tb",
+    "scripts/a2a/send.sh",
+    "scripts/launch-cloud-extra-high.sh",
+    "Higgsfield",
+    "deliver_wake",
+    "session/prompt",
+    "Cursor Cloud",
+    "Extra High",
+    "Cursor Cloud API",
+    "fast=false",
+    "grok-4.6",
+    "xhigh",
+    "cursor-grok-4.6-xhigh",
+    "one mailbox",
+)
+
+
+def _fold(text: str) -> str:
+    return " ".join(text.split()).lower()
+
+
+def test_two_runtime_mind_law_in_mind_and_wipe() -> None:
+    mind = MIND_DOC.read_text(encoding="utf-8")
+    wipe = WIPE.read_text(encoding="utf-8")
+    assert "palemon" not in mind.lower()
+    for label, text in (("MIND.md", mind), ("WIPE.md", wipe)):
+        low = _fold(text)
+        for needle in _TWO_CATALOG_NEEDLES:
+            assert needle.lower() in low, f"{label} missing {needle!r}"
+        assert "do not copy" in low, label
+        assert "third python" in low, label
+        assert "grow" in low, label
+        assert "cursor catalog" in low, label
+        assert "grok bot" in low, label
+        assert "grok-only" in low or "grok only" in low, label
+        assert PRIVATE_GAME not in text
+
+
+def test_cursor_mcp_json_taskboard_stdio_no_ak_no_leaks() -> None:
+    raw = CURSOR_MCP.read_text(encoding="utf-8")
+    data = json.loads(raw)
+    servers = data.get("mcpServers") or {}
+    assert "taskboard" in servers, data
+    assert "ak" not in servers
+    assert "agent-kanban" not in servers
+    spec = servers["taskboard"]
+    blob = json.dumps(data)
+    low = blob.lower()
+    joined = " ".join(
+        str(x) for x in ([spec.get("command", "")] + list(spec.get("args") or []))
+    )
+    assert "run-mcp.sh" in joined or "run-mcp.sh" in blob
+    assert "scripts/studio/taskboard" in blob
+    assert "agent-kanban" not in low
+    assert "agent kanban" not in low
+    assert PRIVATE_GAME not in blob
+    assert "ts.net" not in low
+    assert "CURSOR_API_KEY" not in blob
+    assert "TAILSCALE_AUTH_KEY" not in blob
+    assert "/workspace/" + "pale" + "mon" not in low
+    env = spec.get("env") or {}
+    for key in env:
+        upper = str(key).upper()
+        assert "KEY" not in upper
+        assert "SECRET" not in upper
+        assert "TOKEN" not in upper
+
+
+def test_run_mcp_execs_taskboard_stdio(tmp_path: Path) -> None:
+    log = tmp_path / "tb.argv"
+    fake = _write_exec(
+        tmp_path / "bin" / "taskboard",
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$@" >> "{log}"\n'
+        "exit 0\n",
+    )
+    state = tmp_path / "live-state"
+    env = {
+        "PATH": f"{fake.parent}:/usr/bin:/bin",
+        "HOME": str(tmp_path / "home"),
+        "GCS_ROOT": str(REPO),
+        "GCS_A2A_STATE": str(state),
+        "TASKBOARD_BIN": str(fake),
+        "LC_ALL": "C",
+        "TERM": "dumb",
+    }
+    proc = subprocess.run(
+        ["bash", str(RUN_MCP)],
+        cwd=str(REPO),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    recorded = log.read_text(encoding="utf-8")
+    assert "--db" in recorded
+    assert "mcp" in recorded
+    db = state / "taskboard" / "taskboard.db"
+    assert str(db) in recorded
+    assert PRIVATE_GAME not in blob
+    assert "CURSOR_API_KEY=" not in blob
+    assert "TAILSCALE_AUTH_KEY=" not in blob

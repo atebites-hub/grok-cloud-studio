@@ -348,6 +348,11 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "bypassPermissions" in doc
     assert "--max-turns" in doc
     assert "do not transfer" in doc.lower() or "does not transfer" in doc.lower() or "do not transfer" in src.lower()
+    assert "two catalogs" in doc.lower()
+    assert "higgsfield" in doc.lower()
+    assert "deliver_wake" in doc
+    assert "fast=false" in doc
+    assert "cursor cloud" in doc.lower()
 
 
 def test_fake_grok_mints_then_resumes_same_uuid(
