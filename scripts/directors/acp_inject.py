@@ -5,9 +5,20 @@ Usage:
   acp_inject.py <seat> <extra-text...>
   acp_inject.py --seat <seat> --file <path>
   acp_inject.py --seat <seat> --stdin
+  acp_inject.py --seat <seat> --pin-session ...
 
 Reads .a2a-state/<seat>/{acp.url,acp.secret,acp.session}.
 Persists session id after session/new. Prefer session/load on later injects.
+
+Leftover dispatch (default): harvest streamed RESULT / PARK_ACK / QA_*_RESULT,
+duplex, then session/cancel so the next ping is not start_blocked.
+
+--pin-session: HANDOFF only on this-prompt tool or non-RESULT session/update.
+Never 1s silence. Never queue/changed alone. Stay on the websocket after
+session/prompt start until HANDOFF or the 30s accept deadline. After
+no-accept, remint once (one session/new on the same socket). Do not
+session/cancel a handed-off live turn. RESULT-only is duplex, not HANDOFF.
+
 Stdlib + optional websockets; falls back to a minimal WS client.
 """
 from __future__ import annotations
@@ -30,6 +41,7 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 DEFAULT_TIMEOUT = float(os.environ.get("GCS_ACP_INJECT_TIMEOUT", "180"))
+ACCEPT_DEADLINE_SEC = float(os.environ.get("GCS_ACP_ACCEPT_DEADLINE", "30"))
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
 if str(_LIB_DIR) not in sys.path:
@@ -48,6 +60,9 @@ RESULT_LINE_RE = re.compile(
     r"^(RESULT|QA_A_RESULT|QA_B_RESULT|PARK_ACK)\b.*$",
     re.MULTILINE,
 )
+_STATUS_LINE_RE = re.compile(r"^STATUS\b", re.MULTILINE)
+_PONG_ONLY_RE = re.compile(r"^\s*(PONG|pong|ok|OK)\s*$")
+_WORK_UPDATES = frozenset({"tool_call", "tool_call_update", "agent_thought_chunk"})
 
 
 def extract_result_line(text: str) -> str | None:
@@ -58,6 +73,70 @@ def extract_result_line(text: str) -> str | None:
     for match in RESULT_LINE_RE.finditer(text):
         found = match.group(0).strip()
     return found
+
+
+def pin_accept_wait(timeout: float) -> float:
+    """Pin-session waits at most the 30s accept deadline (tests may pass less)."""
+    return min(float(timeout), float(ACCEPT_DEADLINE_SEC))
+
+
+def _work_body_without_result_lines(text: str) -> str:
+    """Assistant text excluding RESULT / PARK_ACK / QA_*_RESULT hang-up lines."""
+    if not text:
+        return ""
+    kept: list[str] = []
+    for line in str(text).splitlines():
+        if RESULT_LINE_RE.match(line.strip()):
+            continue
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
+def prompt_chunk_is_accept_signal(text: str) -> bool:
+    """True when streamed assistant text is a non-RESULT session/update.
+
+    STATUS is accept. RESULT hang-up and PONG are not. Any other non-empty
+    body (including short thinking) is accept.
+    """
+    raw = "" if text is None else str(text)
+    if _STATUS_LINE_RE.search(raw):
+        return True
+    body = _work_body_without_result_lines(raw)
+    if not body:
+        return False
+    if _PONG_ONLY_RE.match(body):
+        return False
+    return True
+
+
+def is_handoff_signal(text: str, *, tool_events: int = 0, queued: bool = False) -> bool:
+    """HANDOFF only on this-prompt tool or non-RESULT session/update.
+
+    queue/changed alone is never HANDOFF. Leftover tools with empty or
+    RESULT-only text are not this-prompt. Silence is never HANDOFF.
+    """
+    del queued  # tracked for logs; never a HANDOFF signal by itself
+    raw = "" if text is None else str(text)
+    if prompt_chunk_is_accept_signal(raw):
+        return True
+    body = _work_body_without_result_lines(raw)
+    if tool_events > 0 and body and not _PONG_ONLY_RE.match(body):
+        return True
+    return False
+
+
+def stream_is_hangup_only(text: str, *, tool_events: int = 0) -> bool:
+    """RESULT-only or PONG-only. Leftover tools without RESULT are not hang-up."""
+    raw = "" if text is None else str(text)
+    if is_handoff_signal(raw, tool_events=tool_events):
+        return False
+    body = _work_body_without_result_lines(raw)
+    if extract_result_line(raw) and not body:
+        return True
+    if tool_events > 0:
+        return False
+    stripped = (body or raw).strip()
+    return bool(stripped and _PONG_ONLY_RE.match(stripped))
 
 
 def _duplex_after_inject(seat: str, prompt: str, reply: str) -> None:
@@ -244,6 +323,10 @@ class AcpClient:
         self.harvested_early = False
         self._use_stdlib = not _HAS_WEBSOCKETS
         self._echo_chunks = False
+        self._tool_events = 0
+        self._prompt_accepted = False
+        self._queued = False
+        self._accepted: Optional[asyncio.Event] = None
 
     async def connect(self) -> None:
         if _HAS_WEBSOCKETS:
@@ -291,13 +374,24 @@ class AcpClient:
                 if method == "session/update":
                     params = msg.get("params") or {}
                     update = params.get("update") or {}
-                    if update.get("sessionUpdate") == "agent_message_chunk":
+                    kind = str(update.get("sessionUpdate") or "")
+                    if kind == "agent_message_chunk":
                         t = ((update.get("content") or {}).get("text")) or ""
-                        if t and self._echo_chunks:
+                        if t:
                             self._chunks.append(t)
-                            sys.stdout.write(t)
-                            sys.stdout.flush()
+                            if self._echo_chunks:
+                                sys.stdout.write(t)
+                                sys.stdout.flush()
                             self._maybe_complete_harvest()
+                            self._maybe_signal_accepted()
+                    elif kind in _WORK_UPDATES:
+                        self._tool_events += 1
+                        self._maybe_complete_harvest()
+                        self._maybe_signal_accepted()
+                elif isinstance(method, str) and "queue/changed" in method:
+                    # Submit ack only. Never HANDOFF on queue/changed alone.
+                    self._queued = True
+                    self._maybe_signal_accepted()
                 elif method in ("_x.ai/session/prompt_complete",):
                     # sometimes arrives before JSON-RPC result
                     pass
@@ -342,6 +436,14 @@ class AcpClient:
         line = extract_result_line("".join(self._chunks))
         if line:
             fut.set_result(line)
+
+    def _maybe_signal_accepted(self) -> None:
+        """HANDOFF only on this-prompt tool or non-RESULT session/update."""
+        if self._accepted is None or self._accepted.is_set():
+            return
+        text = "".join(self._chunks)
+        if is_handoff_signal(text, tool_events=self._tool_events, queued=self._queued):
+            self._accepted.set()
 
     async def request(self, method: str, params: dict[str, Any], timeout: float = 60.0) -> dict[str, Any]:
         rid = self._next_id
@@ -419,10 +521,27 @@ class AcpClient:
             except Exception:
                 pass
 
-    async def session_prompt(self, session_id: str, text: str, timeout: float) -> str:
+    async def session_prompt(
+        self,
+        session_id: str,
+        text: str,
+        timeout: float,
+        *,
+        pin_session: bool = False,
+    ) -> str:
+        """Wait for leftover RESULT harvest, or pin-session HANDOFF.
+
+        Pin-session stays on the websocket until this-prompt tool or a
+        non-RESULT session/update, or the accept deadline. Silence,
+        queue/changed alone, leftover empty tools, and RESULT-only are
+        not HANDOFF.
+        """
         self._chunks = []
+        self._tool_events = 0
         self._echo_chunks = True
         self.harvested_early = False
+        self._prompt_accepted = False
+        self._queued = False
         rid = self._next_id
         self._next_id += 1
         loop = asyncio.get_running_loop()
@@ -430,6 +549,7 @@ class AcpClient:
         harvest_fut: asyncio.Future = loop.create_future()
         self._pending[rid] = rpc_fut
         self._harvested = harvest_fut
+        self._accepted = asyncio.Event()
         await self._send_raw(
             {
                 "jsonrpc": "2.0",
@@ -441,16 +561,21 @@ class AcpClient:
                 },
             }
         )
+        accepted_task: Optional[asyncio.Task] = None
+        if pin_session:
+            accepted_task = asyncio.create_task(self._accepted.wait())
+            wait_set: set[asyncio.Future] = {rpc_fut, accepted_task}
+            wait_timeout = pin_accept_wait(timeout)
+        else:
+            wait_set = {rpc_fut, harvest_fut}
+            wait_timeout = timeout
         try:
             done, _pending_futs = await asyncio.wait(
-                {rpc_fut, harvest_fut},
-                timeout=timeout,
+                wait_set,
+                timeout=wait_timeout,
                 return_when=asyncio.FIRST_COMPLETED,
             )
             reply = "".join(self._chunks)
-            if harvest_fut in done and not harvest_fut.cancelled() and harvest_fut.exception() is None:
-                self.harvested_early = True
-                return reply
             if rpc_fut in done and not rpc_fut.cancelled():
                 exc = rpc_fut.exception()
                 if exc is not None:
@@ -458,6 +583,17 @@ class AcpClient:
                 msg = rpc_fut.result()
                 if "error" in msg:
                     raise RuntimeError(f"session/prompt error: {msg['error']}")
+            if pin_session:
+                if is_handoff_signal(
+                    reply, tool_events=self._tool_events, queued=self._queued
+                ):
+                    return self._finish_prompt(rid, rpc_fut, reply, accepted=True)
+                self._pending.pop(rid, None)
+                raise asyncio.TimeoutError
+            if harvest_fut in done and not harvest_fut.cancelled() and harvest_fut.exception() is None:
+                self.harvested_early = True
+                return reply
+            if rpc_fut in done and not rpc_fut.cancelled():
                 return reply
             self._pending.pop(rid, None)
             if extract_result_line(reply):
@@ -465,17 +601,69 @@ class AcpClient:
                 return reply
             raise asyncio.TimeoutError
         finally:
+            if accepted_task is not None and not accepted_task.done():
+                accepted_task.cancel()
+                try:
+                    await accepted_task
+                except asyncio.CancelledError:
+                    pass
             self._echo_chunks = False
 
+    def _finish_prompt(
+        self,
+        rid: int,
+        fut: asyncio.Future,
+        reply: str,
+        *,
+        accepted: bool,
+    ) -> str:
+        if accepted:
+            self._prompt_accepted = True
+        if extract_result_line(reply) and not fut.done():
+            self.harvested_early = True
+            self._pending.pop(rid, None)
+        elif accepted and not fut.done():
+            self._pending.pop(rid, None)
+        return reply
 
-async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = False) -> int:
+
+async def _remint_once(
+    client: AcpClient,
+    *,
+    session_path: Path,
+    session_id: str,
+) -> None:
+    """After no-accept, one session/new on the same websocket. Never reconnect."""
+    try:
+        new_id = await client.session_new()
+    except Exception as e:  # noqa: BLE001 — still a timeout fail
+        print(f"ACP_INJECT_REMINT_FAIL old={session_id} err={e}", file=sys.stderr)
+        return
+    _write_text(session_path, new_id)
+    print(
+        f"ACP_INJECT_REMINT old={session_id} new={new_id} reason=no-accept",
+        flush=True,
+    )
+
+
+async def inject(
+    seat: str,
+    prompt: str,
+    *,
+    timeout: float,
+    force_new: bool = False,
+    pin_session: bool = False,
+) -> int:
     url = _ensure_url(seat)
     sd = _seat_dir(seat)
     session_path = sd / "acp.session"
     stale_path = sd / "acp.inject.stale"
     cwd = str(ROOT)
 
-    if stale_path.is_file() and not force_new:
+    if pin_session:
+        # Keep the pinned id unless this inject no-accept remints it.
+        force_new = False
+    elif stale_path.is_file() and not force_new:
         force_new = True
         print(f"ACP_INJECT_STALE seat={seat} forcing new session", flush=True)
 
@@ -505,8 +693,10 @@ async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = Fa
             f"ACP_INJECT_BEGIN seat={seat} session={session_id} reused={int(reused)} url={url.split('?')[0]}",
             flush=True,
         )
-        # Mark in-flight before prompt so dispatch lock-TTL SIGKILL still force-news.
-        _write_text(stale_path, f"in-flight timeout={timeout}\n")
+        # Mark in-flight before leftover prompt so dispatch lock-TTL SIGKILL still force-news.
+        # Pin-session must not write this flag (a live turn is not stale).
+        if not pin_session:
+            _write_text(stale_path, f"in-flight timeout={timeout}\n")
         # Wrap as EXTRA TURN so Directors match footer expectations
         full = (
             "=== EXTRA TURN INSTRUCTIONS (ACP inject / persistent seat) ===\n"
@@ -514,11 +704,29 @@ async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = Fa
         )
         harvested = False
         try:
-            reply = await client.session_prompt(session_id, full, timeout=timeout)
+            reply = await client.session_prompt(
+                session_id, full, timeout=timeout, pin_session=pin_session
+            )
             harvested = bool(client.harvested_early)
         except asyncio.TimeoutError:
             reply = "".join(client._chunks)
-            if extract_result_line(reply):
+            tools = int(getattr(client, "_tool_events", 0) or 0)
+            queued = bool(getattr(client, "_queued", False))
+            if pin_session:
+                if is_handoff_signal(reply, tool_events=tools, queued=queued):
+                    harvested = bool(extract_result_line(reply))
+                    client._prompt_accepted = True
+                else:
+                    reason = "hangup-only" if stream_is_hangup_only(reply, tool_events=tools) else "no-accept"
+                    print(
+                        f"ACP_INJECT_TIMEOUT seat={seat} session={session_id} "
+                        f"timeout={timeout} reason={reason}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    await _remint_once(client, session_path=session_path, session_id=session_id)
+                    return 1
+            elif extract_result_line(reply):
                 harvested = True
             else:
                 print(
@@ -536,15 +744,16 @@ async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = Fa
                 return 1
         except Exception as e:
             print(f"ACP_INJECT_FAIL seat={seat} session={session_id} err={e}", file=sys.stderr)
-            print(
-                f"ACP_INJECT_CANCEL seat={seat} session={session_id}",
-                file=sys.stderr,
-                flush=True,
-            )
-            try:
-                await client.session_cancel(session_id)
-            except Exception:
-                pass
+            if not pin_session:
+                print(
+                    f"ACP_INJECT_CANCEL seat={seat} session={session_id}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                try:
+                    await client.session_cancel(session_id)
+                except Exception:
+                    pass
             return 1
         _duplex_after_inject(seat, prompt, reply)
         if reply and not reply.endswith("\n"):
@@ -554,16 +763,21 @@ async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = Fa
             stale_path.unlink(missing_ok=True)
         except OSError:
             pass
-        if harvested:
+        if harvested and not pin_session:
             print(
                 f"ACP_INJECT_HARVEST seat={seat} session={session_id}",
+                flush=True,
+            )
+        if pin_session and getattr(client, "_prompt_accepted", False):
+            print(
+                f"ACP_INJECT_HANDOFF seat={seat} session={session_id}",
                 flush=True,
             )
         print(
             f"ACP_INJECT_OK seat={seat} session={session_id} reused={int(reused)} chars={len(reply)}",
             flush=True,
         )
-        if harvested:
+        if harvested and not pin_session:
             await client.session_cancel(session_id)
         return 0
     finally:
@@ -579,6 +793,17 @@ def main() -> int:
     parser.add_argument("--stdin", action="store_true", help="Read prompt from stdin")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     parser.add_argument("--force-new-session", action="store_true")
+    parser.add_argument(
+        "--pin-session",
+        action="store_true",
+        help=(
+            "Keep the pinned acp.session id. Stay on the websocket after "
+            "session/prompt start. HANDOFF only on this-prompt tool or a "
+            "non-RESULT session/update. Never 1s silence or queue/changed "
+            "alone. After no-accept, remint once on the same socket. "
+            "Do not session/cancel a handed-off live turn."
+        ),
+    )
     args = parser.parse_args()
 
     seat = (args.seat or args.seat_pos or "").strip()
@@ -604,7 +829,13 @@ def main() -> int:
 
     try:
         return asyncio.run(
-            inject(seat, prompt, timeout=args.timeout, force_new=args.force_new_session)
+            inject(
+                seat,
+                prompt,
+                timeout=args.timeout,
+                force_new=args.force_new_session,
+                pin_session=args.pin_session,
+            )
         )
     except KeyboardInterrupt:
         return 130
