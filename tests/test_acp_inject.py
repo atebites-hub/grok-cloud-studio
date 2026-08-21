@@ -4,8 +4,8 @@ HANDOFF only after this-prompt STATUS or a this-prompt work tool.
 Keep-alive chatter (len>=40) is not HANDOFF. Queue is not accept.
 Stay on the websocket after the first tool until STATUS / work tool or
 session/prompt RPC completes with STATUS. Dead sessions remint once after
-N consecutive no-accepts. RESULT is duplex, not success. Leftover dispatch
-still cancels.
+N consecutive no-start nacks (default 3, nack window 120s). RESULT is
+duplex, not success. Leftover dispatch still cancels.
 """
 from __future__ import annotations
 
@@ -776,6 +776,37 @@ def test_pin_session_shell_ls_launch_script_does_not_handoff(
     assert elapsed >= 0.35, f"waited {elapsed:.2f}s; Shell ls of launch script must not disconnect"
 
 
+def test_pin_session_ticket_move_pal1_handoff_reason_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ticket move PAL-1 done is still this-prompt work (argv matcher from #14)."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_ticket_move_pal1")
+    _prep_seat(mod, tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=[KEEP_ALIVE_LINE],
+        prompt_updates=[
+            _queue_changed(),
+            _tool_update(
+                "tc-move",
+                "bash",
+                command="ticket move PAL-1 done",
+            ),
+        ],
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    rc = asyncio.run(mod.inject("floor", "ACP_PING STATUS/CONTINUE", timeout=2.0, pin_session=True))
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 0, blob
+    assert "ACP_INJECT_OK" in out.out
+    _assert_handoff_reason(blob, "work")
+    assert flags and flags[0]["work_tools"] >= 1
+    assert "ACP_INJECT_CANCEL" not in blob
+
+
 def test_pin_session_work_tool_handoff_reason_work(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1008,6 +1039,143 @@ def test_pin_session_silence_uses_accept_deadline(
     assert elapsed < 0.9, f"waited {elapsed:.2f}s; silence must nack at accept deadline"
 
 
+def test_pin_nack_and_dead_streak_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """LIVE 2026-08-21T05:46Z: 30s nack + streak=1 reminted before grok serve streamed."""
+    monkeypatch.delenv("GCS_ACP_ACCEPT_DEADLINE", raising=False)
+    monkeypatch.delenv("GCS_ACP_DEAD_STREAK", raising=False)
+    mod = _load(ACP_INJECT, "gcs_acp_inject_nack_defaults")
+    assert mod.PIN_NACK_SEC == 120.0
+    assert mod.DEAD_STREAK_N == 3
+    assert mod.PIN_NACK_SEC > 30.0
+    env = (REPO / ".env.example").read_text(encoding="utf-8")
+    assert "GCS_ACP_ACCEPT_DEADLINE=120" in env
+    assert "GCS_ACP_DEAD_STREAK=3" in env
+    a2a = A2A_DOC.read_text(encoding="utf-8")
+    assert "default 120s" in a2a
+    assert "GCS_ACP_DEAD_STREAK`, default 3)" in a2a or "default 3)" in a2a
+
+
+def test_thirty_sec_silence_is_not_leave_or_session_dead_on_streak_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """LIVE 2026-08-21T05:46:28Z: 31s silence was TIMEOUT + SESSION_DEAD (streak=1).
+
+    Time-scaled 100x: nack window 1.2s (120s), first STATUS at 0.35s (35s).
+    Old 0.30s nack reminted before grok agent serve streamed. 30s of silence
+    is not leave and is not SESSION_DEAD even when DEAD_STREAK_N=1.
+    """
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_30s_silence")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "PIN_NACK_SEC", 1.2)
+    monkeypatch.setattr(mod, "DEAD_STREAK_N", 1)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=[],
+        later_chunks=[f"\n{STATUS_LINE}\n"],
+        later_delay=0.35,
+        new_session_id="sess-should-not",
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=1.8, pin_session=True))
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 0, blob
+    assert elapsed >= 0.3, f"waited {elapsed:.2f}s; 30s-analog silence must not nack"
+    assert elapsed < 1.2, f"waited {elapsed:.2f}s; STATUS at 0.35s should hand off"
+    _assert_handoff_reason(blob, "status")
+    assert "ACP_INJECT_OK" in out.out
+    assert "ACP_INJECT_HANDOFF" in blob
+    assert "ACP_INJECT_SESSION_DEAD" not in blob
+    assert "ACP_INJECT_CANCEL" not in blob
+    assert flags and flags[0]["prompt_accepted"] is True
+    assert not any(m.get("method") == "session/new" for m in ws.sent)
+    assert ws.cancel_sessions == []
+    assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-pinned"
+
+
+def test_third_consecutive_no_start_nack_session_dead(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One session/new only after 3 consecutive no-start nacks on the same id."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_dead_third")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "DEAD_STREAK_N", 3)
+    monkeypatch.setattr(mod, "PIN_NACK_SEC", 0.12)
+    ws = FakeAcpWs(prompt_chunks=[], new_session_id="sess-reborn")
+    _patch_connect(mod, ws, monkeypatch)
+    streak_path = seat_dir / "acp.no_accept_streak"
+
+    for i in range(2):
+        rc = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=0.25, pin_session=True))
+        out = capsys.readouterr()
+        blob = out.out + out.err
+        assert rc == 1, blob
+        assert "reason=no-accept" in blob
+        assert "ACP_INJECT_SESSION_DEAD" not in blob
+        assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-pinned"
+        assert not any(m.get("method") == "session/new" for m in ws.sent)
+        assert f"count={i + 1}" in streak_path.read_text(encoding="utf-8")
+        ws.prompt_inflight = False
+
+    rc3 = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=0.25, pin_session=True))
+    out3 = capsys.readouterr()
+    blob3 = out3.out + out3.err
+    assert rc3 == 1, blob3
+    assert "ACP_INJECT_SESSION_DEAD" in blob3
+    assert "old=sess-pinned" in blob3
+    assert "new=sess-reborn" in blob3
+    assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-reborn"
+    assert any(m.get("method") == "session/new" for m in ws.sent)
+    assert ws.cancel_sessions == []
+    assert not streak_path.is_file()
+
+
+def test_started_turn_timeout_does_not_remint_on_streak_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Keep-alive (accept signal) stays until inject timeout. Do not remint."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_started_no_remint")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "DEAD_STREAK_N", 1)
+    monkeypatch.setattr(mod, "PIN_NACK_SEC", 0.12)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=[KEEP_ALIVE_LINE],
+        new_session_id="sess-should-not",
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(
+        mod.inject("floor", "ACP_PING STATUS/CONTINUE", timeout=0.45, pin_session=True)
+    )
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 1, blob
+    assert elapsed >= 0.35, f"waited {elapsed:.2f}s; started turn must use full timeout"
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert "reason=no-accept" in blob
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "reason=work" not in blob
+    assert "ACP_INJECT_SESSION_DEAD" not in blob
+    assert flags and flags[0]["work_tools"] == 0
+    assert flags[0]["chars"] == 56
+    assert not any(m.get("method") == "session/new" for m in ws.sent)
+    assert ws.cancel_sessions == []
+    assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-pinned"
+    assert not (seat_dir / "acp.no_accept_streak").is_file()
+
+
 def test_pin_session_started_stays_past_accept_deadline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1149,7 +1317,7 @@ def test_result_only_stream_is_not_success(
 def test_remint_on_dead_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """N=1 no-accept on the same pin-session id allows one session/new."""
+    """When DEAD_STREAK_N=1, one no-start nack on the same id allows session/new."""
     mod = _load(ACP_INJECT, "gcs_acp_inject_pin_dead_once")
     seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
     (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")

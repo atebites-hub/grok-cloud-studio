@@ -55,13 +55,16 @@ ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 DEFAULT_TIMEOUT = float(os.environ.get("GCS_ACP_INJECT_TIMEOUT", "180"))
 # No-start window for pin-session. Silence / queue-only / leftover-tools with
-# empty text must nack here (never HANDOFF). If the actor DID start (this-prompt
-# tool or non-RESULT update), stay connected until STATUS/work or session/prompt
-# RPC completes, up to --timeout / GCS_ACP_INJECT_TIMEOUT.
-PIN_NACK_SEC = float(os.environ.get("GCS_ACP_ACCEPT_DEADLINE", "30"))
-# Consecutive no-accept / hangup-only fails on the same pin-session id
+# empty text must nack here (never HANDOFF). 30s was the 1s-HANDOFF patch and
+# is still too short for grok agent serve to stream. If the actor DID start
+# (any accept signal: chunks or this-prompt tools), stay connected until
+# STATUS/work or session/prompt RPC completes, up to --timeout /
+# GCS_ACP_INJECT_TIMEOUT. Do not remint a started turn.
+PIN_NACK_SEC = float(os.environ.get("GCS_ACP_ACCEPT_DEADLINE", "120"))
+# Consecutive no-start / hangup-only fails on the same pin-session id
 # before one session/new (dead session: load works, actor never starts).
-DEAD_STREAK_N = int(os.environ.get("GCS_ACP_DEAD_STREAK", "1"))
+# One silence nack is not SESSION_DEAD.
+DEAD_STREAK_N = int(os.environ.get("GCS_ACP_DEAD_STREAK", "3"))
 # Same markers duplex.py harvests. Inject completes on this line, not on RPC end.
 _RESULT_LINE_RE = re.compile(
     r"^(RESULT|QA_A_RESULT|QA_B_RESULT|PARK_ACK)\b.*$",
@@ -1049,7 +1052,11 @@ async def inject(
             reply = "".join(client._chunks)
             tools = int(getattr(client, "_tool_events", 0) or 0)
             if pin_session:
-                started_turn = prompt_chunk_is_accept_signal(reply)
+                accepted = getattr(client, "_accepted", None)
+                started_turn = bool(
+                    (accepted is not None and accepted.is_set())
+                    or prompt_chunk_is_accept_signal(reply)
+                )
                 if stream_is_hangup_only(reply, tool_events=tools):
                     print(
                         f"ACP_INJECT_TIMEOUT seat={seat} session={session_id} "
