@@ -3,9 +3,11 @@
 
 Watches per-seat inbox.jsonl under STATE_DIR. Prefer persistent ACP inject
 into per-seat `grok agent serve` daemons (scripts/directors/acp_inject.py).
-If the daemon is down, start it only when the seat is in GCS_ACP_SEATS
-(default floor,studio-ops). skipSeats never auto-start. Fall back to
-one-shot launch-director.sh (-p) only when inject is impossible.
+If a live wake-daemon owns the seat (wake.pid), skip — that path uses
+pin-session ACP session/prompt and wake.offset. If the daemon is down,
+start it only when the seat is in GCS_ACP_SEATS (default floor,studio-ops).
+skipSeats never auto-start. Fall back to one-shot launch-director.sh (-p)
+only when inject is impossible and wake does not own the inbox.
 
 Hub remains protocol-ack; this process wakes seats so pings actually run work.
 Local studio only. Stdlib only (acp_inject may use optional websockets).
@@ -480,6 +482,18 @@ def _reap_finished() -> None:
         _CHILDREN.pop(pid, None)
 
 
+def _wake_owns_inbox(seat: str) -> bool:
+    """A live wake-daemon owns inbox.jsonl (wake.offset / pin-session ACP)."""
+    path = _seat_dir(seat) / "wake.pid"
+    if not path.is_file():
+        return False
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip().split()[0])
+    except (ValueError, IndexError, OSError):
+        return False
+    return _pid_alive(pid)
+
+
 def _process_seat(seat: str, *, dry_run: bool) -> int:
     """Process pending inbox records for one seat. Returns launches started."""
     records, _size = _read_new_records(seat)
@@ -515,6 +529,13 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
             if not dry_run:
                 _write_offset(seat, end_offset)
             continue
+
+        if _wake_owns_inbox(seat):
+            print(
+                f"DISPATCH_SKIP seat={seat} reason=wake-owns-inbox task={task_id}"
+            )
+            # Do not advance dispatch.offset — wake.offset is the consumer.
+            break
 
         if _seat_locked(seat):
             print(
