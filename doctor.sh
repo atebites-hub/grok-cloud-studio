@@ -19,13 +19,16 @@ for p in \
   scripts/a2a/hub.py \
   scripts/a2a/dispatch.py \
   scripts/a2a/duplex.py \
+  scripts/a2a/wake-daemon.py \
+  scripts/a2a/host-ticker.py \
   scripts/a2a/send.sh \
   scripts/a2a/start-studio-bus.sh \
   scripts/directors/acp_inject.py \
+  scripts/directors/seat-prompt-acp.sh \
+  scripts/directors/seat-wake-loop.sh \
   scripts/directors/start-seat-daemon.sh \
   scripts/directors/fleet-shepherd.py \
-  scripts/studio/agent-kanban/fleet-bridge.py \
-  docs/studio/AGENT_KANBAN.md \
+  docs/studio/TASKBOARD.md \
   scripts/launch-cloud-extra-high.sh \
   scripts/cloud/spawn-waiter.sh \
   scripts/cloud/sdk/wait-notify.ts \

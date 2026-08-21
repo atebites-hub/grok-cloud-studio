@@ -20,7 +20,7 @@ seat_port() {
 }
 
 normalize_seat() {
-  python3 "$LIB_PY" normalize "$1"
+  python3 "$LIB_PY" canonical "$1"
 }
 
 seat_prompt_stem() {
@@ -69,6 +69,73 @@ daemon_healthy() {
   return 0
 }
 
+install_seat_identity() {
+  local seat="$1"
+  local sd src alias
+  sd="$(seat_state_dir "$seat")"
+  src="$ROOT/docs/studio/directors/souls/$seat"
+  alias="$ROOT/docs/studio/directors/souls/$(python3 "$LIB_PY" canonical "$seat" 2>/dev/null || echo "$seat")"
+  mkdir -p "$sd/grok-home"
+  install_seat_grok_auth "$seat"
+  if [[ -f "$src/SOUL.md" ]]; then
+    cp "$src/SOUL.md" "$sd/SOUL.md"
+  elif [[ -f "$alias/SOUL.md" ]]; then
+    cp "$alias/SOUL.md" "$sd/SOUL.md"
+  elif [[ ! -f "$sd/SOUL.md" ]]; then
+    printf '# %s\n\nNamed identity for Grok Cloud Studio seat `%s`.\n' "$seat" "$seat" >"$sd/SOUL.md"
+  fi
+  if [[ -f "$src/MEMORY.md" ]]; then
+    cp "$src/MEMORY.md" "$sd/MEMORY.md"
+    cp "$src/MEMORY.md" "$sd/grok-home/memory.md"
+  elif [[ -f "$alias/MEMORY.md" ]]; then
+    cp "$alias/MEMORY.md" "$sd/MEMORY.md"
+    cp "$alias/MEMORY.md" "$sd/grok-home/memory.md"
+  elif [[ ! -f "$sd/MEMORY.md" ]]; then
+    printf '# Memory — %s\n' "$seat" >"$sd/MEMORY.md"
+  fi
+}
+
+install_seat_grok_auth() {
+  # Copy host ~/.grok/auth.json into seat GROK_HOME so grok agent serve can
+  # authenticate cached_token. Never echo the file. Never fail the seat boot.
+  local seat="$1"
+  local sd gh src dst
+  sd="$(seat_state_dir "$seat")"
+  gh="${GROK_HOME:-$sd/grok-home}"
+  mkdir -p "$gh"
+  dst="$gh/auth.json"
+  src="${GROK_AUTH_JSON:-}"
+  if [[ -z "$src" && -n "${HOME:-}" && -f "$HOME/.grok/auth.json" ]]; then
+    src="$HOME/.grok/auth.json"
+  fi
+  if [[ -z "$src" || ! -f "$src" ]]; then
+    echo "SEAT_GROK_AUTH_SKIP seat=$seat missing host auth.json" >&2
+    return 0
+  fi
+  cp -f "$src" "$dst"
+  chmod 600 "$dst" 2>/dev/null || true
+  echo "SEAT_GROK_AUTH_OK seat=$seat dest=GROK_HOME/auth.json method=cached_token" >&2
+}
+
+ensure_seat_serve() {
+  local seat="$1"
+  local sd
+  sd="$(seat_state_dir "$seat")"
+  if daemon_healthy "$seat"; then
+    {
+      echo "kind=grok-build-serve"
+      echo "awake=inbox-acp-prompt"
+      echo "mode=acp-serve"
+    } >"$sd/grow.mode"
+    return 0
+  fi
+  if [[ ! -f "$SCRIPT_DIR/start-seat-daemon.sh" ]]; then
+    echo "ensure_seat_serve: missing $SCRIPT_DIR/start-seat-daemon.sh" >&2
+    return 1
+  fi
+  bash "$SCRIPT_DIR/start-seat-daemon.sh" "$seat"
+}
+
 write_agent_profile() {
   local seat="$1"
   local sd stem prompt_file profile
@@ -97,17 +164,29 @@ agents_md: true
 ---
 
 FRONT
+    if [[ -f "$sd/SOUL.md" ]]; then
+      echo "=== NAMED IDENTITY (SOUL.md) ==="
+      cat "$sd/SOUL.md"
+      echo
+    fi
     cat "$prompt_file"
     echo
     cat "$FOOTER"
     cat <<PERSIST
 
 === PERSISTENT ACP SEAT ===
-You are a long-lived Grok agent serve process for seat "${seat}".
-A2A wakeups arrive as session/prompt EXTRA TURN messages (not a fresh grok -p process).
-After each wakeup: act on the MESSAGE, print exactly one RESULT (or PARK_ACK / QA_*_RESULT) line, then idle for the next inject.
-Do not send.sh / a2a_send to ack the caller; duplex notifies.
-Do not exit the daemon process. Do not wait for interactive chat.
+You are a long-lived grok agent serve process for seat "${seat}" (kind=grok-build-serve, mode=acp-serve).
+Peer mail: send.sh → inbox.jsonl → seat-wake-loop.sh → local ACP session/prompt
+into THIS serve pid (scripts/directors/seat-prompt-acp.sh). Same ACP session forever
+(.a2a-state/${seat}/acp.session). Never mint a new session per ping.
+Named identity is SOUL.md + MEMORY.md + GROK_MEMORY=1 on this serve process
+(--agent-profile alone is not enough).
+Host clock is host-ticker.py / host-clock-ticker.sh ACP_PING STATUS/CONTINUE inbox lines (tools allowed), not /loop and not watchdog ACP-inject.
+If this serve dies, start-seat-daemon.sh / ensure_seat_serve restarts it.
+After each session/prompt: do work (taskboard ticket move, send.sh, your own
+scripts/launch-cloud-extra-high.sh). Tools are allowed. Do not idle.
+RESULT is optional duplex, not a hang-up; RESULT-only / PONG is a bug.
+Stay in this serve for the next inbox ping. Do not exit the serve process.
 Export awareness: GCS_DIRECTOR_SEAT=${seat}
 PERSIST
   } >"$profile"

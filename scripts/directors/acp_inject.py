@@ -8,14 +8,28 @@ Usage:
 
 Reads .a2a-state/<seat>/{acp.url,acp.secret,acp.session}.
 Persists session id after session/new. Prefer session/load on later injects.
-Stdlib + optional websockets; falls back to a minimal WS client.
+
+GROW `--pin-session`: stay on the websocket until STATUS/substantial
+work or session/prompt RPC completes or timeout. Do not HANDOFF on 1s
+of silence, queue/changed alone, or first tool/queue — disconnecting
+there kills the turn. Timeout with no work is ACP_INJECT_TIMEOUT
+reason=no-accept (not HANDOFF). After N consecutive no-accept/hangup
+fails on the same acp.session id, one session/new (SESSION_DEAD).
+Do not session/cancel a handed-off live turn. Not leftover-mint-per-ping.
+
+Leftover dispatch (no pin): completes on streamed work/STATUS (or this-prompt
+tool+text), not on session/prompt RPC end. Timeout and prompt-fail
+session/cancel so grok 1.0.3 does not start_blocked.
+
+RESULT / PARK_ACK / QA_*_RESULT is duplex only — RESULT-only is not success.
+Leftover tool_call notifications with zero assistant chars are not work.
+Authenticate ACP `cached_token` after initialize. Stdlib + optional websockets.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
 import base64
-import hashlib
 import importlib.util
 import json
 import os
@@ -23,18 +37,35 @@ import re
 import secrets
 import struct
 import sys
+import time
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import urlparse
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 DEFAULT_TIMEOUT = float(os.environ.get("GCS_ACP_INJECT_TIMEOUT", "180"))
+# No-start window for pin-session. Silence / queue-only / leftover-tools with
+# empty text must nack here (never HANDOFF). If the actor DID start (this-prompt
+# tool or non-RESULT update), stay connected until STATUS/work or session/prompt
+# RPC completes, up to --timeout / GCS_ACP_INJECT_TIMEOUT.
+PIN_NACK_SEC = float(os.environ.get("GCS_ACP_ACCEPT_DEADLINE", "30"))
+# Consecutive no-accept / hangup-only fails on the same pin-session id
+# before one session/new (dead session: load works, actor never starts).
+DEAD_STREAK_N = int(os.environ.get("GCS_ACP_DEAD_STREAK", "1"))
+# Same markers duplex.py harvests. Inject completes on this line, not on RPC end.
+_RESULT_LINE_RE = re.compile(
+    r"^(RESULT|QA_A_RESULT|QA_B_RESULT|PARK_ACK)\b.*$",
+    re.MULTILINE,
+)
+_STATUS_LINE_RE = re.compile(r"^STATUS\b", re.MULTILINE)
+_PONG_ONLY_RE = re.compile(r"^\s*(PONG|pong|ok|OK)\s*$")
+_WORK_UPDATES = frozenset({"tool_call", "tool_call_update", "agent_thought_chunk"})
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
-from lib import seat_acp_port  # noqa: E402
+from lib import canonical_seat, seat_acp_port  # noqa: E402
 
 try:
     import websockets  # type: ignore
@@ -44,20 +75,135 @@ try:
 except ImportError:
     _HAS_WEBSOCKETS = False
 
-RESULT_LINE_RE = re.compile(
-    r"^(RESULT|QA_A_RESULT|QA_B_RESULT|PARK_ACK)\b.*$",
-    re.MULTILINE,
-)
 
-
-def extract_result_line(text: str) -> str | None:
-    """Return the last Director contract line, if any."""
+def extract_inject_result_line(text: str) -> str | None:
+    """Last RESULT / PARK_ACK / QA_*_RESULT line in streamed assistant text."""
     if not text:
         return None
     found: str | None = None
-    for match in RESULT_LINE_RE.finditer(text):
+    for match in _RESULT_LINE_RE.finditer(text):
         found = match.group(0).strip()
     return found
+
+
+def _work_body_without_result_lines(text: str) -> str:
+    """Assistant text excluding RESULT / PARK_ACK / QA_*_RESULT hang-up lines."""
+    if not text:
+        return ""
+    kept: list[str] = []
+    for line in str(text).splitlines():
+        if _RESULT_LINE_RE.match(line.strip()):
+            continue
+        kept.append(line)
+    return "\n".join(kept).strip()
+
+
+def seat_produced_work(text: str, *, tool_events: int = 0) -> bool:
+    """True when this prompt produced work/STATUS. PONG-only is not work.
+
+    tool_events with zero assistant chars is leftover noise, not work.
+    A RESULT hang-up line with no other text is not work, even with tools.
+    """
+    raw = "" if text is None else str(text)
+    if _STATUS_LINE_RE.search(raw):
+        return True
+    body = _work_body_without_result_lines(raw)
+    if not body:
+        return False
+    if _PONG_ONLY_RE.match(body):
+        return False
+    if tool_events > 0:
+        return True
+    return len(body) >= 40
+
+
+def pin_session_ready_to_leave(text: str) -> bool:
+    """True when pin-session may disconnect: STATUS or substantial text.
+
+    Queue, leftover/this-prompt tools, and short assistant text (chars=6
+    Donald) are not enough — disconnecting there kills the grok turn.
+    Ignores tool_events; leftover dispatch still uses seat_produced_work.
+    """
+    return seat_produced_work(text, tool_events=0)
+
+
+def prompt_chunk_is_accept_signal(text: str) -> bool:
+    """True when streamed assistant text means serve accepted this prompt.
+
+    STATUS is accept. RESULT hang-up and PONG are not. Any other non-empty
+    body (including short thinking) is accept — not the same as work.
+    """
+    raw = "" if text is None else str(text)
+    if _STATUS_LINE_RE.search(raw):
+        return True
+    body = _work_body_without_result_lines(raw)
+    if not body:
+        return False
+    if _PONG_ONLY_RE.match(body):
+        return False
+    return True
+
+
+def stream_is_hangup_only(text: str, *, tool_events: int = 0) -> bool:
+    """RESULT-only or PONG-only. Leftover tools without RESULT are not hang-up."""
+    raw = "" if text is None else str(text)
+    if seat_produced_work(raw, tool_events=tool_events):
+        return False
+    body = _work_body_without_result_lines(raw)
+    if extract_inject_result_line(raw) and not body:
+        return True
+    if tool_events > 0:
+        return False
+    stripped = (body or raw).strip()
+    return bool(stripped and _PONG_ONLY_RE.match(stripped))
+
+
+def _seat_dir(seat: str) -> Path:
+    d = STATE_DIR / seat
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8").strip()
+
+
+def _write_text(path: Path, text: str) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(text.rstrip() + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def _dead_streak_path(sd: Path) -> Path:
+    return sd / "acp.no_accept_streak"
+
+
+def _read_dead_streak(sd: Path) -> tuple[str, int]:
+    path = _dead_streak_path(sd)
+    if not path.is_file():
+        return "", 0
+    sid = ""
+    count = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.startswith("session="):
+            sid = line.split("=", 1)[1].strip()
+        elif line.startswith("count="):
+            try:
+                count = int(line.split("=", 1)[1].strip() or "0")
+            except ValueError:
+                count = 0
+    return sid, count
+
+
+def _write_dead_streak(sd: Path, session_id: str, count: int) -> None:
+    _write_text(_dead_streak_path(sd), f"session={session_id}\ncount={count}\n")
+
+
+def _clear_dead_streak(sd: Path) -> None:
+    try:
+        _dead_streak_path(sd).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _duplex_after_inject(seat: str, prompt: str, reply: str) -> None:
@@ -89,22 +235,6 @@ def _duplex_after_inject(seat: str, prompt: str, reply: str) -> None:
         print(f"ACP_INJECT_DUPLEX_ERR seat={seat} err={e}", file=sys.stderr)
 
 
-def _seat_dir(seat: str) -> Path:
-    d = STATE_DIR / seat
-    d.mkdir(parents=True, exist_ok=True)
-    return d
-
-
-def _read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8").strip()
-
-
-def _write_text(path: Path, text: str) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text.rstrip() + "\n", encoding="utf-8")
-    tmp.replace(path)
-
-
 def _ensure_url(seat: str) -> str:
     sd = _seat_dir(seat)
     url_path = sd / "acp.url"
@@ -112,7 +242,9 @@ def _ensure_url(seat: str) -> str:
     if url_path.is_file():
         return _read_text(url_path)
     if not secret_path.is_file():
-        raise SystemExit(f"ACP_INJECT_FAIL seat={seat} missing acp.url/acp.secret (daemon not started?)")
+        raise SystemExit(
+            f"ACP_INJECT_FAIL seat={seat} missing acp.url/acp.secret (daemon not started?)"
+        )
     secret = _read_text(secret_path)
     try:
         port = seat_acp_port(seat, ROOT)
@@ -151,7 +283,6 @@ class _StdlibWs:
         )
         writer.write(req.encode("ascii"))
         await writer.drain()
-        # Read status line + headers
         status = await reader.readline()
         if b"101" not in status:
             rest = await reader.read(512)
@@ -164,7 +295,6 @@ class _StdlibWs:
 
     async def send(self, text: str) -> None:
         data = text.encode("utf-8")
-        # Client frames must be masked
         mask = secrets.token_bytes(4)
         header = bytearray()
         header.append(0x81)  # FIN + text
@@ -197,10 +327,9 @@ class _StdlibWs:
             payload = await self._reader.readexactly(ln)
             if masked:
                 payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
-            if opcode == 0x8:  # close
+            if opcode == 0x8:
                 raise ConnectionError("WS closed by peer")
-            if opcode == 0x9:  # ping → pong
-                # send pong
+            if opcode == 0x9:
                 frame = bytearray([0x8A, 0x80 | len(payload)])
                 m = secrets.token_bytes(4)
                 frame.extend(m)
@@ -208,10 +337,9 @@ class _StdlibWs:
                 self._writer.write(frame)
                 await self._writer.drain()
                 continue
-            if opcode in (0x1, 0x0):  # text / continuation
+            if opcode in (0x1, 0x0):
                 text = payload.decode("utf-8")
                 if not fin:
-                    # accumulate (rare for JSON-RPC)
                     more = [text]
                     while True:
                         part = await self.recv()
@@ -219,7 +347,6 @@ class _StdlibWs:
                         break
                     return "".join(more)
                 return text
-            # binary / other — ignore
             continue
 
     async def close(self) -> None:
@@ -240,10 +367,15 @@ class AcpClient:
         self._reader_task: Optional[asyncio.Task] = None
         self._chunks: list[str] = []
         self._prompt_done: Optional[asyncio.Future] = None
-        self._harvested: Optional[asyncio.Future] = None
-        self.harvested_early = False
         self._use_stdlib = not _HAS_WEBSOCKETS
         self._echo_chunks = False
+        self._result_seen: Optional[asyncio.Event] = None
+        self._harvested_early = False
+        self._tool_events = 0
+        self._prompt_accepted = False
+        self._queued = False
+        self._accepted: Optional[asyncio.Event] = None
+        self._pin_wait = False
 
     async def connect(self) -> None:
         if _HAS_WEBSOCKETS:
@@ -291,17 +423,24 @@ class AcpClient:
                 if method == "session/update":
                     params = msg.get("params") or {}
                     update = params.get("update") or {}
-                    if update.get("sessionUpdate") == "agent_message_chunk":
+                    kind = str(update.get("sessionUpdate") or "")
+                    if kind == "agent_message_chunk":
                         t = ((update.get("content") or {}).get("text")) or ""
-                        if t and self._echo_chunks:
+                        if t:
                             self._chunks.append(t)
-                            sys.stdout.write(t)
-                            sys.stdout.flush()
-                            self._maybe_complete_harvest()
+                            if self._echo_chunks:
+                                sys.stdout.write(t)
+                                sys.stdout.flush()
+                            self._maybe_signal_done()
+                            self._maybe_signal_accepted()
+                    elif kind in _WORK_UPDATES:
+                        self._tool_events += 1
+                        self._maybe_signal_done()
+                        self._maybe_signal_accepted()
+                elif isinstance(method, str) and "queue/changed" in method:
+                    self._queued = True
                 elif method in ("_x.ai/session/prompt_complete",):
-                    # sometimes arrives before JSON-RPC result
                     pass
-                # Permission requests — auto-approve if asked
                 elif method and "request_permission" in method:
                     req_id = msg.get("id")
                     if req_id is not None:
@@ -332,16 +471,29 @@ class AcpClient:
             self._pending.clear()
             if self._prompt_done and not self._prompt_done.done():
                 self._prompt_done.set_exception(e)
-            if self._harvested and not self._harvested.done():
-                self._harvested.set_exception(e)
 
-    def _maybe_complete_harvest(self) -> None:
-        fut = self._harvested
-        if fut is None or fut.done():
+    def _maybe_signal_done(self) -> None:
+        """Release leftover harvest on work/STATUS; pin-session only on STATUS/long text."""
+        if self._result_seen is None or self._result_seen.is_set():
             return
-        line = extract_result_line("".join(self._chunks))
-        if line:
-            fut.set_result(line)
+        text = "".join(self._chunks)
+        if self._pin_wait:
+            if pin_session_ready_to_leave(text):
+                self._result_seen.set()
+            return
+        if seat_produced_work(text, tool_events=self._tool_events):
+            self._result_seen.set()
+
+    def _maybe_signal_accepted(self) -> None:
+        """Real start: non-RESULT assistant text (STATUS, thinking, Donald).
+
+        Queue/changed and leftover tools with empty text are not a start.
+        First tool + short text is a start, not HANDOFF.
+        """
+        if self._accepted is None or self._accepted.is_set():
+            return
+        if prompt_chunk_is_accept_signal("".join(self._chunks)):
+            self._accepted.set()
 
     async def request(self, method: str, params: dict[str, Any], timeout: float = 60.0) -> dict[str, Any]:
         rid = self._next_id
@@ -360,7 +512,7 @@ class AcpClient:
         return msg.get("result") or {}
 
     async def initialize(self) -> dict[str, Any]:
-        return await self.request(
+        result = await self.request(
             "initialize",
             {
                 "protocolVersion": 1,
@@ -372,6 +524,31 @@ class AcpClient:
             },
             timeout=60.0,
         )
+        await self.authenticate_cached_token(result)
+        return result
+
+    async def authenticate_cached_token(self, init_result: dict[str, Any] | None = None) -> None:
+        """Use GROK_HOME/auth.json via ACP authenticate methodId=cached_token."""
+        methods: list[Any] = []
+        if isinstance(init_result, dict):
+            methods = list(init_result.get("authMethods") or init_result.get("auth_methods") or [])
+        ids: list[str] = []
+        for item in methods:
+            if isinstance(item, dict):
+                ids.append(str(item.get("id") or item.get("methodId") or ""))
+            elif item:
+                ids.append(str(item))
+        if ids and "cached_token" not in ids:
+            return
+        try:
+            await self.request(
+                "authenticate",
+                {"methodId": "cached_token"},
+                timeout=30.0,
+            )
+            print("ACP_INJECT_AUTH method=cached_token", flush=True)
+        except Exception as e:  # noqa: BLE001 — older daemons may lack authenticate
+            print(f"ACP_INJECT_AUTH_WARN method=cached_token err={e}", file=sys.stderr)
 
     async def session_new(self, system_prompt: Optional[str] = None) -> str:
         meta: dict[str, Any] = {"yoloMode": True}
@@ -419,17 +596,36 @@ class AcpClient:
             except Exception:
                 pass
 
-    async def session_prompt(self, session_id: str, text: str, timeout: float) -> str:
+    async def session_prompt(
+        self,
+        session_id: str,
+        text: str,
+        timeout: float,
+        *,
+        pin_session: bool = False,
+    ) -> str:
+        """Wait for work/STATUS (leftover) or pin-session work/RPC.
+
+        Pin-session stays on the websocket until STATUS/substantial text,
+        session/prompt RPC completes, or timeout. Queue and first tool are
+        not HANDOFF. Nack-window silence is not a start. RESULT-only is not
+        success. Leftover dispatch: harvest work/STATUS; leftover tools are
+        not work.
+        """
         self._chunks = []
+        self._tool_events = 0
         self._echo_chunks = True
-        self.harvested_early = False
+        self._harvested_early = False
+        self._prompt_accepted = False
+        self._queued = False
+        self._pin_wait = pin_session
+        self._result_seen = asyncio.Event()
+        self._accepted = asyncio.Event()
         rid = self._next_id
         self._next_id += 1
         loop = asyncio.get_running_loop()
-        rpc_fut: asyncio.Future = loop.create_future()
-        harvest_fut: asyncio.Future = loop.create_future()
-        self._pending[rid] = rpc_fut
-        self._harvested = harvest_fut
+        fut: asyncio.Future = loop.create_future()
+        self._pending[rid] = fut
         await self._send_raw(
             {
                 "jsonrpc": "2.0",
@@ -441,41 +637,153 @@ class AcpClient:
                 },
             }
         )
+        harvest = asyncio.create_task(self._result_seen.wait())
+        accepted_wait: Optional[asyncio.Task] = None
+        if pin_session:
+            accepted_wait = asyncio.create_task(self._accepted.wait())
+        wait_set: set[asyncio.Future] = {fut, harvest}
+        if accepted_wait is not None:
+            wait_set.add(accepted_wait)
+        t0 = time.monotonic()
         try:
-            done, _pending_futs = await asyncio.wait(
-                {rpc_fut, harvest_fut},
-                timeout=timeout,
+            first_timeout = timeout
+            if pin_session:
+                first_timeout = min(timeout, max(0.05, float(PIN_NACK_SEC)))
+            await asyncio.wait(
+                wait_set,
+                timeout=first_timeout,
                 return_when=asyncio.FIRST_COMPLETED,
             )
             reply = "".join(self._chunks)
-            if harvest_fut in done and not harvest_fut.cancelled() and harvest_fut.exception() is None:
-                self.harvested_early = True
-                return reply
-            if rpc_fut in done and not rpc_fut.cancelled():
-                exc = rpc_fut.exception()
-                if exc is not None:
-                    raise exc
-                msg = rpc_fut.result()
+            if fut.done():
+                msg = fut.result()
                 if "error" in msg:
                     raise RuntimeError(f"session/prompt error: {msg['error']}")
+            if pin_session_ready_to_leave(reply):
+                return self._return_prompt_stream(rid, fut, reply, accepted=pin_session)
+            if pin_session:
+                started_turn = bool(
+                    self._accepted.is_set() or prompt_chunk_is_accept_signal(reply)
+                )
+                if not started_turn and not fut.done():
+                    self._pending.pop(rid, None)
+                    raise asyncio.TimeoutError()
+                if not fut.done():
+                    remaining = timeout - (time.monotonic() - t0)
+                    if remaining > 0:
+                        await asyncio.wait(
+                            {fut, harvest},
+                            timeout=remaining,
+                            return_when=asyncio.FIRST_COMPLETED,
+                        )
+                    reply = "".join(self._chunks)
+                    if fut.done():
+                        msg = fut.result()
+                        if "error" in msg:
+                            raise RuntimeError(
+                                f"session/prompt error: {msg['error']}"
+                            )
+                    if pin_session_ready_to_leave(reply):
+                        return self._return_prompt_stream(
+                            rid, fut, reply, accepted=True
+                        )
+                if stream_is_hangup_only(reply, tool_events=self._tool_events):
+                    self._pending.pop(rid, None)
+                    raise asyncio.TimeoutError()
+                if fut.done() and seat_produced_work(
+                    reply, tool_events=self._tool_events
+                ):
+                    return self._return_prompt_stream(rid, fut, reply, accepted=False)
+                self._pending.pop(rid, None)
+                raise asyncio.TimeoutError()
+            if seat_produced_work(reply, tool_events=self._tool_events):
+                return self._return_prompt_stream(rid, fut, reply, accepted=False)
+            if stream_is_hangup_only(reply, tool_events=self._tool_events):
+                self._pending.pop(rid, None)
+                raise asyncio.TimeoutError()
+            if fut.done():
                 return reply
             self._pending.pop(rid, None)
-            if extract_result_line(reply):
-                self.harvested_early = True
-                return reply
-            raise asyncio.TimeoutError
+            raise asyncio.TimeoutError()
         finally:
+            for task in (harvest, accepted_wait):
+                if task is not None and not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
             self._echo_chunks = False
+            self._pin_wait = False
+
+    def _return_prompt_stream(
+        self,
+        rid: int,
+        fut: asyncio.Future,
+        reply: str,
+        *,
+        accepted: bool,
+    ) -> str:
+        if accepted:
+            self._prompt_accepted = True
+        if seat_produced_work(reply, tool_events=self._tool_events) and not fut.done():
+            self._harvested_early = True
+            self._pending.pop(rid, None)
+        elif accepted and not fut.done():
+            self._pending.pop(rid, None)
+        return reply
 
 
-async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = False) -> int:
+async def _maybe_remint_dead_pin_session(
+    client: AcpClient,
+    *,
+    sd: Path,
+    session_path: Path,
+    session_id: str,
+    evidence: str,
+) -> None:
+    """After N consecutive no-accept/hangup fails on this id, one session/new."""
+    prev_id, count = _read_dead_streak(sd)
+    if prev_id != session_id:
+        count = 0
+    count += 1
+    _write_dead_streak(sd, session_id, count)
+    if count < DEAD_STREAK_N:
+        return
+    try:
+        new_id = await client.session_new()
+    except Exception as e:  # noqa: BLE001 — still a timeout fail
+        print(
+            f"ACP_INJECT_SESSION_DEAD_FAIL old={session_id} err={e}",
+            file=sys.stderr,
+        )
+        return
+    _write_text(session_path, new_id)
+    _clear_dead_streak(sd)
+    print(
+        f"ACP_INJECT_SESSION_DEAD old={session_id} new={new_id} evidence={evidence}",
+        flush=True,
+    )
+
+
+async def inject(
+    seat: str,
+    prompt: str,
+    *,
+    timeout: float,
+    force_new: bool = False,
+    pin_session: bool = False,
+) -> int:
+    seat = canonical_seat(seat, ROOT)
     url = _ensure_url(seat)
     sd = _seat_dir(seat)
     session_path = sd / "acp.session"
     stale_path = sd / "acp.inject.stale"
     cwd = str(ROOT)
 
-    if stale_path.is_file() and not force_new:
+    if pin_session:
+        force_new = False
+    elif stale_path.is_file() and not force_new:
         force_new = True
         print(f"ACP_INJECT_STALE seat={seat} forcing new session", flush=True)
 
@@ -493,49 +801,151 @@ async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = Fa
                     session_id = prior
                     reused = True
                 except Exception as e:
-                    print(f"ACP_INJECT_SESSION_LOAD_FAIL seat={seat} err={e}; creating new", file=sys.stderr)
+                    print(
+                        f"ACP_INJECT_SESSION_LOAD_FAIL seat={seat} err={e}; creating new",
+                        file=sys.stderr,
+                    )
                     session_id = None
         if not session_id:
-            # Prefer agent-profile baked into daemon; optional override empty.
             session_id = await client.session_new()
             _write_text(session_path, session_id)
             reused = False
+        elif pin_session:
+            prev_id, streak = _read_dead_streak(sd)
+            if prev_id == session_id and streak >= DEAD_STREAK_N:
+                old_id = session_id
+                session_id = await client.session_new()
+                _write_text(session_path, session_id)
+                _clear_dead_streak(sd)
+                reused = False
+                print(
+                    f"ACP_INJECT_SESSION_DEAD old={old_id} new={session_id} "
+                    f"evidence=no-accept-streak",
+                    flush=True,
+                )
 
         print(
             f"ACP_INJECT_BEGIN seat={seat} session={session_id} reused={int(reused)} url={url.split('?')[0]}",
             flush=True,
         )
-        # Mark in-flight before prompt so dispatch lock-TTL SIGKILL still force-news.
-        _write_text(stale_path, f"in-flight timeout={timeout}\n")
-        # Wrap as EXTRA TURN so Directors match footer expectations
+        if not pin_session:
+            _write_text(stale_path, f"in-flight timeout={timeout}\n")
         full = (
             "=== EXTRA TURN INSTRUCTIONS (ACP inject / persistent seat) ===\n"
             f"{prompt.rstrip()}\n"
         )
-        harvested = False
+        harvested_early = False
+        cancelled_hung = False
         try:
-            reply = await client.session_prompt(session_id, full, timeout=timeout)
-            harvested = bool(client.harvested_early)
+            reply = await client.session_prompt(
+                session_id, full, timeout=timeout, pin_session=pin_session
+            )
+            harvested_early = bool(getattr(client, "_harvested_early", False))
         except asyncio.TimeoutError:
             reply = "".join(client._chunks)
-            if extract_result_line(reply):
-                harvested = True
+            tools = int(getattr(client, "_tool_events", 0) or 0)
+            if pin_session:
+                started_turn = prompt_chunk_is_accept_signal(reply)
+                if stream_is_hangup_only(reply, tool_events=tools):
+                    print(
+                        f"ACP_INJECT_TIMEOUT seat={seat} session={session_id} "
+                        f"timeout={timeout} reason=hangup-only",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    await _maybe_remint_dead_pin_session(
+                        client,
+                        sd=sd,
+                        session_path=session_path,
+                        session_id=session_id,
+                        evidence="hangup-only-streak",
+                    )
+                    return 1
+                if pin_session_ready_to_leave(reply):
+                    harvested_early = True
+                    client._prompt_accepted = True
+                elif started_turn:
+                    print(
+                        f"ACP_INJECT_TIMEOUT seat={seat} session={session_id} "
+                        f"timeout={timeout} reason=no-accept",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    return 1
+                else:
+                    print(
+                        f"ACP_INJECT_TIMEOUT seat={seat} session={session_id} "
+                        f"timeout={timeout} reason=no-accept",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    await _maybe_remint_dead_pin_session(
+                        client,
+                        sd=sd,
+                        session_path=session_path,
+                        session_id=session_id,
+                        evidence="no-accept-streak",
+                    )
+                    return 1
             else:
-                print(
-                    f"ACP_INJECT_TIMEOUT seat={seat} session={session_id} timeout={timeout}",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                _write_text(stale_path, f"timeout={timeout}\n")
                 print(
                     f"ACP_INJECT_CANCEL seat={seat} session={session_id}",
                     file=sys.stderr,
                     flush=True,
                 )
-                await client.session_cancel(session_id)
-                return 1
+                try:
+                    await client.session_cancel(session_id)
+                except Exception:
+                    pass
+                cancelled_hung = True
+                if seat_produced_work(reply, tool_events=tools):
+                    harvested_early = True
+                else:
+                    print(
+                        f"ACP_INJECT_TIMEOUT seat={seat} session={session_id} timeout={timeout}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    _write_text(stale_path, f"timeout={timeout}\n")
+                    return 1
         except Exception as e:
             print(f"ACP_INJECT_FAIL seat={seat} session={session_id} err={e}", file=sys.stderr)
+            if not pin_session:
+                print(
+                    f"ACP_INJECT_CANCEL seat={seat} session={session_id}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                try:
+                    await client.session_cancel(session_id)
+                except Exception:
+                    pass
+            return 1
+        if reply and not reply.endswith("\n"):
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+        _duplex_after_inject(seat, prompt, reply)
+        if harvested_early:
+            print(
+                f"ACP_INJECT_RESULT_HARVEST seat={seat} session={session_id}",
+                flush=True,
+            )
+        if pin_session and getattr(client, "_prompt_accepted", False):
+            print(
+                f"ACP_INJECT_HANDOFF seat={seat} session={session_id}",
+                flush=True,
+            )
+        print(
+            f"ACP_INJECT_OK seat={seat} session={session_id} reused={int(reused)} chars={len(reply)}",
+            flush=True,
+        )
+        if pin_session:
+            _clear_dead_streak(sd)
+        try:
+            stale_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        if harvested_early and not pin_session and not cancelled_hung:
             print(
                 f"ACP_INJECT_CANCEL seat={seat} session={session_id}",
                 file=sys.stderr,
@@ -545,26 +955,6 @@ async def inject(seat: str, prompt: str, *, timeout: float, force_new: bool = Fa
                 await client.session_cancel(session_id)
             except Exception:
                 pass
-            return 1
-        _duplex_after_inject(seat, prompt, reply)
-        if reply and not reply.endswith("\n"):
-            sys.stdout.write("\n")
-            sys.stdout.flush()
-        try:
-            stale_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        if harvested:
-            print(
-                f"ACP_INJECT_HARVEST seat={seat} session={session_id}",
-                flush=True,
-            )
-        print(
-            f"ACP_INJECT_OK seat={seat} session={session_id} reused={int(reused)} chars={len(reply)}",
-            flush=True,
-        )
-        if harvested:
-            await client.session_cancel(session_id)
         return 0
     finally:
         await client.close()
@@ -579,12 +969,24 @@ def main() -> int:
     parser.add_argument("--stdin", action="store_true", help="Read prompt from stdin")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT)
     parser.add_argument("--force-new-session", action="store_true")
+    parser.add_argument(
+        "--pin-session",
+        action="store_true",
+        help=(
+            "GROW wake: session/load the pinned id (or session/new once if "
+            "missing). Stay on the websocket until STATUS/work or "
+            "session/prompt RPC completes. Do not HANDOFF on silence, "
+            "queue/changed, or first tool. After N no-accept/hangup fails "
+            "on the same id, one session/new (dead session). Disconnect "
+            "without session/cancel after a true HANDOFF."
+        ),
+    )
     args = parser.parse_args()
 
     seat = (args.seat or args.seat_pos or "").strip()
     if not seat:
         parser.error("seat required")
-    seat = seat.lower().replace("_", "-")
+    seat = canonical_seat(seat, ROOT)
 
     if args.stdin:
         prompt = sys.stdin.read()
@@ -593,7 +995,6 @@ def main() -> int:
     elif args.extra:
         prompt = " ".join(args.extra)
     elif args.seat_pos and not args.extra:
-        # allow: acp_inject.py --seat floor --file x  already handled; else need text
         parser.error("prompt text required (args, --file, or --stdin)")
     else:
         prompt = " ".join(args.extra)
@@ -604,7 +1005,13 @@ def main() -> int:
 
     try:
         return asyncio.run(
-            inject(seat, prompt, timeout=args.timeout, force_new=args.force_new_session)
+            inject(
+                seat,
+                prompt,
+                timeout=args.timeout,
+                force_new=args.force_new_session,
+                pin_session=args.pin_session,
+            )
         )
     except KeyboardInterrupt:
         return 130

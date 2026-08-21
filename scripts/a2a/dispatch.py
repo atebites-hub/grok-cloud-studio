@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""Standing A2A inbox poller → Grok Build Director auto-dispatch.
+"""Standing A2A inbox poller → leftover ACP inject for non-GROW seats.
 
-Watches per-seat inbox.jsonl under STATE_DIR. Prefer persistent ACP inject
-into per-seat `grok agent serve` daemons (scripts/directors/acp_inject.py).
-If the daemon is down, start it only when the seat is in GCS_ACP_SEATS
-(default floor,studio-ops). skipSeats never auto-start. Fall back to
-one-shot launch-director.sh (-p) only when inject is impossible.
+GROW seats (GCS_GROW_SEATS / GCS_ACP_SEATS, default floor,studio-ops) are
+owned by `scripts/a2a/wake-daemon.py` (inbox.jsonl → persistent grok agent
+serve + local ACP session/prompt). This process must not ACP-inject peer
+mail for those seats (or any seat with a live wake.pid) and must not
+advance dispatch.offset there.
 
-Hub remains protocol-ack; this process wakes seats so pings actually run work.
-Local studio only. Stdlib only (acp_inject may use optional websockets).
+Non-GROW seats may still use leftover `grok agent serve` + acp_inject.py.
+STATUS / FLEET_* / A2A_REPLY never launch (A2A_REPLY is a duplex caller ping).
+
+Hub TASK_STATE_COMPLETED is a receipt, not proof the Director acted.
+Local studio only. Stdlib only.
 """
 from __future__ import annotations
 
@@ -16,6 +19,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -29,6 +33,7 @@ if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from lib import launch_seats as _launch_seats_fn  # noqa: E402
 from lib import skip_seats as _skip_seats_fn  # noqa: E402
+from lib import grow_seats as _grow_seats_fn  # noqa: E402
 from lib import repo_root as _repo_root  # noqa: E402
 from lib import state_root as _state_root  # noqa: E402
 
@@ -41,6 +46,34 @@ POLL_SEC = float(os.environ.get("GCS_A2A_POLL_SEC", "2"))
 LOCK_TTL_SEC = float(os.environ.get("GCS_DISPATCH_LOCK_TTL_SEC", "240"))
 INJECT_TIMEOUT_SEC = float(os.environ.get("GCS_ACP_INJECT_TIMEOUT", "180"))
 
+_KIND_HEAD_RE = re.compile(
+    r"^\s*(?P<kind>[A-Za-z][A-Za-z0-9_]{1,40})"
+    r"(?:\s*/\s*[A-Za-z][A-Za-z0-9_]{1,40})?\b"
+)
+_LAUNCH_CMD_RE = re.compile(
+    r"(?:^|[\n;])\s*(?:(?:bash|sh)\s+)?"
+    r"(?:(?:\./)|(?:scripts/))?launch-cloud-extra-high\.sh(?P<rest>\s+.+)",
+    re.DOTALL,
+)
+_LAUNCH_KINDS = frozenset({"LAUNCH", "TASK_ASSIGN", "ASSIGN", "CLOUD_LAUNCH"})
+_INJECT_ONLY_KINDS = frozenset(
+    {
+        "STATUS",
+        "FLEET_WATCH",
+        "FLEET_DONE",
+        "PR_READY",
+        "MERGE_REQUEST",
+        "PARK",
+        "UNPARK",
+        "PARK_ACK",
+        "BLOCKER",
+        "CLOUD_LAUNCHED",
+        "ACP_PING",
+        "A2A_REPLY",
+    }
+)
+GROW_SEATS = _grow_seats_fn(ROOT)
+
 
 def _launch_seats() -> frozenset[str]:
     return frozenset(_launch_seats_fn(ROOT))
@@ -48,6 +81,20 @@ def _launch_seats() -> frozenset[str]:
 
 def _skip_seats() -> frozenset[str]:
     return _skip_seats_fn(ROOT)
+
+
+def _wake_owns_inbox(seat: str) -> bool:
+    """GROW seats and any seat with a live wake.pid own inbox.jsonl."""
+    if seat in GROW_SEATS:
+        return True
+    path = STATE_DIR / seat / "wake.pid"
+    if not path.is_file():
+        return False
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip().split()[0])
+    except (ValueError, IndexError, OSError):
+        return False
+    return _pid_alive(pid)
 
 # pid -> (seat, Popen, meta) for reaping; zombies accumulate without this.
 _CHILDREN: dict[int, tuple[str, subprocess.Popen, dict[str, Any]]] = {}
@@ -270,21 +317,96 @@ def _extract_text(parts: Any) -> str:
 
 
 def _compose_extra(task_id: str, context_id: str, text: str) -> str:
+    """STATUS / FLEET / PARK / A2A_REPLY: no new Cursor Cloud create."""
     return (
         f"A2A_TASK_ID={task_id}\n"
         f"A2A_CONTEXT={context_id}\n"
-        "You were woken by the local A2A dispatch bus (persistent ACP inject when "
-        "available). Prioritize this ping in EXTRA TURN INSTRUCTIONS: act on it, "
-        "then print the required RESULT (or PARK_ACK / QA_*_RESULT) line. "
-        "Do not call scripts/a2a/send.sh or a2a_send to ack the caller — print "
-        "RESULT; duplex writes that line onto the A2A task and notifies the caller "
-        "seat. Use send.sh only for new work pings to other seats. "
-        "If you are on a persistent ACP seat daemon, idle for the next inject — "
-        "do not exit the process. One-shot -p fallbacks may exit after RESULT.\n"
+        "STATUS/FLEET/PARK/A2A_REPLY wake. Do NOT create a new Cursor Cloud agent for this ping. "
+        "A2A_REPLY is a duplex caller ping — never invoke the Cursor Cloud launcher. "
+        "Do NOT run send.sh or a2a_send just to ack the waking caller. "
+        "This is a keep-alive / status turn: do work, do not idle. Tools are allowed "
+        "(taskboard ticket move, send.sh, scripts/launch-cloud-extra-high.sh when you own the launch). "
+        "RESULT-only / PONG is a bug. Remain this seat. "
+        "Duplex notifies the caller if a RESULT line appears. This is a local ACP "
+        "session/prompt into your persistent grok agent serve (same pid, pinned acp.session).\n"
         "\n"
         "MESSAGE:\n"
         f"{text}\n"
     )
+
+
+def _compose_director_work(task_id: str, context_id: str, text: str) -> str:
+    """LAUNCH / TASK_ASSIGN / assign prose: Director owns cloud_launch. Wake/route only."""
+    return (
+        f"A2A_TASK_ID={task_id}\n"
+        f"A2A_CONTEXT={context_id}\n"
+        "Director-owns-launch wake (inbox → local ACP session/prompt into persistent "
+        "grok agent serve — not cloud-agent create). "
+        "You MAY use tools. You SHOULD call cloud_launch or "
+        "scripts/launch-cloud-extra-high.sh to spawn YOUR Cursor Cloud agent for this MESSAGE. "
+        "Dispatch does not create cloud agents and does not ACP-inject GROW-seat peer mail. "
+        "Never send.sh / a2a_send just to ack the waking caller. Duplex notifies the caller. "
+        "After you launch, remain this seat. RESULT is optional duplex (bc-id), not a hang-up.\n"
+        "\n"
+        "MESSAGE:\n"
+        f"{text}\n"
+    )
+
+
+def _iter_data_parts(parts: Any) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    if not isinstance(parts, list):
+        return out
+    for p in parts:
+        if not isinstance(p, dict):
+            continue
+        data = p.get("data")
+        if isinstance(data, dict):
+            out.append(data)
+    return out
+
+
+def _normalize_kind(raw: str) -> str:
+    return raw.strip().upper().replace("-", "_").replace(" ", "_")
+
+
+def _kind_from_parts(parts: Any) -> str:
+    for data in _iter_data_parts(parts):
+        for key in ("type", "kind", "action", "messageType", "message_type"):
+            val = data.get(key)
+            if isinstance(val, str) and val.strip():
+                return _normalize_kind(val)
+    return ""
+
+
+def _kind_from_text(text: str) -> str:
+    if not text:
+        return ""
+    head = text.strip().split("\n", 1)[0]
+    matched = _KIND_HEAD_RE.match(head)
+    if not matched:
+        return ""
+    return _normalize_kind(matched.group("kind"))
+
+
+def _is_cloud_launch_message(text: str, parts: Any = None) -> bool:
+    """True when the Director should own Cursor Cloud create for this ping.
+
+    STATUS / FLEET_* / PARK / MERGE_REQUEST / A2A_REPLY never launch.
+    Structured LAUNCH, TASK_ASSIGN, LAUNCH ONLY, launcher argv, and unmarked
+    assign prose are Director-owns-launch — dispatch does not prelaunch.
+    """
+    kind = _kind_from_parts(parts) or _kind_from_text(text or "")
+    if kind in _INJECT_ONLY_KINDS:
+        return False
+    if kind in _LAUNCH_KINDS:
+        return True
+    blob = text or ""
+    if "LAUNCH ONLY" in blob:
+        return True
+    if _LAUNCH_CMD_RE.search(blob):
+        return True
+    return bool(blob.strip())
 
 
 def _discover_seats(filter_seats: set[str] | None) -> list[str]:
@@ -481,7 +603,16 @@ def _reap_finished() -> None:
 
 
 def _process_seat(seat: str, *, dry_run: bool) -> int:
-    """Process pending inbox records for one seat. Returns launches started."""
+    """Process pending inbox records for one seat. Returns leftover ACP launches.
+
+    GROW seats and any seat with a live wake.pid are owned by the inbox wake
+    loop (wake.offset / local ACP session/prompt into grok agent serve).
+    Do not ACP-inject peer mail and do not advance dispatch.offset there.
+    """
+    if _wake_owns_inbox(seat):
+        print(f"DISPATCH_SKIP seat={seat} reason=wake-owns-inbox", flush=True)
+        return 0
+
     records, _size = _read_new_records(seat)
     if not records:
         return 0
@@ -495,7 +626,8 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
 
         task_id = str(rec.get("taskId") or "")
         context_id = str(rec.get("contextId") or "")
-        text = _extract_text(rec.get("parts"))
+        parts = rec.get("parts")
+        text = _extract_text(parts)
 
         # Always advance past skipped, non-launch, or empty records.
         if seat in _skip_seats():
@@ -525,7 +657,10 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
             # for this seat so order is preserved.
             break
 
-        extra = _compose_extra(task_id, context_id, text)
+        if _is_cloud_launch_message(text, parts):
+            extra = _compose_director_work(task_id, context_id, text)
+        else:
+            extra = _compose_extra(task_id, context_id, text)
 
         if dry_run:
             mode = "acp-inject" if _daemon_healthy(seat) else "start-daemon+inject|fallback-p"

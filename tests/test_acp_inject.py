@@ -1,14 +1,15 @@
-"""ACP inject harvests RESULT without waiting for session/prompt RPC."""
+"""ACP inject leftover / pin-session rules (studio host OS).
+
+HANDOFF only after a real start. Silence is not HANDOFF. Queue is not accept.
+Stay on the websocket after the first tool until STATUS / substantial text or
+session/prompt RPC completes. Dead sessions remint once after N consecutive
+no-accepts. RESULT is duplex, not success. Leftover dispatch still cancels.
+"""
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
 import importlib.util
 import json
-import stat
-import os
-import struct
 import sys
 import time
 from pathlib import Path
@@ -17,16 +18,18 @@ from typing import Any
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-INJECT_PY = ROOT / "scripts" / "directors" / "acp_inject.py"
-DISPATCH_PY = ROOT / "scripts" / "a2a" / "dispatch.py"
-FOOTER = ROOT / "scripts" / "directors" / "common_footer.txt"
-WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+REPO = Path(__file__).resolve().parents[1]
+ACP_INJECT = REPO / "scripts" / "directors" / "acp_inject.py"
+DISPATCH = REPO / "scripts" / "a2a" / "dispatch.py"
+FOOTER = REPO / "scripts" / "directors" / "common_footer.txt"
+A2A_DOC = REPO / "docs" / "A2A.md"
+AGENTS_DOC = REPO / "AGENTS.md"
+
+RESULT_LINE = "RESULT bc-id=none pr=none a2a=task-1 notes=park-ok"
+STATUS_LINE = "STATUS quoting token tick-1. Working."
 
 
-def _load(path: Path, name: str, env: dict[str, str] | None = None) -> ModuleType:
-    if env:
-        os.environ.update(env)
+def _load(path: Path, name: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
@@ -35,314 +38,807 @@ def _load(path: Path, name: str, env: dict[str, str] | None = None) -> ModuleTyp
     return mod
 
 
-def _ws_accept(key: str) -> str:
-    digest = hashlib.sha1((key + WS_GUID).encode("ascii")).digest()
-    return base64.b64encode(digest).decode("ascii")
-
-
-async def _ws_handshake(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-    data = b""
-    while b"\r\n\r\n" not in data:
-        chunk = await reader.read(1024)
-        if not chunk:
-            raise ConnectionError("eof during handshake")
-        data += chunk
-    key = ""
-    for line in data.decode("iso-8859-1").split("\r\n"):
-        if line.lower().startswith("sec-websocket-key:"):
-            key = line.split(":", 1)[1].strip()
-            break
-    if not key:
-        raise ConnectionError("missing Sec-WebSocket-Key")
-    resp = (
-        "HTTP/1.1 101 Switching Protocols\r\n"
-        "Upgrade: websocket\r\n"
-        "Connection: Upgrade\r\n"
-        f"Sec-WebSocket-Accept: {_ws_accept(key)}\r\n"
-        "\r\n"
-    )
-    writer.write(resp.encode("ascii"))
-    await writer.drain()
-
-
-async def _ws_recv(reader: asyncio.StreamReader) -> str:
-    while True:
-        header = await reader.readexactly(2)
-        opcode = header[0] & 0x0F
-        masked = (header[1] & 0x80) != 0
-        length = header[1] & 0x7F
-        if length == 126:
-            (length,) = struct.unpack("!H", await reader.readexactly(2))
-        elif length == 127:
-            (length,) = struct.unpack("!Q", await reader.readexactly(8))
-        mask = await reader.readexactly(4) if masked else b""
-        payload = await reader.readexactly(length)
-        if masked:
-            payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
-        if opcode == 0x8:
-            raise ConnectionError("WS closed by peer")
-        if opcode == 0x9:
-            continue
-        if opcode in (0x1, 0x0):
-            return payload.decode("utf-8")
-
-
-async def _ws_send(writer: asyncio.StreamWriter, text: str) -> None:
-    data = text.encode("utf-8")
-    header = bytearray([0x81])
-    n = len(data)
-    if n < 126:
-        header.append(n)
-    elif n < 65536:
-        header.append(126)
-        header.extend(struct.pack("!H", n))
-    else:
-        header.append(127)
-        header.extend(struct.pack("!Q", n))
-    writer.write(header + data)
-    await writer.drain()
-
-
-def _chunk_notice(text: str, session_id: str = "sess-test") -> dict[str, Any]:
+def _chunk(text: str) -> dict[str, Any]:
     return {
         "jsonrpc": "2.0",
         "method": "session/update",
         "params": {
-            "sessionId": session_id,
             "update": {
                 "sessionUpdate": "agent_message_chunk",
-                "content": {"type": "text", "text": text},
-            },
+                "content": {"text": text},
+            }
         },
     }
 
 
-class FakeAcpServer:
-    def __init__(self, mode: str) -> None:
-        self.mode = mode
-        self.methods: list[str] = []
-        self.cancels = 0
-        self.port = 0
-        self._server: asyncio.AbstractServer | None = None
-        self._closing = asyncio.Event()
+def _tool_update(tool_call_id: str = "tc-stale", title: str = "leftover") -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": {
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": tool_call_id,
+                "title": title,
+            }
+        },
+    }
 
-    async def start(self) -> int:
-        self._server = await asyncio.start_server(self._client, "127.0.0.1", 0)
-        sockets = self._server.sockets or []
-        self.port = int(sockets[0].getsockname()[1])
-        return self.port
 
-    async def stop(self) -> None:
-        self._closing.set()
-        if self._server is not None:
-            self._server.close()
-            await self._server.wait_closed()
+def _queue_changed(size: int = 1) -> dict[str, Any]:
+    return {
+        "jsonrpc": "2.0",
+        "method": "x.ai/queue/changed",
+        "params": {"size": size},
+    }
 
-    async def _client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+
+def _capture_prompt_harvest(mod: ModuleType, monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    flags: list[dict[str, Any]] = []
+    orig = mod.AcpClient.session_prompt
+
+    async def wrap(self: Any, session_id: str, text: str, timeout: float, **kwargs: Any) -> str:
         try:
-            await _ws_handshake(reader, writer)
-            while not self._closing.is_set():
-                try:
-                    raw = await asyncio.wait_for(_ws_recv(reader), timeout=0.25)
-                except asyncio.TimeoutError:
-                    continue
-                try:
-                    msg = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                method = str(msg.get("method") or "")
-                mid = msg.get("id")
-                self.methods.append(method)
-                if method == "initialize":
-                    await _ws_send(
-                        writer,
-                        json.dumps({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": 1}}),
-                    )
-                elif method == "session/new":
-                    await _ws_send(
-                        writer,
-                        json.dumps({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": "sess-test"}}),
-                    )
-                elif method == "session/load":
-                    await _ws_send(writer, json.dumps({"jsonrpc": "2.0", "id": mid, "result": {}}))
-                elif method == "session/prompt":
-                    if self.mode != "hang":
-                        await _ws_send(writer, json.dumps(_chunk_notice("working...\nRES")))
-                        await _ws_send(
-                            writer,
-                            json.dumps(
-                                _chunk_notice(
-                                    "ULT bc-id=none pr=none a2a=task-harvest notes=early-ok\n"
-                                )
-                            ),
-                        )
-                    if self.mode == "rpc":
-                        await _ws_send(
-                            writer,
-                            json.dumps({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}}),
-                        )
-                    # hang / harvest / timeout-result: do not send session/prompt RPC result
-                elif method == "session/cancel":
-                    self.cancels += 1
-                    if mid is not None:
-                        await _ws_send(writer, json.dumps({"jsonrpc": "2.0", "id": mid, "result": {}}))
-        except (ConnectionError, asyncio.IncompleteReadError, asyncio.CancelledError):
-            return
-        finally:
-            try:
-                writer.close()
-                await writer.wait_closed()
-            except Exception:
-                pass
+            reply = await orig(self, session_id, text, timeout, **kwargs)
+            flags.append(
+                {
+                    "harvested_early": bool(self._harvested_early),
+                    "prompt_accepted": bool(getattr(self, "_prompt_accepted", False)),
+                    "tool_events": int(self._tool_events or 0),
+                    "chars": len(reply),
+                    "reply": reply,
+                }
+            )
+            return reply
+        except BaseException:
+            flags.append(
+                {
+                    "harvested_early": bool(self._harvested_early),
+                    "prompt_accepted": bool(getattr(self, "_prompt_accepted", False)),
+                    "tool_events": int(self._tool_events or 0),
+                    "chars": len("".join(self._chunks)),
+                    "reply": "".join(self._chunks),
+                }
+            )
+            raise
+
+    monkeypatch.setattr(mod.AcpClient, "session_prompt", wrap)
+    return flags
 
 
-def _prepare_seat(mod: ModuleType, tmp_path: Path, port: int) -> Path:
+class FakeAcpWs:
+    """ACP WebSocket stub. Completes initialize/session/new; optional prompt RPC."""
+
+    def __init__(
+        self,
+        *,
+        prompt_chunks: list[str] | None = None,
+        prompt_updates: list[dict[str, Any]] | None = None,
+        complete_prompt: bool = False,
+        new_session_id: str = "sess-harvest",
+        delay_before_rpc: float = 0.0,
+    ) -> None:
+        self._incoming: asyncio.Queue[Any] = asyncio.Queue()
+        self.sent: list[dict[str, Any]] = []
+        self.prompt_rpc_ids: list[Any] = []
+        self.cancel_sessions: list[str] = []
+        self.blocked_prompts: list[Any] = []
+        self.auth_method_ids: list[str] = []
+        self.prompt_inflight = False
+        self.closed = False
+        self._prompt_chunks = list(prompt_chunks or [])
+        self._prompt_updates = list(prompt_updates or [])
+        self._complete_prompt = complete_prompt
+        self._delay_before_rpc = delay_before_rpc
+        self._new_session_ids = [new_session_id]
+        self._new_i = 0
+
+    async def send(self, text: str) -> None:
+        msg = json.loads(text)
+        self.sent.append(msg)
+        method = msg.get("method")
+        rid = msg.get("id")
+        params = msg.get("params") or {}
+        if method == "initialize":
+            await self._incoming.put(
+                {
+                    "jsonrpc": "2.0",
+                    "id": rid,
+                    "result": {
+                        "protocolVersion": 1,
+                        "authMethods": [{"id": "cached_token", "name": "cached_token"}],
+                    },
+                }
+            )
+        elif method == "authenticate":
+            mid = str(params.get("methodId") or params.get("method_id") or "")
+            self.auth_method_ids.append(mid)
+            await self._incoming.put({"jsonrpc": "2.0", "id": rid, "result": {}})
+        elif method == "session/new":
+            if self._new_i < len(self._new_session_ids):
+                sid = self._new_session_ids[self._new_i]
+            else:
+                sid = f"sess-harvest-{self._new_i + 1}"
+            self._new_i += 1
+            await self._incoming.put(
+                {"jsonrpc": "2.0", "id": rid, "result": {"sessionId": sid}}
+            )
+        elif method == "session/load":
+            await self._incoming.put({"jsonrpc": "2.0", "id": rid, "result": {}})
+        elif method == "session/prompt":
+            if self.prompt_inflight:
+                self.blocked_prompts.append(rid)
+                await self._incoming.put(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": rid,
+                        "error": {
+                            "code": -32000,
+                            "message": "shell.prompt.start_blocked",
+                        },
+                    }
+                )
+                return
+            self.prompt_inflight = True
+            self.prompt_rpc_ids.append(rid)
+            for part in self._prompt_chunks:
+                await self._incoming.put(_chunk(part))
+            for upd in self._prompt_updates:
+                await self._incoming.put(upd)
+            if self._complete_prompt:
+                if self._delay_before_rpc > 0:
+                    await asyncio.sleep(self._delay_before_rpc)
+                self.prompt_inflight = False
+                await self._incoming.put({"jsonrpc": "2.0", "id": rid, "result": {}})
+        elif method == "session/cancel":
+            sid = str(params.get("sessionId") or "")
+            self.cancel_sessions.append(sid)
+            self.prompt_inflight = False
+            if rid is not None:
+                await self._incoming.put({"jsonrpc": "2.0", "id": rid, "result": {}})
+
+    async def recv(self) -> str:
+        item = await self._incoming.get()
+        if item is None:
+            raise ConnectionError("WS closed")
+        if isinstance(item, str):
+            return item
+        return json.dumps(item)
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+def _prep_seat(mod: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     state = tmp_path / "a2a-state"
     seat_dir = state / "floor"
     seat_dir.mkdir(parents=True)
-    (seat_dir / "acp.secret").write_text("test-secret\n", encoding="utf-8")
-    (seat_dir / "acp.url").write_text(f"ws://127.0.0.1:{port}/ws\n", encoding="utf-8")
-    (seat_dir / "acp.inject.stale").write_text("prior-timeout\n", encoding="utf-8")
-    fake_send = tmp_path / "fake-send.sh"
-    fake_send.write_text("#!/bin/bash\necho A2A_SEND_OK\nexit 0\n", encoding="utf-8")
-    fake_send.chmod(fake_send.stat().st_mode | stat.S_IEXEC)
-    os.environ["GCS_A2A_SEND"] = str(fake_send)
-    mod.STATE_DIR = state
-    mod.ROOT = ROOT
+    (seat_dir / "acp.url").write_text("ws://127.0.0.1:8740/ws?server-key=test\n", encoding="utf-8")
+    (seat_dir / "acp.secret").write_text("test\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "STATE_DIR", state)
+    monkeypatch.setattr(mod, "ROOT", REPO)
+    monkeypatch.setenv("GCS_A2A_STATE", str(state))
+    monkeypatch.setenv("GCS_A2A_TASK_ID", "task-1")
+    monkeypatch.setenv("GCS_A2A_CONTEXT", "ctx-1")
+    monkeypatch.setenv("GCS_A2A_FROM", "ops")
     return seat_dir
 
 
-PROMPT = (
-    "A2A_TASK_ID=task-harvest\n"
-    "A2A_CONTEXT=ctx-1\n"
-    "MESSAGE:\n"
-    "from=ops ping harvest\n"
-)
+def _patch_connect(mod: ModuleType, ws: FakeAcpWs, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_connect(self: Any) -> None:
+        ws._incoming = asyncio.Queue()
+        self._ws = ws
+        self._use_stdlib = True
+        self._reader_task = asyncio.create_task(self._read_loop())
+
+    monkeypatch.setattr(mod.AcpClient, "connect", fake_connect)
 
 
-@pytest.mark.parametrize(
-    "blob, expected_prefix",
-    [
-        ("RESULT bc-id=none pr=none a2a=none notes=ok\n", "RESULT "),
-        ("chatter\nPARK_ACK seat=floor notes=parked\n", "PARK_ACK "),
-        ("QA_A_RESULT merged=none skipped=none conflicts=none notes=idle\n", "QA_A_RESULT "),
-        ("QA_B_RESULT merged=1 skipped=none conflicts=none notes=merged\n", "QA_B_RESULT "),
-        ("no contract line here\n", None),
-    ],
-)
-def test_extract_result_line(blob: str, expected_prefix: str | None) -> None:
-    mod = _load(INJECT_PY, "gcs_acp_inject_extract")
-    line = mod.extract_result_line(blob)
-    if expected_prefix is None:
-        assert line is None
-    else:
-        assert line is not None
-        assert line.startswith(expected_prefix)
+def test_seat_produced_work_pong_is_not_work() -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_work_fn")
+    assert mod.seat_produced_work("PONG") is False
+    assert mod.seat_produced_work("ok") is False
+    assert mod.seat_produced_work("") is False
+    assert mod.seat_produced_work("", tool_events=3) is False
+    assert mod.seat_produced_work("   \n", tool_events=1) is False
+    assert mod.seat_produced_work(STATUS_LINE) is True
+    assert mod.seat_produced_work("Reading docs\n", tool_events=1) is True
+    assert mod.seat_produced_work(RESULT_LINE) is False
+    assert mod.seat_produced_work(RESULT_LINE, tool_events=2) is False
+    assert mod.seat_produced_work(f"{RESULT_LINE}\n") is False
+    assert mod.seat_produced_work("x" * 40) is True
+    assert mod.seat_produced_work("short") is False
+    assert mod.extract_inject_result_line(RESULT_LINE) == RESULT_LINE
+    assert mod.extract_inject_result_line(STATUS_LINE) is None
+    assert mod.stream_is_hangup_only(RESULT_LINE) is True
+    assert mod.stream_is_hangup_only(RESULT_LINE, tool_events=2) is True
+    assert mod.stream_is_hangup_only("PONG") is True
+    assert mod.stream_is_hangup_only("", tool_events=2) is False
+    assert mod.stream_is_hangup_only("") is False
+    assert mod.prompt_chunk_is_accept_signal("thinking about the ticket") is True
+    assert mod.prompt_chunk_is_accept_signal(RESULT_LINE) is False
+    assert mod.prompt_chunk_is_accept_signal("PONG") is False
+    assert mod.pin_session_ready_to_leave(STATUS_LINE) is True
+    assert mod.pin_session_ready_to_leave("Donald") is False
+    assert mod.pin_session_ready_to_leave("x" * 40) is True
+    assert mod.pin_session_ready_to_leave("") is False
 
 
-def test_inject_ok_on_result_without_prompt_rpc(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    async def scenario() -> tuple[int, FakeAcpServer, Path, float]:
-        server = FakeAcpServer("harvest")
-        port = await server.start()
-        mod = _load(
-            INJECT_PY,
-            "gcs_acp_inject_harvest",
-            {"GCS_ROOT": str(ROOT), "GCS_A2A_STATE": str(tmp_path / "a2a-state")},
-        )
-        seat_dir = _prepare_seat(mod, tmp_path, port)
-        started = time.monotonic()
-        try:
-            rc = await asyncio.wait_for(mod.inject("floor", PROMPT, timeout=8.0), timeout=5.0)
-        finally:
-            elapsed = time.monotonic() - started
-            await server.stop()
-        return rc, server, seat_dir, elapsed
+def test_leftover_tools_empty_text_is_not_work() -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_leftover_empty")
+    assert not mod.seat_produced_work("", tool_events=3)
+    assert not mod.prompt_chunk_is_accept_signal("")
+    assert mod.stream_is_hangup_only(RESULT_LINE)
+    assert not mod.pin_session_ready_to_leave("Donald")
 
-    rc, server, seat_dir, elapsed = asyncio.run(scenario())
+
+def test_inject_harvests_status_without_waiting_for_prompt_rpc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_harvest")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    duplex_calls: list[tuple[str, str, str]] = []
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+
+    def fake_duplex(seat: str, prompt: str, reply: str) -> None:
+        duplex_calls.append((seat, prompt, reply))
+
+    monkeypatch.setattr(mod, "_duplex_after_inject", fake_duplex)
+    ws = FakeAcpWs(prompt_chunks=[f"{STATUS_LINE}\n", f"{RESULT_LINE}\n"])
+    _patch_connect(mod, ws, monkeypatch)
+
+    timeout = 2.0
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "STATUS ping", timeout=timeout))
+    elapsed = time.monotonic() - started
     out = capsys.readouterr()
     blob = out.out + out.err
+
     assert rc == 0, blob
-    assert elapsed < 3.0, f"inject stalled waiting for session/prompt RPC ({elapsed:.2f}s)\n{blob}"
-    assert "ACP_INJECT_OK" in blob
+    assert "ACP_INJECT_OK" in out.out
     assert "ACP_INJECT_TIMEOUT" not in blob
-    assert "ACP_INJECT_HARVEST" in blob
-    assert "session/prompt" in server.methods
-    assert server.cancels >= 1
+    assert flags and flags[0]["harvested_early"] is True
+    assert duplex_calls
+    assert "RESULT" in duplex_calls[0][2]
+    assert elapsed < 1.0, f"waited {elapsed:.2f}s; must not block on session/prompt RPC"
+    assert ws.prompt_rpc_ids
+    assert ws.cancel_sessions == ["sess-harvest"]
     assert not (seat_dir / "acp.inject.stale").is_file()
-    marker = seat_dir / "runs" / "task-harvest.duplex"
-    assert marker.is_file(), blob
+    assert ws.auth_method_ids == ["cached_token"]
 
 
-def test_inject_timeout_with_result_is_success(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    async def scenario() -> int:
-        server = FakeAcpServer("rpc")
-        port = await server.start()
-        mod = _load(
-            INJECT_PY,
-            "gcs_acp_inject_timeout_ok",
-            {"GCS_ROOT": str(ROOT), "GCS_A2A_STATE": str(tmp_path / "a2a-state")},
-        )
-        _prepare_seat(mod, tmp_path, port)
+def test_inject_timeout_with_status_without_result_is_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_status_ok")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    ws = FakeAcpWs(
+        prompt_chunks=["STATUS quoting token tick-floor-1. ticket move in_progress.\n"]
+    )
+    _patch_connect(mod, ws, monkeypatch)
 
-        async def timed_out_prompt(self: Any, *_args: Any, **_kwargs: Any) -> str:
-            self._chunks = ["RESULT bc-id=none pr=none a2a=task-harvest notes=timeout-ok\n"]
-            raise asyncio.TimeoutError
+    rc = asyncio.run(mod.inject("floor", "ACP_PING STATUS/CONTINUE", timeout=0.4))
+    out = capsys.readouterr()
+    blob = out.out + out.err
 
-        mod.AcpClient.session_prompt = timed_out_prompt  # type: ignore[method-assign]
-        try:
-            return await asyncio.wait_for(mod.inject("floor", PROMPT, timeout=2.0), timeout=5.0)
-        finally:
-            await server.stop()
+    assert rc == 0, blob
+    assert "ACP_INJECT_OK" in out.out
+    assert "ACP_INJECT_TIMEOUT" not in blob
+    assert not (seat_dir / "acp.inject.stale").is_file()
+    assert ws.cancel_sessions
 
-    rc = asyncio.run(scenario())
+
+def test_inject_timeout_without_work_stales(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_timeout_fail")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    ws = FakeAcpWs(prompt_chunks=["PONG\n"])
+    _patch_connect(mod, ws, monkeypatch)
+
+    rc = asyncio.run(mod.inject("floor", "STATUS ping", timeout=0.35))
+    out = capsys.readouterr()
+    blob = out.out + out.err
+
+    assert rc == 1, blob
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert "ACP_INJECT_OK" not in out.out
+    assert (seat_dir / "acp.inject.stale").is_file()
+    assert ws.cancel_sessions == ["sess-harvest"]
+
+
+def test_first_tool_plus_donald_stays_connected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Accept is not a reason to hang up. Stay until STATUS or RPC complete."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_stay_tool")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=["Donald"],
+        prompt_updates=[_tool_update("tc-1", "read")],
+        complete_prompt=True,
+        delay_before_rpc=0.55,
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=2.0, pin_session=True))
+    elapsed = time.monotonic() - started
     out = capsys.readouterr()
     blob = out.out + out.err
     assert rc == 0, blob
-    assert "ACP_INJECT_OK" in blob
-    assert "ACP_INJECT_TIMEOUT" not in blob
+    assert elapsed >= 0.5
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "ACP_INJECT_OK" in out.out
+    assert "ACP_INJECT_CANCEL" not in blob
+    assert flags and flags[0]["harvested_early"] is False
+    assert flags[0]["tool_events"] >= 1
+    assert ws.cancel_sessions == []
+    assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-pinned"
 
 
-def test_inject_timeout_without_result_fails(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    async def scenario() -> tuple[int, Path]:
-        server = FakeAcpServer("hang")
-        port = await server.start()
-        mod = _load(
-            INJECT_PY,
-            "gcs_acp_inject_timeout_fail",
-            {"GCS_ROOT": str(ROOT), "GCS_A2A_STATE": str(tmp_path / "a2a-state")},
-        )
-        seat_dir = _prepare_seat(mod, tmp_path, port)
-        try:
-            rc = await asyncio.wait_for(mod.inject("floor", PROMPT, timeout=0.4), timeout=3.0)
-        finally:
-            await server.stop()
-        return rc, seat_dir
+def test_pin_session_first_tool_does_not_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """First tool + short text is not HANDOFF. Stay on the websocket until timeout."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_first_tool")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=["Donald"],
+        prompt_updates=[_queue_changed(), _tool_update("tc-1", "read")],
+    )
+    _patch_connect(mod, ws, monkeypatch)
 
-    rc, seat_dir = asyncio.run(scenario())
-    blob = capsys.readouterr().out + capsys.readouterr().err
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=0.45, pin_session=True))
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
     assert rc == 1, blob
+    assert flags and flags[0]["prompt_accepted"] is False
+    assert flags[0]["harvested_early"] is False
+    assert flags[0]["tool_events"] >= 1
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "ACP_INJECT_OK" not in out.out
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert "reason=no-accept" in blob
+    assert "ACP_INJECT_CANCEL" not in blob
+    assert "ACP_INJECT_SESSION_DEAD" not in blob
+    assert ws.cancel_sessions == []
+    assert elapsed >= 0.35, f"waited {elapsed:.2f}s; first tool must not disconnect"
+
+
+def test_pin_session_silence_is_not_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_silent")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "DEAD_STREAK_N", 2)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(prompt_chunks=[])
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "PROVE-MIND hang", timeout=0.4, pin_session=True))
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 1, blob
+    assert flags and flags[0]["prompt_accepted"] is False
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "ACP_INJECT_OK" not in out.out
+    assert "ACP_INJECT_CANCEL" not in blob
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert "reason=no-accept" in blob
+    assert "ACP_INJECT_SESSION_DEAD" not in blob
+    assert ws.cancel_sessions == []
+    assert not any(m.get("method") == "session/new" for m in ws.sent)
+    assert elapsed >= 0.3
+    assert elapsed < 1.5
+
+
+def test_pin_session_silence_uses_accept_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No-start nacks at GCS_ACP_ACCEPT_DEADLINE, not the full inject timeout."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_nack_window")
+    _prep_seat(mod, tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "DEAD_STREAK_N", 2)
+    monkeypatch.setattr(mod, "PIN_NACK_SEC", 0.2)
+    ws = FakeAcpWs(prompt_chunks=[])
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "PROVE-MIND hang", timeout=2.0, pin_session=True))
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 1, blob
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "reason=no-accept" in blob
+    assert "ACP_INJECT_SESSION_DEAD" not in blob
+    assert elapsed >= 0.15
+    assert elapsed < 0.9, f"waited {elapsed:.2f}s; silence must nack at accept deadline"
+
+
+def test_pin_session_started_stays_past_accept_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """First tool + Donald is a start: stay until RPC, past the 30s-style nack window."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_stay_past_nack")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "PIN_NACK_SEC", 0.15)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=["Donald"],
+        prompt_updates=[_tool_update("tc-1", "read")],
+        complete_prompt=True,
+        delay_before_rpc=0.4,
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=2.0, pin_session=True))
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 0, blob
+    assert elapsed >= 0.35
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "ACP_INJECT_OK" in out.out
+    assert "ACP_INJECT_CANCEL" not in blob
+    assert flags and flags[0]["tool_events"] >= 1
+    assert ws.cancel_sessions == []
+
+
+def test_pin_session_queue_changed_is_not_handoff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_queue")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "DEAD_STREAK_N", 2)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(prompt_chunks=[], prompt_updates=[_queue_changed()])
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(
+        mod.inject("floor", "TASK_ASSIGN: work the ticket.", timeout=0.4, pin_session=True)
+    )
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 1, blob
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "ACP_INJECT_OK" not in out.out
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert "reason=no-accept" in blob
+    assert flags and flags[0]["prompt_accepted"] is False
+    assert ws.cancel_sessions == []
+    assert elapsed >= 0.3
+
+
+def test_empty_stream_leftover_tool_events_does_not_harvest_early(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_leftover_tools")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "DEAD_STREAK_N", 2)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=[],
+        prompt_updates=[
+            _tool_update("tc-stale", "leftover from prior turn"),
+            {
+                "jsonrpc": "2.0",
+                "method": "session/update",
+                "params": {
+                    "update": {
+                        "sessionUpdate": "tool_call_update",
+                        "toolCallId": "tc-stale",
+                        "status": "completed",
+                    }
+                },
+            },
+        ],
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(
+        mod.inject("floor", "ACP_PING STATUS/CONTINUE", timeout=0.4, pin_session=True)
+    )
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+
+    assert rc == 1, blob
+    assert flags and flags[0]["harvested_early"] is False
+    assert flags[0]["prompt_accepted"] is False
+    assert flags[0]["tool_events"] > 0
+    assert flags[0]["chars"] == 0
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "ACP_INJECT_OK" not in out.out
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert "reason=no-accept" in blob
+    assert "ACP_INJECT_CANCEL" not in blob
+    assert elapsed >= 0.3
+    assert ws.cancel_sessions == []
+
+
+def test_result_only_stream_is_not_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_result_only")
+    _prep_seat(mod, tmp_path, monkeypatch)
+    duplex_calls: list[Any] = []
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: duplex_calls.append(a))
+    monkeypatch.setattr(mod, "DEAD_STREAK_N", 2)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(prompt_chunks=[f"{RESULT_LINE}\n"])
+    _patch_connect(mod, ws, monkeypatch)
+
+    rc = asyncio.run(mod.inject("floor", "STATUS ping", timeout=0.4, pin_session=True))
+    out = capsys.readouterr()
+    blob = out.out + out.err
+
+    assert rc == 1, blob
+    assert flags and flags[0]["harvested_early"] is False
+    assert RESULT_LINE in flags[0]["reply"]
+    assert "ACP_INJECT_OK" not in out.out
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert "reason=hangup" in blob or "reason=no-accept" in blob
+    assert "ACP_INJECT_CANCEL" not in blob
+    assert not duplex_calls
+    assert ws.cancel_sessions == []
+
+
+def test_remint_on_dead_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """N=1 no-accept on the same pin-session id allows one session/new."""
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_dead_once")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "DEAD_STREAK_N", 1)
+    ws = FakeAcpWs(prompt_chunks=[], new_session_id="sess-reborn")
+    _patch_connect(mod, ws, monkeypatch)
+
+    rc = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=0.25, pin_session=True))
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 1, blob
+    assert "reason=no-accept" in blob
+    assert "ACP_INJECT_SESSION_DEAD" in blob
+    assert "old=sess-pinned" in blob
+    assert "new=sess-reborn" in blob
+    assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-reborn"
+    assert any(m.get("method") == "session/new" for m in ws.sent)
+    assert ws.cancel_sessions == []
+
+
+def test_pin_session_second_no_accept_remints_dead_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_dead")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "DEAD_STREAK_N", 2)
+    ws = FakeAcpWs(prompt_chunks=[], new_session_id="sess-reborn")
+    _patch_connect(mod, ws, monkeypatch)
+
+    rc1 = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=0.25, pin_session=True))
+    out1 = capsys.readouterr()
+    blob1 = out1.out + out1.err
+    assert rc1 == 1, blob1
+    assert "ACP_INJECT_SESSION_DEAD" not in blob1
+    assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-pinned"
+    ws.prompt_inflight = False
+
+    rc2 = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=0.25, pin_session=True))
+    out2 = capsys.readouterr()
+    blob2 = out2.out + out2.err
+    assert rc2 == 1, blob2
+    assert "ACP_INJECT_SESSION_DEAD" in blob2
+    assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-reborn"
+    assert any(m.get("method") == "session/new" for m in ws.sent)
+
+
+def test_pin_session_success_clears_dead_streak(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_streak_reset")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    monkeypatch.setattr(mod, "DEAD_STREAK_N", 2)
+
+    ws_fail = FakeAcpWs(prompt_chunks=[])
+    _patch_connect(mod, ws_fail, monkeypatch)
+    rc1 = asyncio.run(mod.inject("floor", "miss", timeout=0.25, pin_session=True))
+    assert rc1 == 1
+    capsys.readouterr()
+
+    ws_ok = FakeAcpWs(prompt_chunks=[f"{STATUS_LINE}\n"])
+    _patch_connect(mod, ws_ok, monkeypatch)
+    rc_ok = asyncio.run(mod.inject("floor", "STATUS ping", timeout=2.0, pin_session=True))
+    out_ok = capsys.readouterr()
+    assert rc_ok == 0, out_ok.out + out_ok.err
+
+    ws_fail2 = FakeAcpWs(prompt_chunks=[], new_session_id="sess-should-not")
+    _patch_connect(mod, ws_fail2, monkeypatch)
+    rc2 = asyncio.run(mod.inject("floor", "miss again", timeout=0.25, pin_session=True))
+    out2 = capsys.readouterr()
+    blob2 = out2.out + out2.err
+    assert rc2 == 1, blob2
+    assert "ACP_INJECT_SESSION_DEAD" not in blob2
+    assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-pinned"
+
+
+def test_pin_session_accepted_prompt_disconnect_does_not_cancel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_accept")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(prompt_chunks=[f"{STATUS_LINE}\n"])
+    _patch_connect(mod, ws, monkeypatch)
+
+    started = time.monotonic()
+    rc = asyncio.run(mod.inject("floor", "PROVE-MIND", timeout=2.0, pin_session=True))
+    elapsed = time.monotonic() - started
+    out = capsys.readouterr()
+    blob = out.out + out.err
+
+    assert rc == 0, blob
+    assert "ACP_INJECT_OK" in out.out
+    assert "ACP_INJECT_HANDOFF" in out.out
+    assert "ACP_INJECT_CANCEL" not in blob
+    assert flags and flags[0]["prompt_accepted"] is True
+    assert elapsed < 1.0
+    assert ws.cancel_sessions == []
+    assert ws.closed is True
+    assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-pinned"
+
+
+def test_inject_pin_session_success_does_not_remint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    (seat_dir / "acp.inject.stale").write_text("leftover\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    ws = FakeAcpWs(prompt_chunks=[f"{STATUS_LINE}\n", f"{RESULT_LINE}\n"])
+    _patch_connect(mod, ws, monkeypatch)
+
+    rc = asyncio.run(mod.inject("floor", "STATUS ping", timeout=2.0, pin_session=True))
+    out = capsys.readouterr()
+    blob = out.out + out.err
+
+    assert rc == 0, blob
+    assert "ACP_INJECT_OK" in out.out
+    assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-pinned"
+    assert any(m.get("method") == "session/load" for m in ws.sent)
+    assert not any(m.get("method") == "session/new" for m in ws.sent)
+    assert ws.cancel_sessions == []
+
+
+def test_pin_session_prompt_fail_does_not_cancel_or_remint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_pin_fail")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    ws = FakeAcpWs(prompt_chunks=[])
+    _patch_connect(mod, ws, monkeypatch)
+
+    async def boom(self: Any, session_id: str, text: str, timeout: float, **kwargs: Any) -> str:
+        raise RuntimeError("session/prompt error: shell.prompt.start_blocked")
+
+    monkeypatch.setattr(mod.AcpClient, "session_prompt", boom)
+    rc = asyncio.run(mod.inject("floor", "retry", timeout=2.0, pin_session=True))
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 1, blob
+    assert "ACP_INJECT_FAIL" in blob
+    assert "ACP_INJECT_CANCEL" not in blob
+    assert ws.cancel_sessions == []
+    assert (seat_dir / "acp.session").read_text(encoding="utf-8").strip() == "sess-pinned"
+
+
+def test_leftover_dispatch_empty_tools_still_not_work_and_cancels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_leftover_dispatch")
+    seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(prompt_chunks=[], prompt_updates=[_tool_update()])
+    _patch_connect(mod, ws, monkeypatch)
+
+    rc = asyncio.run(mod.inject("floor", "ACP_PING STATUS/CONTINUE", timeout=0.35))
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 1, blob
+    assert flags and flags[0]["harvested_early"] is False
+    assert flags[0]["tool_events"] > 0
+    assert "ACP_INJECT_OK" not in out.out
+    assert "ACP_INJECT_TIMEOUT" in blob
+    assert ws.cancel_sessions == ["sess-harvest"]
     assert (seat_dir / "acp.inject.stale").is_file()
 
 
-def test_duplex_extract_matches_inject() -> None:
-    inject = _load(INJECT_PY, "gcs_acp_inject_duplex_cmp")
-    duplex = _load(ROOT / "scripts" / "a2a" / "duplex.py", "gcs_a2a_duplex_cmp")
-    blob = "chatter\nRESULT bc-id=none pr=none a2a=t-1 notes=ok\n"
-    assert inject.extract_result_line(blob) == duplex.extract_result_line(blob)
-    rec = {"parts": [{"kind": "data", "data": {"from": "ops"}}]}
-    assert duplex.extract_caller(rec) == "ops"
+def test_leftover_tools_then_status_may_harvest_early(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load(ACP_INJECT, "gcs_acp_inject_leftover_then_status")
+    _prep_seat(mod, tmp_path, monkeypatch)
+    monkeypatch.setattr(mod, "_duplex_after_inject", lambda *a, **k: None)
+    flags = _capture_prompt_harvest(mod, monkeypatch)
+    ws = FakeAcpWs(
+        prompt_chunks=[f"{STATUS_LINE}\n"],
+        prompt_updates=[_tool_update("tc-stale", "leftover")],
+    )
+    _patch_connect(mod, ws, monkeypatch)
+
+    rc = asyncio.run(
+        mod.inject("floor", "ACP_PING STATUS/CONTINUE", timeout=2.0, pin_session=True)
+    )
+    out = capsys.readouterr()
+    blob = out.out + out.err
+    assert rc == 0, blob
+    assert "ACP_INJECT_OK" in out.out
+    assert flags and flags[0]["harvested_early"] is True
+    assert ws.cancel_sessions == []
 
 
-def test_compose_extra_and_footer_forbid_caller_send_ack() -> None:
-    dispatch = _load(DISPATCH_PY, "gcs_a2a_dispatch_compose")
-    extra = dispatch._compose_extra("t-1", "c-1", "hello")
-    lowered = extra.lower()
-    assert "a2a_task_id=t-1" in lowered
-    assert "result" in lowered
-    assert "duplex" in lowered
-    assert "send.sh" in lowered or "a2a_send" in lowered
-    assert "do not" in lowered
-    footer = FOOTER.read_text(encoding="utf-8").lower()
-    assert "duplex" in footer
-    assert "send.sh" in footer
-    assert "do not" in footer
+def test_compose_extra_does_not_train_result_only_hangup() -> None:
+    dispatch = _load(DISPATCH, "gcs_a2a_dispatch_harvest")
+    extra = dispatch._compose_extra("task-1", "ctx-1", "STATUS ping")
+    low = extra.lower()
+    assert "quoting token then result" not in low
+    assert "print a result" not in low
+    assert "do not idle" in low or "tools are allowed" in low or "remain" in low
+    assert "duplex" in low
+    assert "send.sh" in extra or "a2a_send" in extra
+
+
+def test_footer_and_docs_do_not_train_result_only_hangup() -> None:
+    footer = FOOTER.read_text(encoding="utf-8")
+    footer_l = footer.lower()
+    assert "stay silent after" not in footer_l
+    assert "result-only" in footer_l
+    assert "do not idle" in footer_l or "remain" in footer_l
+    a2a = A2A_DOC.read_text(encoding="utf-8").lower()
+    agents = AGENTS_DOC.read_text(encoding="utf-8").lower()
+    blob = a2a + "\n" + agents
+    assert "session/cancel" in blob or "do not session/cancel" in blob
+    assert "cached_token" in blob or "auth.json" in blob
+    assert "handoff" in blob
+    assert "queue/changed" in blob
+    assert "no-accept" in blob or "dead session" in blob
+    assert "silence" in blob or "not a start" in blob
+    assert "wake-daemon" in blob or "seat-wake-loop" in blob

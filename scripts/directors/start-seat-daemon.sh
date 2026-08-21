@@ -29,6 +29,11 @@ LOG_FILE="$SD/daemon.log"
 URL_FILE="$SD/acp.url"
 SECRET_FILE="$SD/acp.secret"
 
+export GROK_MEMORY="${GROK_MEMORY:-1}"
+export GROK_HOME="${GROK_HOME:-$SD/grok-home}"
+mkdir -p "$GROK_HOME"
+install_seat_identity "$SEAT"
+
 if daemon_healthy "$SEAT"; then
   pid="$(read_pid_file "$PID_FILE")"
   echo "SEAT_DAEMON_ALREADY seat=$SEAT pid=$pid port=$PORT url=ws://127.0.0.1:${PORT}/ws"
@@ -73,6 +78,8 @@ printf '%s\n' "$URL" >"$URL_FILE"
 export GCS_ROOT="$ROOT"
 export GCS_A2A_STATE="$STATE_DIR"
 export GCS_DIRECTOR_SEAT="$SEAT"
+export GROK_MEMORY="${GROK_MEMORY:-1}"
+export GROK_HOME="${GROK_HOME:-$SD/grok-home}"
 export PATH="${HOME}/.grok/bin:${PATH:-}"
 
 {
@@ -122,3 +129,8 @@ if [[ "$ok" != "1" ]]; then
 fi
 
 echo "SEAT_DAEMON_START seat=$SEAT pid=$pid port=$PORT url=ws://127.0.0.1:${PORT}/ws profile=$PROFILE log=$LOG_FILE"
+{
+  echo "kind=grok-build-serve"
+  echo "awake=inbox-acp-prompt"
+  echo "mode=acp-serve"
+} >"$SD/grow.mode"

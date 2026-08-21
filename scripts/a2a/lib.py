@@ -63,6 +63,36 @@ def normalize_seat(seat: str) -> str:
     return seat.strip().lower().replace("_", "-")
 
 
+def canonical_seat(seat: str, root: Path | None = None) -> str:
+    """Map aliases onto the registry seat name (studio-ops → ops)."""
+    key = normalize_seat(seat)
+    entries = _seat_entries(root)
+    if key in entries:
+        return key
+    aliases = {"studio-ops": "ops", "ops": "studio-ops"}
+    alt = aliases.get(key)
+    if alt and alt in entries:
+        return alt
+    return key
+
+
+def grow_seats(root: Path | None = None) -> frozenset[str]:
+    """GROW inbox owners: persistent serve + wake-daemon, not leftover dispatch.
+
+    Default GCS_GROW_SEATS / GCS_ACP_SEATS is floor,studio-ops. The example
+    registry names ops `ops`; both aliases are included so dispatch skip and
+    wake loops agree.
+    """
+    raw = env_first("GCS_GROW_SEATS", "GCS_ACP_SEATS", default="floor,studio-ops")
+    seats = {normalize_seat(s) for s in raw.split(",") if s.strip()}
+    if "studio-ops" in seats:
+        seats.add("ops")
+    if "ops" in seats:
+        seats.add("studio-ops")
+    skipped = skip_seats(root)
+    return frozenset(s for s in seats if s and s not in skipped)
+
+
 def _seat_entries(root: Path | None = None) -> dict[str, dict[str, Any]]:
     raw = load_registry(root).get("seats") or {}
     out: dict[str, dict[str, Any]] = {}
@@ -87,14 +117,20 @@ def launch_seats(root: Path | None = None) -> tuple[str, ...]:
     ordered = tuple(name for name in _seat_entries(root) if name not in skipped)
     env_list = env_first("GCS_ACP_SEATS")
     if env_list:
-        wanted = [normalize_seat(s) for s in env_list.split(",") if s.strip()]
+        wanted = [canonical_seat(s, root) for s in env_list.split(",") if s.strip()]
         known = set(ordered)
-        return tuple(s for s in wanted if s in known)
+        seen: set[str] = set()
+        out: list[str] = []
+        for s in wanted:
+            if s in known and s not in seen:
+                seen.add(s)
+                out.append(s)
+        return tuple(out)
     return ordered
 
 
 def seat_acp_port(seat: str, root: Path | None = None) -> int:
-    key = normalize_seat(seat)
+    key = canonical_seat(seat, root)
     entries = _seat_entries(root)
     if key not in entries:
         raise KeyError(f"unknown seat: {seat}")
@@ -181,8 +217,9 @@ def compose_extra(task_id: str | None, context: str | None, message: str | None)
     return (
         f"A2A_TASK_ID={task_id or 'none'}\n"
         f"A2A_CONTEXT={context or 'none'}\n"
-        "Print RESULT (or PARK_ACK / QA_*_RESULT). Do not send.sh / a2a_send to ack "
-        "the caller — duplex notifies.\n"
+        "Keep-alive / status turn: do work, do not idle. Tools are allowed. "
+        "RESULT is optional duplex — RESULT-only / PONG is a bug. Remain this seat. "
+        "Do not send.sh / a2a_send to ack the caller — duplex notifies.\n"
         f"MESSAGE:\n{message or ''}\n"
     )
 
@@ -222,8 +259,8 @@ def cloud_repo_ref() -> str:
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print(
-            "usage: lib.py <launch-seats|skip-seats|port SEAT|normalize SEAT|"
-            "root|state|registry|cloud-repo|cloud-ref>",
+            "usage: lib.py <launch-seats|skip-seats|grow-seats|port SEAT|"
+            "normalize SEAT|canonical SEAT|root|state|registry|cloud-repo|cloud-ref>",
             file=sys.stderr,
         )
         return 2
@@ -233,6 +270,9 @@ def main(argv: list[str]) -> int:
         return 0
     if cmd == "skip-seats":
         print("\n".join(sorted(skip_seats())))
+        return 0
+    if cmd == "grow-seats":
+        print("\n".join(sorted(grow_seats())))
         return 0
     if cmd == "port":
         if len(argv) < 2:
@@ -245,6 +285,12 @@ def main(argv: list[str]) -> int:
             print("usage: lib.py normalize SEAT", file=sys.stderr)
             return 2
         print(normalize_seat(argv[1]))
+        return 0
+    if cmd == "canonical":
+        if len(argv) < 2:
+            print("usage: lib.py canonical SEAT", file=sys.stderr)
+            return 2
+        print(canonical_seat(argv[1]))
         return 0
     if cmd == "root":
         print(repo_root())
