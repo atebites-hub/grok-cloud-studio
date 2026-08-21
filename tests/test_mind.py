@@ -20,6 +20,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 MIND_PY = REPO / "scripts" / "directors" / "mind.py"
 MIND_LOOP = REPO / "scripts" / "directors" / "seat-mind-loop.sh"
+SEAT_COMMON = REPO / "scripts" / "directors" / "seat-daemon-common.sh"
 BUS_SH = REPO / "scripts" / "a2a" / "start-studio-bus.sh"
 DISPATCH_PY = REPO / "scripts" / "a2a" / "dispatch.py"
 LIB_PY = REPO / "scripts" / "a2a" / "lib.py"
@@ -91,12 +92,47 @@ def _argv_log(path: Path) -> list[dict]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+_BANNED_GROK_FLAGS = ("-p", "--single", "--trust", "--agent-profile", "--plugin-dir")
+_LAW_SID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+
+def _law_argv(
+    sid: str,
+    mail: Path,
+    *,
+    minted: bool,
+    grok: str = "grok",
+) -> list[str]:
+    pin = ["--resume", sid] if minted else ["--session-id", sid]
+    return [
+        grok,
+        *pin,
+        "--prompt-file",
+        str(mail),
+        "--verbatim",
+        "--output-format",
+        "json",
+        "--always-approve",
+        "--permission-mode",
+        "bypassPermissions",
+        "--max-turns",
+        "40",
+    ]
+
+
+def _assert_no_banned_flags(argv: list[str]) -> None:
+    for flag in _BANNED_GROK_FLAGS:
+        assert flag not in argv, argv
+
+
 def _write_fake_grok(
     tmp_path: Path,
     log: Path,
     *,
     rc: int = 0,
     stdout: str | None = None,
+    stderr: str = "",
+    session_in_use_on_session_id: bool = False,
 ) -> Path:
     blob = stdout if stdout is not None else json.dumps({"ok": True, "role": "assistant"})
     script = (
@@ -112,6 +148,11 @@ def _write_fake_grok(
         "    'GROK_MEMORY': os.environ.get('GROK_MEMORY', ''),\n"
         "})\n"
         "log.write_text(json.dumps(rows))\n"
+        f"sys.stderr.write({stderr!r})\n"
+        f"in_use = {bool(session_in_use_on_session_id)}\n"
+        "if in_use and '--session-id' in sys.argv:\n"
+        "    sys.stderr.write('error: session already in use\\n')\n"
+        "    raise SystemExit(2)\n"
         f"sys.stdout.write({blob!r})\n"
         f"raise SystemExit({int(rc)})\n"
     )
@@ -160,6 +201,7 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert plugin.get("name") == "studio-mind"
     src = MIND_PY.read_text(encoding="utf-8")
     loop = MIND_LOOP.read_text(encoding="utf-8")
+    common = SEAT_COMMON.read_text(encoding="utf-8")
     doc = MIND_DOC.read_text(encoding="utf-8")
     for blob in (src, loop):
         assert "acp_inject" not in blob
@@ -176,16 +218,24 @@ def test_mind_scripts_and_docs_exist() -> None:
         assert "--continue" not in blob
     assert "--resume" in src
     assert "--session-id" in src
-    assert "--plugin-dir" in src
+    assert "--prompt-file" in src
+    assert "install_studio_mind_plugin" in loop
+    assert "plugin install" in common
+    assert "--trust" in common
+    assert "studio-mind" in common
     assert "def parse_tool_calls" not in src
     assert "Bot-equivalent" in doc or "bot-equivalent" in doc
     assert "leftover host os" in doc.lower() or "acp inject is leftover" in doc.lower()
     assert "GCS_MIND_SEATS" in doc
     assert "session/prompt" in doc
-    assert "--plugin-dir" in doc
+    assert "--prompt-file" in doc
+    assert "plugin install" in doc
+    assert "grok -p --resume" not in doc
     assert "mailbox" in doc.lower()
     assert "/home/box" not in doc
     assert "palemon" not in doc.lower()
+    assert "already in use" in doc.lower()
+    assert "240" in doc
 
 
 def test_fake_grok_mints_then_resumes_same_uuid(
@@ -203,7 +253,7 @@ def test_fake_grok_mints_then_resumes_same_uuid(
     rows = _argv_log(log)
     assert len(rows) == 1
     argv = rows[0]["argv"]
-    assert "-p" in argv
+    _assert_no_banned_flags(argv)
     assert "--prompt-file" in argv
     mail = Path(_flag_value(argv, "--prompt-file"))
     assert mail.is_file()
@@ -213,20 +263,21 @@ def test_fake_grok_mints_then_resumes_same_uuid(
     assert "--resume" not in argv
     assert "--fork-session" not in argv
     assert "--continue" not in argv
-    assert "--verbatim" in argv
-    assert "--output-format" in argv
-    assert _flag_value(argv, "--output-format") == "json"
-    assert "--always-approve" in argv
-    assert "--permission-mode" in argv
-    assert _flag_value(argv, "--permission-mode") == "bypassPermissions"
-    assert "--trust" in argv
-    assert "--max-turns" in argv
-    assert _flag_value(argv, "--max-turns") == "40"
-    assert "--plugin-dir" in argv
-    plugin_path = _flag_value(argv, "--plugin-dir")
-    assert "studio-mind" in plugin_path
-    assert Path(plugin_path).is_dir()
-    assert "--agent-profile" in argv
+    assert "--agent" not in argv
+    assert argv == [
+        "--session-id",
+        sid,
+        "--prompt-file",
+        str(mail),
+        "--verbatim",
+        "--output-format",
+        "json",
+        "--always-approve",
+        "--permission-mode",
+        "bypassPermissions",
+        "--max-turns",
+        "40",
+    ]
     assert rows[0]["GROK_MEMORY"] == "1"
     assert str(state / "floor" / "grok-home") in rows[0]["GROK_HOME"]
     assert rows[0]["cwd"] == str(REPO)
@@ -242,11 +293,25 @@ def test_fake_grok_mints_then_resumes_same_uuid(
     rows2 = _argv_log(log)
     assert len(rows2) == 2
     argv2 = rows2[1]["argv"]
+    _assert_no_banned_flags(argv2)
     assert "--resume" in argv2
     assert _flag_value(argv2, "--resume") == sid
     assert "--session-id" not in argv2
-    assert "--plugin-dir" in argv2
-    assert "-p" in argv2
+    assert "--agent" not in argv2
+    assert argv2 == [
+        "--resume",
+        sid,
+        "--prompt-file",
+        str(Path(_flag_value(argv2, "--prompt-file"))),
+        "--verbatim",
+        "--output-format",
+        "json",
+        "--always-approve",
+        "--permission-mode",
+        "bypassPermissions",
+        "--max-turns",
+        "40",
+    ]
     assert "--prompt-file" in argv2
     empty = mind.process_once("floor")
     assert empty["consumed"] == 0
@@ -279,10 +344,17 @@ def test_empty_json_harvest_does_not_remint(
 
 
 def test_grok_nonzero_exit_does_not_advance_offset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     log = tmp_path / "grok.argv.json"
-    grok = _write_fake_grok(tmp_path, log, rc=1, stdout="")
+    key = "test-cursor-api-key-should-not-leak"
+    grok = _write_fake_grok(
+        tmp_path,
+        log,
+        rc=1,
+        stdout="",
+        stderr=f"CURSOR_API_KEY={key} boom",
+    )
     mind, state = _prep_mind(tmp_path, monkeypatch, unique="failrc", grok=grok)
     _append_inbox(state, "floor", "task-fail-1", "do work")
     result = mind.process_once("floor")
@@ -292,9 +364,15 @@ def test_grok_nonzero_exit_does_not_advance_offset(
     assert _transcript_rows(state, "floor") == []
     sid = _session_id(state, "floor")
     argv = _argv_log(log)[0]["argv"]
+    _assert_no_banned_flags(argv)
     assert "--session-id" in argv
     assert "--resume" not in argv
     assert _flag_value(argv, "--session-id") == sid
+    err = capsys.readouterr().err
+    assert "MIND_FAIL" in err
+    assert key not in err
+    assert "CURSOR_API_KEY=[redacted]" in err
+    assert "stderr=" in err
 
 
 def test_process_once_does_not_execute_plugins_from_stdout(
@@ -443,32 +521,175 @@ def test_process_once_refuses_skip_seat(
 def test_grok_cli_argv_first_and_later_turns() -> None:
     mind = _load(MIND_PY, "gcs_mind_argv")
     mail = Path("/tmp/gcs-mind-mail.txt")
-    sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    sid = _LAW_SID
     first = mind.grok_cli_argv(
         session_id=sid,
         minted=False,
         mail_path=mail,
-        soul="/tmp/SOUL.md",
-        plugin_dir=PLUGIN_DIR,
         grok="grok",
     )
     later = mind.grok_cli_argv(
         session_id=sid,
         minted=True,
         mail_path=mail,
-        plugin_dir=PLUGIN_DIR,
         grok="grok",
     )
-    assert first[:2] == ["grok", "-p"]
-    assert "--session-id" in first and sid in first
-    assert "--resume" not in first
-    assert "--resume" in later and sid in later
-    assert "--session-id" not in later
+    assert first == _law_argv(sid, mail, minted=False)
+    assert later == _law_argv(sid, mail, minted=True)
+    _assert_no_banned_flags(first)
+    _assert_no_banned_flags(later)
+    assert first[1] == "--session-id"
+    assert later[1] == "--resume"
     joined = " ".join(first + later)
     assert "--fork-session" not in joined
     assert "--continue" not in joined
     assert "session/prompt" not in joined
     assert "/home/box" not in joined
+    assert "--agent" not in first
+    assert "--agent" not in later
+
+
+def test_grok_cli_argv_agent_only_for_yaml_frontmatter(tmp_path: Path) -> None:
+    mind = _load(MIND_PY, "gcs_mind_agent_yaml")
+    mail = tmp_path / "mail.txt"
+    mail.write_text("hi\n", encoding="utf-8")
+    sid = _LAW_SID
+    yaml_agent = tmp_path / "agent.md"
+    yaml_agent.write_text("---\nname: floor-mind\n---\nYou are floor.\n", encoding="utf-8")
+    soul = tmp_path / "SOUL.md"
+    soul.write_text("# floor\nNamed identity, not an agent file.\n", encoding="utf-8")
+    missing = tmp_path / "nope.md"
+    assert mind.yaml_agent_file(yaml_agent) == str(yaml_agent)
+    assert mind.yaml_agent_file(soul) is None
+    assert mind.yaml_agent_file(None) is None
+    assert mind.yaml_agent_file(missing) is None
+    with_yaml = mind.grok_cli_argv(
+        session_id=sid,
+        minted=True,
+        mail_path=mail,
+        agent=str(yaml_agent),
+        grok="grok",
+    )
+    with_soul = mind.grok_cli_argv(
+        session_id=sid,
+        minted=True,
+        mail_path=mail,
+        agent=str(soul),
+        grok="grok",
+    )
+    law = _law_argv(sid, mail, minted=True)
+    assert with_yaml == law + ["--agent", str(yaml_agent)]
+    assert with_soul == law
+    _assert_no_banned_flags(with_yaml)
+    _assert_no_banned_flags(with_soul)
+
+
+def test_session_already_in_use_resumes_same_uuid(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "grok.argv.json"
+    grok = _write_fake_grok(tmp_path, log, session_in_use_on_session_id=True)
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="inuse", grok=grok)
+    _append_inbox(state, "floor", "task-inuse-1", "first mail")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 1
+    sid = _session_id(state, "floor")
+    uuid.UUID(sid)
+    rows = _argv_log(log)
+    assert len(rows) == 2
+    first, retry = rows[0]["argv"], rows[1]["argv"]
+    _assert_no_banned_flags(first)
+    _assert_no_banned_flags(retry)
+    assert "--session-id" in first
+    assert _flag_value(first, "--session-id") == sid
+    assert "--resume" not in first
+    assert "--resume" in retry
+    assert _flag_value(retry, "--resume") == sid
+    assert "--session-id" not in retry
+    assert (state / "floor" / "mind" / "session.minted").is_file()
+    assert _session_id(state, "floor") == sid
+    _append_inbox(state, "floor", "task-inuse-2", "second mail")
+    mind.process_once("floor")
+    assert _session_id(state, "floor") == sid
+    argv3 = _argv_log(log)[2]["argv"]
+    assert "--resume" in argv3
+    assert _flag_value(argv3, "--resume") == sid
+    assert "--session-id" not in argv3
+
+
+def test_mind_fail_logs_redacted_stderr_240(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    log = tmp_path / "grok.argv.json"
+    key = "test-cursor-api-key-should-not-leak"
+    noise = "N" * 400
+    grok = _write_fake_grok(
+        tmp_path, log, rc=2, stdout="", stderr=f"CURSOR_API_KEY={key} clap: {noise}"
+    )
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="fail240", grok=grok)
+    _append_inbox(state, "floor", "task-fail-240", "do work")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 0
+    err = capsys.readouterr().err
+    assert "MIND_FAIL" in err
+    assert key not in err
+    assert "CURSOR_API_KEY=[redacted]" in err
+    assert mind.MIND_FAIL_STDERR_CHARS == 240
+    snippet = err.split("stderr=", 1)[1].strip()
+    assert len(snippet) <= 240
+    assert "N" * 400 not in err
+
+
+def test_seat_mind_loop_installs_studio_mind_plugin(tmp_path: Path) -> None:
+    log = tmp_path / "plugin.argv"
+    grok = _write_exec(
+        tmp_path / "fake-bin" / "grok",
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$@" >> "{log}"\n'
+        'printf "GROK_HOME=%s\\n" "$GROK_HOME" >> '
+        f'"{log}.env"\n'
+        "exit 0\n",
+    )
+    env = {
+        "PATH": f"{grok.parent}:/usr/bin:/bin",
+        "HOME": str(tmp_path / "home"),
+        "GCS_ROOT": str(REPO),
+        "GCS_A2A_STATE": str(tmp_path / "a2a-state"),
+        "GROK_HOME": str(tmp_path / "grok-home"),
+        "TASKBOARD_BIN": str(
+            _write_exec(tmp_path / "host-bin" / "taskboard", "#!/bin/sh\nexit 0\n")
+        ),
+        "LC_ALL": "C",
+        "TERM": "dumb",
+    }
+    script = r"""
+set -euo pipefail
+source scripts/directors/seat-daemon-common.sh
+install_studio_mind_plugin floor
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        cwd=str(REPO),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    argv = log.read_text(encoding="utf-8") if log.is_file() else ""
+    assert "plugin" in argv, argv
+    assert "install" in argv, argv
+    assert "--trust" in argv, argv
+    assert "studio-mind" in argv, argv
+    assert "-p" not in argv.split(), argv
+    assert "--plugin-dir" not in argv, argv
+    assert "--agent-profile" not in argv, argv
+    grok_home = (tmp_path / "plugin.argv.env").read_text(encoding="utf-8")
+    assert str(tmp_path / "grok-home") in grok_home
+    loop = MIND_LOOP.read_text(encoding="utf-8")
+    assert "install_studio_mind_plugin" in loop
+    assert "plugin install" in loop or "install_studio_mind_plugin" in loop
 
 
 def test_a2a_send_and_cloud_launch_plugins_missing_binaries(

@@ -5,9 +5,11 @@ Primary (Python stdio MCP + Cursor plugin manifests):
 - `plugins/a2a`
 - `plugins/cursor-cloud`
 
-Grok `--plugin-dir` inject for opted-in seat mind (not Cursor `${workspaceFolder}`):
+Grok `--plugin-dir` is a grok **agent** flag (not headless). Opted-in seat mind
+installs this plugin into seat `GROK_HOME` via `grok plugin install --trust`
+(see `docs/studio/MIND.md`):
 
-- `plugins/studio-mind` — `ticket`, `a2a_send`, `cloud_launch` (see `docs/studio/MIND.md`)
+- `plugins/studio-mind` — `ticket`, `a2a_send`, `cloud_launch`
 
 ```bash
 grok plugin install ./plugins/a2a --trust
