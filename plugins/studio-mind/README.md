@@ -20,7 +20,7 @@ Not a Cursor `${workspaceFolder}` MCP. Not ACP `session/prompt`.
 Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers
 only — they are not a second agent loop.
 
-Cursor CLI fallback (grok HTTP 402 / `GCS_MIND_RUNNER=cursor`) does not get
+Cursor CLI (`GCS_MIND_RUNNER=cursor`, or auto after `MIND_SWITCH`) does not get
 this plugin or seat `GROK_HOME` taskboard MCP. Those do not transfer. Cursor
 uses Cursor builtins (shell/files); `ticket`, `scripts/a2a/send.sh`, and
 `scripts/launch-cloud-extra-high.sh` stay on PATH.
