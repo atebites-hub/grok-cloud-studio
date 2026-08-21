@@ -1,11 +1,13 @@
 """ACP inject leftover / pin-session rules (studio host OS).
 
-HANDOFF only after this-prompt STATUS or a this-prompt work tool.
-Keep-alive chatter (len>=40) is not HANDOFF. Queue is not accept.
-Stay on the websocket after the first tool until STATUS / work tool or
-session/prompt RPC completes with STATUS. Dead sessions remint once after
-N consecutive no-start nacks (default 3, nack window 120s). RESULT is
-duplex, not success. Leftover dispatch still cancels.
+GROW stay-connected law: HANDOFF only after this-prompt STATUS or a
+this-prompt work tool on invoked argv. Keep-alive chatter (any length)
+is not HANDOFF. Queue is not accept. Stay on the websocket after the
+first accept signal until STATUS / work tool or the full inject timeout.
+Dead sessions remint once after 3 consecutive no-start nacks (not 1).
+Accept deadline default 120s (not 30). RESULT is duplex, not success.
+Leftover dispatch still cancels. Tests are the spec: they fail if
+defaults revert to 30s / streak=1.
 """
 from __future__ import annotations
 
@@ -26,6 +28,8 @@ DISPATCH = REPO / "scripts" / "a2a" / "dispatch.py"
 FOOTER = REPO / "scripts" / "directors" / "common_footer.txt"
 A2A_DOC = REPO / "docs" / "A2A.md"
 AGENTS_DOC = REPO / "AGENTS.md"
+ENV_EXAMPLE = REPO / ".env.example"
+WAKE_PY = REPO / "scripts" / "a2a" / "wake-daemon.py"
 
 RESULT_LINE = "RESULT bc-id=none pr=none a2a=task-1 notes=park-ok"
 STATUS_LINE = "STATUS quoting token tick-1. Working."
@@ -321,6 +325,26 @@ def test_seat_produced_work_pong_is_not_work() -> None:
     assert mod.pin_session_ready_to_leave("Donald") is False
     assert mod.pin_session_ready_to_leave("x" * 40) is False
     assert mod.pin_session_ready_to_leave("") is False
+
+
+def test_grow_law_defaults_in_source_not_overlay() -> None:
+    """Spec: defaults live in acp_inject.py. Revert to 30s/streak=1 and fail."""
+    src = ACP_INJECT.read_text(encoding="utf-8")
+    wake_src = WAKE_PY.read_text(encoding="utf-8")
+    env = ENV_EXAMPLE.read_text(encoding="utf-8")
+    assert 'os.environ.get("GCS_ACP_ACCEPT_DEADLINE", "120")' in src
+    assert 'os.environ.get("GCS_ACP_DEAD_STREAK", "3")' in src
+    assert 'os.environ.get("GCS_ACP_ACCEPT_DEADLINE", "30")' not in src
+    assert 'os.environ.get("GCS_ACP_DEAD_STREAK", "1")' not in src
+    assert 'os.environ.get("GCS_WAKE_ACP_TIMEOUT", "600")' in wake_src
+    assert 'os.environ.get("GCS_WAKE_ACP_TIMEOUT", "180")' not in wake_src
+    assert "GCS_ACP_ACCEPT_DEADLINE=120" in env
+    assert "GCS_ACP_DEAD_STREAK=3" in env
+    assert "GCS_ACP_ACCEPT_DEADLINE=30" not in env
+    assert "GCS_ACP_DEAD_STREAK=1" not in env
+    assert "GCS_WAKE_ACP_TIMEOUT=600" in env
+    assert "GROW stay-connected contract" in src
+    assert "studio.env overlay" in src
 
 
 def test_leftover_tools_empty_text_is_not_work() -> None:
@@ -1179,7 +1203,7 @@ def test_started_turn_timeout_does_not_remint_on_streak_one(
 def test_pin_session_started_stays_past_accept_deadline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """First tool + Donald is a start: stay until STATUS, past the 30s-style nack window."""
+    """First tool + Donald is a start: stay until STATUS, past the nack window."""
     mod = _load(ACP_INJECT, "gcs_acp_inject_pin_stay_past_nack")
     seat_dir = _prep_seat(mod, tmp_path, monkeypatch)
     (seat_dir / "acp.session").write_text("sess-pinned\n", encoding="utf-8")
@@ -1549,3 +1573,8 @@ def test_footer_and_docs_do_not_train_result_only_hangup() -> None:
     assert "no-accept" in blob or "dead session" in blob
     assert "silence" in blob or "not a start" in blob
     assert "wake-daemon" in blob or "seat-wake-loop" in blob
+    assert "default 120" in a2a or "default 120s" in a2a
+    assert "default 3" in a2a
+    assert "default 30s" not in a2a
+    assert "gcs_acp_dead_streak`, default 1)" not in a2a
+    assert "studio.env" in a2a or "acp_inject.py" in a2a

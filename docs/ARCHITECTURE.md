@@ -40,7 +40,7 @@ Grok Bot orchestrator seats (`docs/a2a/bot-agents.json`, default seat `orchestra
 
 ## ACP
 
-`scripts/directors/start-seat-daemon.sh <seat>` runs `grok agent serve --no-leader` on the registry ACP port (8740+) with `GROK_MEMORY=1` and named identity (`SOUL.md`). ACP serve cannot attach to `grok agent leader` (CLI v1.0.3 exits immediately). `GROK_USE_LEADER=1` only starts `scripts/directors/start-grok-leader.sh` so one-shot `grok -p` fallbacks can share a backend. Dispatch will not auto-start seats outside `GCS_ACP_SEATS` and does not ACP-inject GROW inboxes. Secrets stay in `.a2a-state/<seat>/acp.secret` (gitignored). GROW pin-session inject stays on the websocket until STATUS/work or RPC complete; leftover dispatch still harvests then `session/cancel`s. See `docs/A2A.md` and `docs/studio/GROK_LEADER.md`.
+`scripts/directors/start-seat-daemon.sh <seat>` runs `grok agent serve --no-leader` on the registry ACP port (8740+) with `GROK_MEMORY=1` and named identity (`SOUL.md`). ACP serve cannot attach to `grok agent leader` (CLI v1.0.3 exits immediately). `GROK_USE_LEADER=1` only starts `scripts/directors/start-grok-leader.sh` so one-shot `grok -p` fallbacks can share a backend. Dispatch will not auto-start seats outside `GCS_ACP_SEATS` and does not ACP-inject GROW inboxes. Secrets stay in `.a2a-state/<seat>/acp.secret` (gitignored). GROW pin-session inject stays on the websocket until STATUS/work-tool (argv) or timeout; leftover dispatch still harvests then `session/cancel`s. See `docs/A2A.md` and `docs/studio/GROK_LEADER.md`.
 
 ## Extra High
 
