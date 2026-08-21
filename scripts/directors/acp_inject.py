@@ -9,13 +9,16 @@ Usage:
 Reads .a2a-state/<seat>/{acp.url,acp.secret,acp.session}.
 Persists session id after session/new. Prefer session/load on later injects.
 
-GROW `--pin-session`: stay on the websocket until STATUS/substantial
-work or session/prompt RPC completes or timeout. Do not HANDOFF on 1s
-of silence, queue/changed alone, or first tool/queue — disconnecting
-there kills the turn. Timeout with no work is ACP_INJECT_TIMEOUT
-reason=no-accept (not HANDOFF). After N consecutive no-accept/hangup
-fails on the same acp.session id, one session/new (SESSION_DEAD).
-Do not session/cancel a handed-off live turn. Not leftover-mint-per-ping.
+GROW `--pin-session`: stay on the websocket until a this-prompt STATUS
+line or session/prompt RPC completion (or timeout). Do not HANDOFF on
+keep-alive chatter, 40-80 char acknowledgements, leftover tools,
+queue/changed, RESULT-only, or first tool — disconnecting there kills
+the turn. HANDOFF reason=status|rpc-complete only (never queue, tool,
+harvest, substantial-on-keepalive). Timeout with no work is
+ACP_INJECT_TIMEOUT reason=no-accept (not HANDOFF). After N consecutive
+no-accept/hangup fails on the same acp.session id, one session/new
+(SESSION_DEAD). Do not session/cancel a handed-off live turn.
+Not leftover-mint-per-ping.
 
 Leftover dispatch (no pin): completes on streamed work/STATUS (or this-prompt
 tool+text), not on session/prompt RPC end. Timeout and prompt-fail
@@ -47,8 +50,9 @@ STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 DEFAULT_TIMEOUT = float(os.environ.get("GCS_ACP_INJECT_TIMEOUT", "180"))
 # No-start window for pin-session. Silence / queue-only / leftover-tools with
 # empty text must nack here (never HANDOFF). If the actor DID start (this-prompt
-# tool or non-RESULT update), stay connected until STATUS/work or session/prompt
-# RPC completes, up to --timeout / GCS_ACP_INJECT_TIMEOUT.
+# tool or non-RESULT update), stay connected until STATUS or session/prompt
+# RPC completes, up to --timeout / GCS_ACP_INJECT_TIMEOUT. Keep-alive chatter
+# is a start, not leave.
 PIN_NACK_SEC = float(os.environ.get("GCS_ACP_ACCEPT_DEADLINE", "30"))
 # Consecutive no-accept / hangup-only fails on the same pin-session id
 # before one session/new (dead session: load works, actor never starts).
@@ -117,14 +121,41 @@ def seat_produced_work(text: str, *, tool_events: int = 0) -> bool:
     return len(body) >= 40
 
 
-def pin_session_ready_to_leave(text: str) -> bool:
-    """True when pin-session may disconnect: STATUS or substantial text.
+def pin_session_handoff_reason(
+    text: str,
+    *,
+    rpc_complete: bool = False,
+    tool_events: int = 0,
+) -> str | None:
+    """Pin-session HANDOFF reason, or None if inject must stay connected.
 
-    Queue, leftover/this-prompt tools, and short assistant text (chars=6
-    Donald) are not enough — disconnecting there kills the grok turn.
-    Ignores tool_events; leftover dispatch still uses seat_produced_work.
+    Only ``status`` (this-prompt STATUS line) or ``rpc-complete``
+    (session/prompt RPC finished a started turn). Never queue, tool,
+    harvest, or substantial-on-keepalive. Keep-alive chatter, leftover
+    tools, RESULT-only, and 40-80 char acknowledgements are not leave
+    until RPC completes a started turn.
     """
-    return seat_produced_work(text, tool_events=0)
+    raw = "" if text is None else str(text)
+    if _STATUS_LINE_RE.search(raw):
+        return "status"
+    if not rpc_complete:
+        return None
+    if stream_is_hangup_only(raw, tool_events=tool_events):
+        return None
+    if prompt_chunk_is_accept_signal(raw):
+        return "rpc-complete"
+    return None
+
+
+def pin_session_ready_to_leave(text: str) -> bool:
+    """True when pin-session may disconnect before RPC: this-prompt STATUS only.
+
+    Keep-alive chatter, leftover tools, queue/changed, RESULT-only, and
+    40-80 char acknowledgements are not leave. session/prompt RPC
+    completion is a separate leave path (HANDOFF reason=rpc-complete).
+    Leftover dispatch still uses seat_produced_work.
+    """
+    return pin_session_handoff_reason(text, rpc_complete=False) == "status"
 
 
 def prompt_chunk_is_accept_signal(text: str) -> bool:
@@ -376,6 +407,7 @@ class AcpClient:
         self._queued = False
         self._accepted: Optional[asyncio.Event] = None
         self._pin_wait = False
+        self._handoff_reason: Optional[str] = None
 
     async def connect(self) -> None:
         if _HAS_WEBSOCKETS:
@@ -473,7 +505,7 @@ class AcpClient:
                 self._prompt_done.set_exception(e)
 
     def _maybe_signal_done(self) -> None:
-        """Release leftover harvest on work/STATUS; pin-session only on STATUS/long text."""
+        """Release leftover harvest on work/STATUS; pin-session only on STATUS."""
         if self._result_seen is None or self._result_seen.is_set():
             return
         text = "".join(self._chunks)
@@ -604,13 +636,13 @@ class AcpClient:
         *,
         pin_session: bool = False,
     ) -> str:
-        """Wait for work/STATUS (leftover) or pin-session work/RPC.
+        """Wait for work/STATUS (leftover) or pin-session STATUS/RPC.
 
-        Pin-session stays on the websocket until STATUS/substantial text,
-        session/prompt RPC completes, or timeout. Queue and first tool are
-        not HANDOFF. Nack-window silence is not a start. RESULT-only is not
-        success. Leftover dispatch: harvest work/STATUS; leftover tools are
-        not work.
+        Pin-session stays on the websocket until a this-prompt STATUS line,
+        session/prompt RPC completes, or timeout. Keep-alive chatter,
+        leftover tools, queue/changed, RESULT-only, and first tool are
+        not HANDOFF. Nack-window silence is not a start. Leftover dispatch:
+        harvest work/STATUS; leftover tools are not work.
         """
         self._chunks = []
         self._tool_events = 0
@@ -619,6 +651,7 @@ class AcpClient:
         self._prompt_accepted = False
         self._queued = False
         self._pin_wait = pin_session
+        self._handoff_reason = None
         self._result_seen = asyncio.Event()
         self._accepted = asyncio.Event()
         rid = self._next_id
@@ -660,7 +693,9 @@ class AcpClient:
                 if "error" in msg:
                     raise RuntimeError(f"session/prompt error: {msg['error']}")
             if pin_session_ready_to_leave(reply):
-                return self._return_prompt_stream(rid, fut, reply, accepted=pin_session)
+                return self._return_prompt_stream(
+                    rid, fut, reply, accepted=pin_session, handoff_reason="status"
+                )
             if pin_session:
                 started_turn = bool(
                     self._accepted.is_set() or prompt_chunk_is_accept_signal(reply)
@@ -685,15 +720,25 @@ class AcpClient:
                             )
                     if pin_session_ready_to_leave(reply):
                         return self._return_prompt_stream(
-                            rid, fut, reply, accepted=True
+                            rid, fut, reply, accepted=True, handoff_reason="status"
                         )
                 if stream_is_hangup_only(reply, tool_events=self._tool_events):
                     self._pending.pop(rid, None)
                     raise asyncio.TimeoutError()
-                if fut.done() and seat_produced_work(
-                    reply, tool_events=self._tool_events
-                ):
-                    return self._return_prompt_stream(rid, fut, reply, accepted=False)
+                if fut.done():
+                    reason = pin_session_handoff_reason(
+                        reply,
+                        rpc_complete=True,
+                        tool_events=self._tool_events,
+                    )
+                    if reason in ("status", "rpc-complete"):
+                        return self._return_prompt_stream(
+                            rid,
+                            fut,
+                            reply,
+                            accepted=True,
+                            handoff_reason=reason,
+                        )
                 self._pending.pop(rid, None)
                 raise asyncio.TimeoutError()
             if seat_produced_work(reply, tool_events=self._tool_events):
@@ -723,9 +768,12 @@ class AcpClient:
         reply: str,
         *,
         accepted: bool,
+        handoff_reason: Optional[str] = None,
     ) -> str:
         if accepted:
             self._prompt_accepted = True
+            if handoff_reason in ("status", "rpc-complete"):
+                self._handoff_reason = handoff_reason
         if seat_produced_work(reply, tool_events=self._tool_events) and not fut.done():
             self._harvested_early = True
             self._pending.pop(rid, None)
@@ -864,6 +912,7 @@ async def inject(
                 if pin_session_ready_to_leave(reply):
                     harvested_early = True
                     client._prompt_accepted = True
+                    client._handoff_reason = "status"
                 elif started_turn:
                     print(
                         f"ACP_INJECT_TIMEOUT seat={seat} session={session_id} "
@@ -931,10 +980,12 @@ async def inject(
                 flush=True,
             )
         if pin_session and getattr(client, "_prompt_accepted", False):
-            print(
-                f"ACP_INJECT_HANDOFF seat={seat} session={session_id}",
-                flush=True,
-            )
+            reason = getattr(client, "_handoff_reason", None)
+            if reason in ("status", "rpc-complete"):
+                print(
+                    f"ACP_INJECT_HANDOFF seat={seat} session={session_id} reason={reason}",
+                    flush=True,
+                )
         print(
             f"ACP_INJECT_OK seat={seat} session={session_id} reused={int(reused)} chars={len(reply)}",
             flush=True,
@@ -974,11 +1025,13 @@ def main() -> int:
         action="store_true",
         help=(
             "GROW wake: session/load the pinned id (or session/new once if "
-            "missing). Stay on the websocket until STATUS/work or "
-            "session/prompt RPC completes. Do not HANDOFF on silence, "
-            "queue/changed, or first tool. After N no-accept/hangup fails "
-            "on the same id, one session/new (dead session). Disconnect "
-            "without session/cancel after a true HANDOFF."
+            "missing). Stay on the websocket until a this-prompt STATUS "
+            "line or session/prompt RPC completes. Do not HANDOFF on "
+            "keep-alive chatter, queue/changed, leftover tools, or first "
+            "tool. HANDOFF reason=status|rpc-complete. After N "
+            "no-accept/hangup fails on the same id, one session/new "
+            "(dead session). Disconnect without session/cancel after a "
+            "true HANDOFF."
         ),
     )
     args = parser.parse_args()
