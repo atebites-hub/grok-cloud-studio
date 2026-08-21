@@ -40,7 +40,8 @@ STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 START_DAEMON = ROOT / "scripts" / "directors" / "start-seat-daemon.sh"
 SEAT_PROMPT_ACP = ROOT / "scripts" / "directors" / "seat-prompt-acp.sh"
 SOULS_DIR = ROOT / "docs" / "studio" / "directors" / "souls"
-PROMPT_TIMEOUT_SEC = float(os.environ.get("GCS_WAKE_ACP_TIMEOUT", "180"))
+# GROW law: wrapper must outlive pin-session (default 600s).
+PROMPT_TIMEOUT_SEC = float(os.environ.get("GCS_WAKE_ACP_TIMEOUT", "600"))
 PROMPT_FAIL_BACKOFF_SEC = float(os.environ.get("GCS_WAKE_PROMPT_FAIL_BACKOFF", "15"))
 
 _LIB_DIR = Path(__file__).resolve().parent

@@ -1,6 +1,29 @@
 #!/usr/bin/env python3
 """Inject a prompt into a per-seat grok agent serve (ACP over WebSocket).
 
+GROW stay-connected contract (the law — defaults here, not a studio.env overlay):
+
+Pin-session stays on the websocket until:
+  1. this-prompt STATUS (HANDOFF reason=status), or
+  2. this-prompt real work tool matched on invoked argv only (reason=work):
+     ticket move|create, tb move|create, send.sh / a2a message send,
+     launch-cloud-extra-high actually run.
+
+It does NOT leave / remint / HANDOFF on:
+  - keep-alive scanning chatter (any length)
+  - a path or payload blob containing taskboard / launch-cloud-extra-high / send.sh
+  - list_dir / read / grep / Shell ls|cat|rg of those paths
+  - first N seconds of silence (model has not streamed yet)
+  - first no-accept on a pin-session (DEAD_STREAK default 3, not 1)
+  - RESULT-only, PONG, queue/changed, leftover tools
+
+If the actor DID start (any accept signal), stay until STATUS/work or the
+full inject timeout. Do not remint a started turn.
+
+Defaults: PIN_NACK_SEC / GCS_ACP_ACCEPT_DEADLINE = 120;
+DEAD_STREAK_N / GCS_ACP_DEAD_STREAK = 3.
+Work-tool match is invoked argv (tool name + args), not a flattened payload.
+
 Usage:
   acp_inject.py <seat> <extra-text...>
   acp_inject.py --seat <seat> --file <path>
@@ -9,22 +32,11 @@ Usage:
 Reads .a2a-state/<seat>/{acp.url,acp.secret,acp.session}.
 Persists session id after session/new. Prefer session/load on later injects.
 
-GROW `--pin-session`: stay on the websocket until this-prompt STATUS,
-a this-prompt real work tool (ticket move|create / tb move|create,
-send.sh / a2a message send, launch-cloud-extra-high), or
-session/prompt RPC completes with STATUS.
-Do not HANDOFF on keep-alive chatter (len>=40 acknowledgements),
-leftover harvest (queue + leftover tools + short text), queue/changed,
-RESULT-only, or first generic tool. Disconnecting there kills the
-turn. Timeout with no STATUS/work-tool is ACP_INJECT_TIMEOUT
-reason=no-accept (not HANDOFF). After N consecutive no-accept/hangup
-fails on the same acp.session id, one session/new (SESSION_DEAD).
-Do not session/cancel a handed-off live turn. Not leftover-mint-per-ping.
-ACP_INJECT_HANDOFF logs reason=status|work (never queue,tool,harvest,
-never substantial).
-Work-tool match is invoked argv (tool name + args), not a flattened
-payload blob: Shell ls/cat/rg of launch-cloud-extra-high.sh or send.sh
-is not work.
+Timeout with no STATUS/work-tool is ACP_INJECT_TIMEOUT reason=no-accept
+(not HANDOFF). After N consecutive no-accept/hangup fails on the same
+acp.session id, one session/new (SESSION_DEAD). Do not session/cancel a
+handed-off live turn. ACP_INJECT_HANDOFF logs reason=status|work (never
+queue, tool, harvest, substantial).
 
 Leftover dispatch (no pin): completes on streamed work/STATUS (or this-prompt
 tool+text), not on session/prompt RPC end. Timeout and prompt-fail
@@ -775,15 +787,14 @@ class AcpClient:
         *,
         pin_session: bool = False,
     ) -> str:
-        """Wait for work/STATUS (leftover) or pin-session STATUS/work-tool/RPC.
+        """Wait for work/STATUS (leftover) or pin-session STATUS/work-tool.
 
-        Pin-session stays on the websocket until this-prompt STATUS, a
-        this-prompt real work tool (ticket/tb CLI / send.sh / launch-cloud),
-        session/prompt RPC completes with STATUS, or timeout. Keep-alive
-        chatter, leftover harvest, queue, and first generic tool are not
-        HANDOFF. Nack-window silence is not a start. RESULT-only is not
-        success. Leftover dispatch: harvest work/STATUS; leftover tools
-        are not work.
+        GROW law: pin-session stays until this-prompt STATUS or a
+        this-prompt real work tool (invoked argv), or the full inject
+        timeout. Keep-alive chatter, payload blobs, inspect tools,
+        silence, queue, leftover harvest, RESULT-only, and first generic
+        tool are not HANDOFF. Nack-window silence is not a start. Do not
+        remint a started turn. Leftover dispatch: harvest work/STATUS.
         """
         self._chunks = []
         self._tool_events = 0
@@ -1194,15 +1205,15 @@ def main() -> int:
         action="store_true",
         help=(
             "GROW wake: session/load the pinned id (or session/new once if "
-            "missing). Stay on the websocket until this-prompt STATUS, "
+            "missing). Stay on the websocket until this-prompt STATUS or "
             "a this-prompt work tool (ticket move|create / tb move|create / "
-            "send.sh / launch-cloud-extra-high), or session/prompt RPC completes "
-            "with STATUS. Do not HANDOFF on keep-alive chatter, "
-            "silence, queue/changed, leftover harvest, or first "
-            "generic tool. HANDOFF reason=status|work only. After N "
-            "no-accept/hangup fails on the same id, one session/new "
-            "(dead session). Disconnect without session/cancel after a "
-            "true HANDOFF."
+            "send.sh / launch-cloud-extra-high on invoked argv). Do not "
+            "HANDOFF on keep-alive chatter, silence, queue/changed, leftover "
+            "harvest, payload blobs, inspect tools, or first generic tool. "
+            "HANDOFF reason=status|work only. After N no-accept/hangup fails "
+            "on the same id (default 3), one session/new (dead session). "
+            "Started turns stay until STATUS/work or timeout. "
+            "Disconnect without session/cancel after a true HANDOFF."
         ),
     )
     args = parser.parse_args()
