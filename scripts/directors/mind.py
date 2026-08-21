@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Grok Build seat mind: stateful Python core, everything is a plugin.
+"""Grok Build seat mind: mailbox + pin + stay-up.
 
-One long-lived process per opted-in seat. Mail is a turn: inbox.jsonl growth
-→ one model runner call → persist transcript + offset. The harness owns
-conversation state. Default runner is a grok CLI one-shot (cwd=$GCS_ROOT,
-GROK_HOME=seat grok-home). Tests inject a fake runner.
+Python is not the agent. It harvests one inbox line, pins a grok session UUID,
+runs one `grok -p` turn, persists json stdout, and stays up. Grok is the agent
+for that turn (its own tool loop, `--max-turns 40`).
 
-No ACP WebSocket. No leftover inject client. Never a grok resume flag.
-Donald/orchestrator (skipSeats) are not mind seats. Stdlib only.
+Do not parse grok stdout for function calls. Do not run a second tool-calling
+loop. Do not use grok agent serve or leftover ACP inject on opted-in mind
+seats. Pin one UUID in mind/session; first turn `--session-id`, later turns
+`--resume` that id. Never remint because harvest was empty.
+
+Stdlib only. Donald/orchestrator (skipSeats) are not mind seats.
 """
 from __future__ import annotations
 
@@ -19,6 +22,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,7 +44,12 @@ _SECRET_ASSIGN_RE = re.compile(
 
 @dataclass(frozen=True)
 class Plugin:
-    """One callable plugin plus its JSON schema."""
+    """Fallback helper callable plus JSON schema. Not a second agent loop.
+
+    Grok sees tools via builtins, seat GROK_HOME taskboard MCP, and
+    `--plugin-dir plugins/studio-mind` when that directory exists. This dict
+    stays for `call_plugin` / tests / the plugin-dir MCP server.
+    """
 
     schema: dict[str, Any]
     call: Callable[[dict[str, Any]], str]
@@ -108,29 +117,53 @@ def _append_transcript(seat: str, row: dict[str, Any]) -> None:
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-def _load_transcript(seat: str) -> list[dict[str, Any]]:
-    path = mind_dir(seat) / "transcript.jsonl"
-    if not path.is_file():
-        return []
-    rows: list[dict[str, Any]] = []
-    try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(rec, dict) and rec.get("role"):
-                rows.append(
-                    {
-                        "role": str(rec.get("role")),
-                        "content": str(rec.get("content") or ""),
-                    }
-                )
-    except OSError:
-        return []
-    return rows
+def session_file(seat: str) -> Path:
+    return mind_dir(seat) / "session"
+
+
+def session_minted_file(seat: str) -> Path:
+    return mind_dir(seat) / "session.minted"
+
+
+def load_or_create_session(seat: str) -> str:
+    """UUID once. Never rewrite because a later harvest was empty."""
+    path = session_file(seat)
+    if path.is_file():
+        raw = path.read_text(encoding="utf-8").strip()
+        if raw:
+            return raw
+    sid = str(uuid.uuid4())
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(sid + "\n", encoding="utf-8")
+    tmp.replace(path)
+    return sid
+
+
+def session_is_minted(seat: str) -> bool:
+    return session_minted_file(seat).is_file()
+
+
+def mark_session_minted(seat: str) -> None:
+    session_minted_file(seat).write_text("1\n", encoding="utf-8")
+
+
+def soul_profile(seat: str) -> str | None:
+    """`--agent-profile` value: seat SOUL.md, else docs souls, else omit."""
+    local = STATE_DIR / seat / "SOUL.md"
+    if local.is_file():
+        return str(local)
+    src = ROOT / "docs" / "studio" / "directors" / "souls" / seat / "SOUL.md"
+    if src.is_file():
+        return str(src)
+    return None
+
+
+def studio_mind_plugin_dir() -> Path | None:
+    """Grok Agent SDK inject dir. Omit `--plugin-dir` when it is missing."""
+    path = ROOT / "plugins" / "studio-mind"
+    if path.is_dir():
+        return path
+    return None
 
 
 def _extract_text(parts: Any) -> str:
@@ -334,110 +367,61 @@ def call_plugin(name: str, arguments: dict[str, Any] | None = None) -> str:
         return f"PLUGIN_ERR {name}: {e}"
 
 
-def grok_cli_argv(prompt: str, *, cwd: Path, grok: str | None = None) -> list[str]:
-    """Default one-shot grok CLI. cwd is GCS_ROOT."""
-    binary = grok or os.environ.get("GROK_BIN") or "grok"
-    return [
-        binary,
-        "--permission-mode",
-        "bypassPermissions",
-        "--always-approve",
-        "--trust",
-        "--cwd",
-        str(cwd),
-        "-p",
-        prompt,
-        "--output-format",
-        "plain",
-    ]
-
-
-def compose_prompt(seat: str, messages: list[dict[str, Any]], plugins: dict[str, Plugin]) -> str:
-    schemas = {name: p.schema for name, p in plugins.items()}
-    lines = [
-        f"You are the Grok Cloud Studio seat `{seat}` mind (Grok Build one-shot).",
-        "The harness owns conversation state. This mail is one turn.",
-        "Plugins (emit JSON tool calls, then stop):",
-        json.dumps(schemas, indent=2),
-        'Tool call format: {"name": "ticket", "arguments": {"argv": ["list"]}}',
-        "Never print credentials.",
-        "",
-        "=== TRANSCRIPT ===",
-    ]
-    for msg in messages:
-        lines.append(f"{msg.get('role', 'user')}: {msg.get('content', '')}")
-    return "\n".join(lines)
-
-
-def parse_tool_calls(text: str) -> list[dict[str, Any]]:
-    """Best-effort JSON tool calls from model text. Known plugin names only."""
-    calls: list[dict[str, Any]] = []
-    if not text:
-        return calls
-    for line in text.splitlines():
-        blob = line.strip().strip("`")
-        if not blob.startswith("{") or not blob.endswith("}"):
-            continue
-        try:
-            obj = json.loads(blob)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(obj, dict):
-            continue
-        name = str(obj.get("name") or obj.get("tool") or "")
-        if name not in PLUGINS:
-            continue
-        args = obj.get("arguments") or obj.get("args") or {}
-        if not isinstance(args, dict):
-            args = {"argv": args}
-        calls.append({"name": name, "arguments": args})
-    return calls
-
-
-def parse_runner_result(raw: Any) -> tuple[str, list[dict[str, Any]]]:
-    if raw is None:
-        return "", []
-    if isinstance(raw, str):
-        return raw, parse_tool_calls(raw)
-    if isinstance(raw, dict):
-        text = str(raw.get("text") or "")
-        calls = raw.get("tool_calls") or []
-        if not isinstance(calls, list):
-            calls = [calls] if calls else []
-        normalized: list[dict[str, Any]] = []
-        for c in calls:
-            if isinstance(c, dict) and (c.get("name") or c.get("tool")):
-                normalized.append(
-                    {
-                        "name": str(c.get("name") or c.get("tool")),
-                        "arguments": c.get("arguments") or c.get("args") or {},
-                    }
-                )
-        if not normalized:
-            normalized = parse_tool_calls(text)
-        return text, normalized
-    text = str(getattr(raw, "text", raw) or "")
-    calls = list(getattr(raw, "tool_calls", None) or [])
-    return text, calls
-
-
-def grok_cli_runner(
-    messages: list[dict[str, Any]],
-    plugins: dict[str, Plugin],
+def grok_cli_argv(
     *,
-    seat: str = "",
-    grok_home: Path | None = None,
-    **_kwargs: Any,
-) -> dict[str, Any]:
-    prompt = compose_prompt(seat, messages, plugins)
-    argv = grok_cli_argv(prompt, cwd=ROOT)
+    session_id: str,
+    minted: bool,
+    mail_path: Path,
+    soul: str | None = None,
+    plugin_dir: Path | None = None,
+    grok: str | None = None,
+) -> list[str]:
+    """Pinned-session grok CLI. First turn mints; later turns resume that UUID."""
+    binary = grok or os.environ.get("GROK_BIN") or "grok"
+    argv: list[str] = [binary, "-p"]
+    if minted:
+        argv.extend(["--resume", session_id])
+    else:
+        argv.extend(["--session-id", session_id])
+    argv.extend(
+        [
+            "--prompt-file",
+            str(mail_path),
+            "--verbatim",
+            "--output-format",
+            "json",
+            "--always-approve",
+            "--permission-mode",
+            "bypassPermissions",
+            "--trust",
+        ]
+    )
+    if soul:
+        argv.extend(["--agent-profile", soul])
+    if plugin_dir is not None:
+        argv.extend(["--plugin-dir", str(plugin_dir)])
+    argv.extend(["--max-turns", "40"])
+    return argv
+
+
+def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str, Any]:
+    grok_home = grok_home_dir(seat)
+    session_id = load_or_create_session(seat)
+    minted = session_is_minted(seat)
+    mail_path = mind_dir(seat) / "mail.txt"
+    mail_path.write_text(prompt, encoding="utf-8")
+    argv = grok_cli_argv(
+        session_id=session_id,
+        minted=minted,
+        mail_path=mail_path,
+        soul=soul_profile(seat),
+        plugin_dir=studio_mind_plugin_dir(),
+    )
     env = os.environ.copy()
     env["GCS_ROOT"] = str(ROOT)
     env["GCS_A2A_STATE"] = str(STATE_DIR)
-    if grok_home is not None:
-        env["GROK_HOME"] = str(grok_home)
-    elif seat:
-        env["GROK_HOME"] = str(grok_home_dir(seat))
+    env["GROK_HOME"] = str(grok_home)
+    env["GROK_MEMORY"] = "1"
     timeout_raw = os.environ.get("GCS_MIND_TURN_TIMEOUT", "").strip()
     timeout: float | None = float(timeout_raw) if timeout_raw else None
     try:
@@ -451,20 +435,33 @@ def grok_cli_runner(
             check=False,
         )
     except FileNotFoundError:
-        return {"text": "PLUGIN_ERR grok CLI missing on PATH", "tool_calls": []}
+        return {"text": "PLUGIN_ERR grok CLI missing on PATH", "returncode": 127}
     except subprocess.TimeoutExpired:
-        return {"text": "PLUGIN_ERR grok CLI timeout", "tool_calls": []}
+        return {"text": "PLUGIN_ERR grok CLI timeout", "returncode": 124}
     except OSError as e:
-        return {"text": f"PLUGIN_ERR grok CLI: {e}", "tool_calls": []}
+        return {"text": f"PLUGIN_ERR grok CLI: {e}", "returncode": 1}
     text = redact((proc.stdout or "").strip())
-    if proc.returncode != 0 and proc.stderr:
-        err = redact(proc.stderr.strip())
-        if err:
-            text = f"{text}\n{err}".strip()
-    return {"text": text, "tool_calls": parse_tool_calls(text)}
+    stderr = redact((proc.stderr or "").strip())
+    return {"text": text, "returncode": int(proc.returncode), "stderr": stderr}
 
 
 DEFAULT_RUNNER: Callable[..., Any] = grok_cli_runner
+
+
+def _runner_payload(raw: Any) -> tuple[str, int]:
+    if raw is None:
+        return "", 0
+    if isinstance(raw, dict):
+        text = str(raw.get("text") or "")
+        rc = raw.get("returncode")
+        if rc is None:
+            rc = 0
+        try:
+            code = int(rc)
+        except (TypeError, ValueError):
+            code = 1
+        return text, code
+    return str(raw), 0
 
 
 def _is_skip_seat(seat: str) -> bool:
@@ -474,14 +471,14 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """Consume at most one inbox line: one runner call, then persist. Mail is a turn."""
+    """One inbox line → one grok turn. Offset advances only on grok exit 0."""
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
         print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)
         return {"consumed": 0, "reason": "skipSeats"}
 
     mind_dir(seat)
-    grok_home = grok_home_dir(seat)
+    grok_home_dir(seat)
     records = _read_new_records(seat)
     if not records:
         return {"consumed": 0, "reason": "empty", "offset": _read_offset(seat)}
@@ -494,49 +491,50 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
         task_id = str(rec.get("taskId") or "")
         context_id = str(rec.get("contextId") or "")
         text = _extract_text(rec.get("parts"))
-        user_content = text or json.dumps(rec, ensure_ascii=False)
-        messages = _load_transcript(seat)
-        messages.append({"role": "user", "content": user_content})
+        prompt = text or json.dumps(rec, ensure_ascii=False)
         try:
-            raw = run(
-                messages,
-                PLUGINS,
-                seat=seat,
-                grok_home=grok_home,
-                task_id=task_id,
-                context_id=context_id,
-            )
+            raw = run(prompt, seat=seat)
         except Exception as e:
-            print(f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail err={e}", file=sys.stderr)
+            print(
+                f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail err={e}",
+                file=sys.stderr,
+            )
             return {"consumed": 0, "reason": "runner-fail", "task_id": task_id}
 
-        assistant_text, tool_calls = parse_runner_result(raw)
+        assistant_text, returncode = _runner_payload(raw)
+        if returncode != 0:
+            print(
+                f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail rc={returncode}",
+                file=sys.stderr,
+            )
+            return {
+                "consumed": 0,
+                "reason": "runner-fail",
+                "task_id": task_id,
+                "returncode": returncode,
+            }
+
+        mark_session_minted(seat)
         _append_transcript(
             seat,
             {
                 "role": "user",
-                "content": user_content,
+                "content": prompt,
                 "taskId": task_id,
                 "contextId": context_id,
             },
         )
-        _append_transcript(seat, {"role": "assistant", "content": assistant_text})
-        for call in tool_calls:
-            name = str(call.get("name") or "")
-            args = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
-            result = call_plugin(name, args)
-            _append_transcript(
-                seat,
-                {
-                    "role": "tool",
-                    "name": name,
-                    "arguments": args,
-                    "content": result,
-                },
-            )
+        _append_transcript(
+            seat,
+            {
+                "role": "assistant",
+                "content": assistant_text,
+                "format": "json",
+            },
+        )
         _write_offset(seat, end_offset)
         print(
-            f"MIND_TURN seat={seat} task={task_id} offset={end_offset} tools={len(tool_calls)}",
+            f"MIND_TURN seat={seat} task={task_id} offset={end_offset}",
             flush=True,
         )
         return {
@@ -544,7 +542,6 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             "reason": "ok",
             "task_id": task_id,
             "offset": end_offset,
-            "tools": len(tool_calls),
         }
 
     return {"consumed": 0, "reason": "no-actionable", "offset": _read_offset(seat)}
@@ -594,7 +591,7 @@ def run_forever(seat: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Grok Build seat mind (inbox → one-shot grok CLI + plugins)"
+        description="Grok Build seat mind (mailbox + pin + stay-up; grok is the agent)"
     )
     parser.add_argument("--seat", required=True, help="Director seat (floor, ops, …)")
     parser.add_argument("--once", action="store_true", help="Process one pending line then exit")

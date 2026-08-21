@@ -1,12 +1,8 @@
 # Seat mind (Grok Build harness)
 
-This is the **Bot-equivalent mind** for Grok Cloud Studio Directors. ACP inject is leftover host OS: `session/prompt` into `grok agent serve` will never get in-process `deliver_wake()` (xAI does not take external PRs).
+This is the **Bot-equivalent mind** for Grok Cloud Studio Directors. ACP inject is leftover host OS: `session/prompt` into `grok agent serve` will never get in-process `deliver_wake()` (xAI does not take external PRs). Opted-in mind seats do **not** use `grok agent serve` or ACP `session/prompt`.
 
-Ultra-minimal Hermes / Grok-Bot / Pi / DeepSeek shape around **Grok Build**:
-
-- Stateful Python core (`scripts/directors/mind.py`)
-- Everything is a plugin (register in a dict: callable + JSON schema)
-- Conversation state on disk, owned by the harness — not an ACP pin-session
+Python is **mailbox + pin + stay-up**. Grok is the agent for one turn.
 
 ## Law
 
@@ -26,43 +22,46 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 
 | File | Role |
 |---|---|
-| `transcript.jsonl` | Harness-owned conversation (user / assistant / tool rows) |
-| `offset` | Byte offset into that seat’s `inbox.jsonl` |
+| `session` | Pinned grok session UUID (uuid4, created once) |
+| `session.minted` | Written after the first grok exit 0 (later turns `--resume`) |
+| `mail.txt` | Current inbox line for `--prompt-file` |
+| `transcript.jsonl` | Grok json stdout plus the user mail row |
+| `offset` | Byte offset into that seat’s `inbox.jsonl` (advanced only on grok exit 0) |
 | `pid` | Live mind process |
+
+Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Process cwd is `$GCS_ROOT`.
 
 ### Mail is a turn
 
-`inbox.jsonl` growth → **one** model turn → persist transcript + offset.
-
-- No ACP WebSocket
-- No `session/prompt`
-- No pin-session / HANDOFF regex / 600s no-accept
-- No `grok --resume`
-
-Turn completes when the **pluggable model runner** returns (scan-only or empty model text still counts). Fake runner in tests. Default runner:
+Each inbox line:
 
 ```text
-grok --permission-mode bypassPermissions --always-approve --trust \
-     --cwd $GCS_ROOT -p "<composed prompt>" --output-format plain
+grok -p --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
+    --output-format json --always-approve --permission-mode bypassPermissions --trust \
+    --agent-profile "$SOUL" --plugin-dir "$REPO/plugins/studio-mind" \
+    --max-turns 40
 ```
 
-`cwd=$GCS_ROOT`. `GROK_HOME=$GCS_A2A_STATE/<seat>/grok-home`. Never hardcode a box home or a product checkout path.
+- Create the UUID once (`uuid4`), store in `mind/session`. First turn omits `--resume` and passes `--session-id $UUID` to mint. Later turns **only** `--resume` that id.
+- Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty.
+- `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
+- Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after grok exits 0.
 
-If the runner raises, the loop stays up and **does not** advance `offset`.
+`--agent-profile` is `$GCS_A2A_STATE/<seat>/SOUL.md` when present, else `docs/studio/directors/souls/<seat>/SOUL.md`.
 
-### Plugins
+No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.
 
-Registered in `PLUGINS` (`scripts/directors/mind.py`). Each is a Python callable plus a JSON schema. Ship three:
+### Tools (which layer)
 
-| Name | Action |
+| Layer | What grok actually calls |
 |---|---|
-| `ticket` | `$TASKBOARD_BIN --db $GCS_TASKBOARD_DB ticket …` (default db `$GCS_A2A_STATE/taskboard/taskboard.db`) |
-| `a2a_send` | `scripts/a2a/send.sh [--from SEAT] <seat> <text>` |
-| `cloud_launch` | `scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT` |
+| Grok builtins | Shell, files, etc. inside grok |
+| Seat `GROK_HOME/config.toml` | Taskboard stdio MCP: `taskboard --db $GCS_TASKBOARD_DB mcp` |
+| `--plugin-dir plugins/studio-mind` | Grok Agent SDK inject (`grok agent --plugin-dir`): MCP `ticket`, `a2a_send`, `cloud_launch` |
 
-A missing binary returns an error string. The loop does not crash. Plugin output is redacted (`CURSOR_API_KEY`, webhook secrets, bearer tokens) and never printed as credentials.
+If `plugins/studio-mind` exists, `mind.py` passes `--plugin-dir`. If that directory is missing, `--plugin-dir` is omitted; Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the plugin-dir server) — they are **not** a second agent loop.
 
-The model emits tool calls as JSON (`{"name": "ticket", "arguments": {"argv": ["list"]}}`) or as structured `tool_calls` from a fake runner. Tools run after the runner returns; that is still one mail turn.
+A missing binary returns an error string from the MCP tool. Plugin output is redacted (`CURSOR_API_KEY`, webhook secrets, bearer tokens) and never printed as credentials.
 
 ## Bus
 

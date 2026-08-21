@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Long-lived Grok Build mind for one seat. Mail is a turn.
-# inbox.jsonl growth → scripts/directors/mind.py (one-shot grok CLI + plugins).
-# No ACP WebSocket. No leftover inject. Never a grok resume flag. Does not start or
-# kill grok agent serve.
+# inbox.jsonl growth → scripts/directors/mind.py (mailbox + pin + stay-up;
+# grok -p --resume pinned UUID). No ACP WebSocket. No leftover inject.
+# Does not start or kill grok agent serve.
 #
 # Usage: seat-mind-loop.sh <seat>
 set -euo pipefail

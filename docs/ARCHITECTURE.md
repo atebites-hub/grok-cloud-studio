@@ -9,7 +9,7 @@ Grok Cloud Studio is a **local control plane**:
 ```
 send.sh → hub.py (ack + inbox JSONL)
             ↓
-        mind.py         → grok CLI one-shot + plugins   (GCS_MIND_SEATS)
+        mind.py         → grok -p --resume pinned UUID   (GCS_MIND_SEATS)
         wake-daemon.py  → seat-prompt-acp.sh --pin-session  (GROW seats, leftover)
         dispatch.py     → leftover acp_inject.py            (non-GROW only)
                         → launch-director.sh  (one-shot -p fallback)
