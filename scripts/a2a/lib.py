@@ -17,6 +17,16 @@ HUB_PORT = int(os.environ.get("GCS_A2A_PORT", "8732"))
 GROK_DEFAULT_ACP_PORT = 2419
 ACP_PORT_BASE = int(os.environ.get("GCS_ACP_PORT_BASE", "8740"))
 
+SHIPPED_PROMPTS = Path("prompts")
+DOCS_PROMPTS = Path("docs") / "studio" / "directors"
+DIRECTOR_PROMPT_GLOB = "*_director_prompt.txt"
+_SEAT_PROMPT_ALIASES = {
+    "floor-ops": "floor",
+    "floor": "floor-ops",
+    "studio-ops": "ops",
+    "ops": "studio-ops",
+}
+
 
 def env_first(*names: str, default: str = "") -> str:
     for name in names:
@@ -256,11 +266,106 @@ def cloud_repo_ref() -> str:
     return env_first("GCS_CLOUD_REF", "CLOUD_REPO_REF", "CURSOR_CLOUD_REF", default="main")
 
 
+def director_prompt_filename(seat: str) -> str:
+    return f"{normalize_seat(seat).replace('-', '_')}_director_prompt.txt"
+
+
+def director_prompt_filenames(seat: str, root: Path | None = None) -> tuple[str, ...]:
+    key = normalize_seat(seat)
+    names: list[str] = [director_prompt_filename(key)]
+    canon = director_prompt_filename(canonical_seat(seat, root))
+    if canon not in names:
+        names.append(canon)
+    alias = _SEAT_PROMPT_ALIASES.get(key)
+    if alias:
+        extra = director_prompt_filename(alias)
+        if extra not in names:
+            names.append(extra)
+    return tuple(names)
+
+
+def _dir_has_director_prompts(path: Path) -> bool:
+    if not path.is_dir():
+        return False
+    try:
+        next(path.glob(DIRECTOR_PROMPT_GLOB))
+    except StopIteration:
+        return False
+    return True
+
+
+def prompt_search_dirs(root: Path | None = None) -> tuple[Path, ...]:
+    root = root or repo_root()
+    dirs: list[Path] = []
+    override = env_first("GCS_PROMPT_DIR", "PROMPTS_DIR")
+    if override:
+        dirs.append(Path(override).expanduser())
+    for rel in (SHIPPED_PROMPTS, DOCS_PROMPTS):
+        candidate = root / rel
+        if candidate not in dirs:
+            dirs.append(candidate)
+    return tuple(dirs)
+
+
+def prompts_dir(root: Path | None = None) -> Path:
+    """Default director-prompt directory.
+
+    GCS_PROMPT_DIR / PROMPTS_DIR override. Otherwise use $ROOT/prompts when it
+    contains *_director_prompt.txt; if that dir is missing or empty, use
+    $ROOT/docs/studio/directors (product-floor layout).
+    """
+    root = root or repo_root()
+    override = env_first("GCS_PROMPT_DIR", "PROMPTS_DIR")
+    if override:
+        return Path(override).expanduser()
+    shipped = root / SHIPPED_PROMPTS
+    docs = root / DOCS_PROMPTS
+    if _dir_has_director_prompts(shipped):
+        return shipped
+    if _dir_has_director_prompts(docs):
+        return docs
+    if shipped.is_dir():
+        return shipped
+    return docs
+
+
+def resolve_director_prompt(seat: str, root: Path | None = None) -> Path | None:
+    """Locate ${stem}_director_prompt.txt in prompts/ or docs/studio/directors."""
+    root = root or repo_root()
+    for directory in prompt_search_dirs(root):
+        for name in director_prompt_filenames(seat, root):
+            candidate = directory / name
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def ensure_prompt_links(root: Path | None = None) -> list[Path]:
+    """Link docs/studio/directors/*_director_prompt.txt into prompts/ when missing."""
+    root = root or repo_root()
+    docs = root / DOCS_PROMPTS
+    dest_dir = root / SHIPPED_PROMPTS
+    created: list[Path] = []
+    if not docs.is_dir():
+        return created
+    for src in sorted(docs.glob(DIRECTOR_PROMPT_GLOB)):
+        if not src.is_file():
+            continue
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / src.name
+        if dest.exists() or dest.is_symlink():
+            continue
+        dest.symlink_to(os.path.relpath(src, dest_dir))
+        created.append(dest)
+    return created
+
+
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print(
             "usage: lib.py <launch-seats|skip-seats|grow-seats|port SEAT|"
-            "normalize SEAT|canonical SEAT|root|state|registry|cloud-repo|cloud-ref>",
+            "normalize SEAT|canonical SEAT|root|state|registry|cloud-repo|"
+            "cloud-ref|prompts-dir|prompt-file SEAT|ensure-prompts>",
             file=sys.stderr,
         )
         return 2
@@ -310,6 +415,24 @@ def main(argv: list[str]) -> int:
         return 0
     if cmd == "cloud-ref":
         print(cloud_repo_ref())
+        return 0
+    if cmd == "prompts-dir":
+        print(prompts_dir())
+        return 0
+    if cmd == "prompt-file":
+        if len(argv) < 2:
+            print("usage: lib.py prompt-file SEAT", file=sys.stderr)
+            return 2
+        path = resolve_director_prompt(argv[1])
+        if path is None:
+            name = director_prompt_filename(argv[1])
+            print(f"missing prompt: {prompts_dir() / name}", file=sys.stderr)
+            return 1
+        print(path)
+        return 0
+    if cmd == "ensure-prompts":
+        for path in ensure_prompt_links():
+            print(path)
         return 0
     print(f"unknown command: {cmd}", file=sys.stderr)
     return 2

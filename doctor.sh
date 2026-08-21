@@ -27,6 +27,7 @@ for p in \
   scripts/directors/seat-prompt-acp.sh \
   scripts/directors/seat-wake-loop.sh \
   scripts/directors/start-seat-daemon.sh \
+  scripts/directors/prompt-dir.sh \
   scripts/directors/fleet-shepherd.py \
   docs/studio/TASKBOARD.md \
   scripts/launch-cloud-extra-high.sh \
@@ -52,6 +53,13 @@ if python3 "$ROOT/scripts/a2a/lib.py" launch-seats >/dev/null; then
   ok "registry seats: $(python3 "$ROOT/scripts/a2a/lib.py" launch-seats | tr '\n' ' ')"
 else
   bad "lib.py launch-seats failed"
+fi
+
+_prompt_floor="$(python3 "$ROOT/scripts/a2a/lib.py" prompt-file floor 2>/dev/null || true)"
+if [[ -n "$_prompt_floor" && -f "$_prompt_floor" ]]; then
+  ok "director prompt floor=$_prompt_floor"
+else
+  bad "missing director prompt for floor (prompts/ or docs/studio/directors)"
 fi
 
 # Bot bind: FAIL on empty/placeholder agentId unless GCS_BOT_BIND_OPTIONAL=1 (CI clones).
