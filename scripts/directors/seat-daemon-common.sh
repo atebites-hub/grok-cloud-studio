@@ -69,6 +69,21 @@ daemon_healthy() {
   return 0
 }
 
+ensure_seat_serve() {
+  # Keep grok agent serve up for this seat. Never fall back to grok --resume.
+  local seat="$1"
+  local start="$SCRIPT_DIR/start-seat-daemon.sh"
+  if daemon_healthy "$seat"; then
+    return 0
+  fi
+  if [[ ! -f "$start" ]]; then
+    echo "SEAT_SERVE_FAIL seat=$seat missing $start (never grok resume)" >&2
+    return 1
+  fi
+  bash "$start" "$seat" || return 1
+  daemon_healthy "$seat"
+}
+
 write_agent_profile() {
   local seat="$1"
   local sd stem prompt_file profile
