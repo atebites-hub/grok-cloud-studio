@@ -12,7 +12,8 @@ scripts/a2a/start-studio-bus.sh status
 Cards/registry: `docs/a2a/`. Runtime state lives in `.a2a-state/` (gitignored).
 
 Hub default: `http://127.0.0.1:8732` (`GCS_A2A_HUB` / `GCS_A2A_PORT`).
-Example seats: `floor`, `ops`, `cloud`, `qa-a`, `qa-b`.
+Example seats: `floor`, `ops`, `cloud`, plus Palemon-floor first-class
+`floor-ops`, `studio-ops`, `art`, `content`, `systems`, `qa-a`, `qa-b`.
 ACP / GROW cap: `GCS_ACP_SEATS` / `GCS_GROW_SEATS` (default `floor,studio-ops`; `ops` aliases `studio-ops`). Mail cannot auto-start seats outside that allowlist. `skipSeats` stay skipped. See `docs/studio/GROK_LEADER.md`.
 Opt-in mind: `GCS_MIND_SEATS` (default empty, example `floor,ops`) starts `seat-mind-loop.sh` / `mind.py`. See `docs/studio/MIND.md`.
 

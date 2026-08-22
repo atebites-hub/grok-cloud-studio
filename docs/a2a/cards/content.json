@@ -1,6 +1,6 @@
 {
   "name": "Content",
-  "description": "Content Director \u2014 schemas/content pipelines via Extra High grunts.",
+  "description": "Original-IP packs and copy. Spawns own Extra High. Clean-room.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -24,7 +24,7 @@
     {
       "id": "content",
       "name": "Content",
-      "description": "Content Director \u2014 schemas/content pipelines via Extra High grunts.",
+      "description": "Original-IP packs and copy. Spawns own Extra High. Clean-room.",
       "tags": [
         "content",
         "gcs",

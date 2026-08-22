@@ -1,6 +1,6 @@
 {
   "name": "Systems",
-  "description": "Platform/systems Director \u2014 launches Extra High grunts for infra/code.",
+  "description": "Server sim, schemas, and math. Spawns own Extra High.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -24,7 +24,7 @@
     {
       "id": "systems",
       "name": "Systems",
-      "description": "Platform/systems Director \u2014 launches Extra High grunts for infra/code.",
+      "description": "Server sim, schemas, and math. Spawns own Extra High.",
       "tags": [
         "systems",
         "gcs",

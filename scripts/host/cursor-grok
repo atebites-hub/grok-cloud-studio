@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Host wrapper: Cursor Agent CLI pinned to cursor-grok-4.6-xhigh.
+# Used by mind.py Cursor fallback when `cursor-grok` is on PATH.
+# Never print CURSOR_API_KEY.
+set -euo pipefail
+
+export PATH="${HOME}/.local/bin:${PATH:-}"
+_agent_env="${CURSOR_AGENT_ENV:-$HOME/.config/cursor/agent.env}"
+if [[ -f "$_agent_env" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$_agent_env"
+  set +a
+fi
+exec agent --model cursor-grok-4.6-xhigh "$@"

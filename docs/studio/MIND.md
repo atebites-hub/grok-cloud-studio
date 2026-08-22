@@ -2,7 +2,12 @@
 
 This is the **Bot-equivalent mind** for Grok Cloud Studio Directors. ACP inject is leftover host OS: `session/prompt` into `grok agent serve` will never get in-process `deliver_wake()` (xAI does not take external PRs). Opted-in mind seats do **not** use `grok agent serve` or ACP `session/prompt`.
 
-Python is **mailbox + pin + stay-up**. Grok is the agent for one turn. When grok returns HTTP 402 / `usage balance exhausted`, the same mail line may run Cursor CLI (`cursor-grok` or `agent`) with a **separate** chat pin. That fallback is still one turn, not a second Python tool loop.
+Python is **mailbox + pin + stay-up**. Default `GCS_MIND_RUNNER=auto` persists
+`$GCS_A2A_STATE/<seat>/mind/runner` (`grok` or `cursor`). Each mail line uses
+that file. On HTTP 402 / `usage balance exhausted`, flip the file and retry
+**that same mail line** once on the other runner (`MIND_SWITCH`). Forced
+`GCS_MIND_RUNNER=grok` or `cursor` does not flip. Cursor CLI uses a **separate**
+chat pin. The switch is still one turn, not a second Python tool loop.
 
 ## Law
 
@@ -15,6 +20,21 @@ scripts/a2a/start-studio-bus.sh start
 ```
 
 `Donald` / `orchestrator` are Grok Bot seats, not mind seats. `skipSeats` is unchanged.
+
+### Two-runtime mind law
+
+Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/offset` + pin (`mind/session` grok UUID, `mind/cursor-session` Cursor chat id). Grok runner and Cursor CLI runner **share** that mailbox. Offset advances only on runner exit 0.
+
+**Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
+
+- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust` of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok usage is back.
+- Cursor CLI catalog: repo `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no `GROK_HOME`). Higgsfield is Cursor catalog login when the runner is Cursor CLI (Art generate). Grok Bot Higgsfield is a different catalog.
+
+Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`.
+
+No third Python tool loop. No ACP `session/prompt` GROW. No `deliver_wake` overlay.
+
+The grunt is **Cursor Cloud** (not "Extra High" as the noun, not "Cursor Cloud API"). Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI: `--model cursor-grok-4.6-xhigh` only. The PATH launcher stays `scripts/launch-cloud-extra-high.sh`.
 
 ### State (disk only)
 
@@ -29,8 +49,9 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 | `transcript.jsonl` | Agent json stdout plus the user mail row |
 | `offset` | Byte offset into that seat’s `inbox.jsonl` (advanced only on runner exit 0) |
 | `pid` | Live mind process |
+| `runner` | Persisted `grok` or `cursor` for `GCS_MIND_RUNNER=auto`. Missing file means grok. Forced env does not rewrite this file. |
 
-Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Process cwd is `$GCS_ROOT`. Cursor fallback does **not** set `GROK_HOME`.
+Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Process cwd is `$GCS_ROOT`. Cursor runner does **not** set `GROK_HOME`.
 
 ### Mail is a turn (grok)
 
@@ -53,20 +74,39 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - `--agent-profile`, `--trust`, and `--plugin-dir` are **grok agent** flags, not grok headless. Do not put them on this argv.
 - `--agent PATH` only if PATH is a file starting with YAML `---`. Markdown `SOUL.md` is not an agent file; omit `--agent`.
 - If grok says the session is already in use, treat it as minted and `--resume` the same UUID. Do not mint a new UUID.
-- Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty. Do not remint because we fell back to Cursor.
+- Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty. Do not remint because the runner switched.
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
 - Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after the effective runner exits 0.
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
 
 No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.
 
-### Cursor CLI fallback (402 / `GCS_MIND_RUNNER=cursor`)
+### Mind runner SWITCH (`GCS_MIND_RUNNER=auto`)
 
-Try grok first (default). If grok stderr/text is HTTP 402 / `usage balance exhausted`, run Cursor CLI for **that same mail line**. Set `GCS_MIND_RUNNER=cursor` to skip grok and use Cursor for every turn.
+Default **`GCS_MIND_RUNNER=auto`**. Persist `$GCS_A2A_STATE/<seat>/mind/runner`
+(`grok` or `cursor`). Each mail line uses the persisted runner. Do **not**
+probe grok every line after a 402.
 
-Do not consume/advance `offset` unless the Cursor turn exits 0. If Cursor also fails, keep today’s `MIND_FAIL` / 2s runner-fail sleep (do not tight-loop faster). Do not fork sessions. Do not become a 45s assigner. Do not set `GROK_BIN=cursor-grok`. Do not reuse `mind/session` (that UUID is grok-only).
+On quota / HTTP 402 / `usage balance exhausted`, flip the file and retry
+**that same mail line once** on the other runner. Offset advances only on
+exit 0. Log:
 
-Binary: existing `cursor-grok` wrapper if present on PATH, else `agent`. Override with `GCS_CURSOR_BIN` (tests/ops). Model is **`cursor-grok-4.6-xhigh` only**. Never another model.
+```text
+MIND_SWITCH seat=floor from=grok to=cursor reason=quota-exhausted
+```
+
+Forced `GCS_MIND_RUNNER=grok` or `GCS_MIND_RUNNER=cursor` does **not** flip
+(and does not rewrite `mind/runner`). Missing `mind/runner` under auto starts
+as grok; a successful auto turn writes the runner that won.
+
+Do not consume/advance `offset` unless the effective runner exits 0. If the
+retry also fails, keep today’s `MIND_FAIL` / 2s runner-fail sleep (do not
+tight-loop faster). Do not fork sessions. Do not become a 45s assigner. Do
+not set `GROK_BIN=cursor-grok`. Do not reuse `mind/session` (that UUID is
+grok-only). Do not remint the grok UUID because the runner switched.
+
+Binary: existing `cursor-grok` wrapper if present on PATH, else `agent`.
+Override with `GCS_CURSOR_BIN` (tests/ops). Model is **`cursor-grok-4.6-xhigh` only**. Never another model.
 
 Auth: `CURSOR_API_KEY` already in the environment, or sourced from `~/.config/cursor/agent.env` (`CURSOR_AGENT_ENV` override). Never print the key. Never put it on argv.
 
@@ -95,7 +135,7 @@ agent --resume "$CURSOR_CHAT_ID" -p --force --output-format json --trust \
 
 `--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install "$ROOT/plugins/studio-mind" --trust` with that seat’s `GROK_HOME`. If install is skipped (no grok, missing dir, install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop.
 
-Cursor fallback: GROK_HOME taskboard MCP and grok `--plugin-dir` **do not transfer**. Cursor uses Cursor builtins (shell/files). `ticket`, `scripts/a2a/send.sh`, and `scripts/launch-cloud-extra-high.sh` stay available via PATH/Shell. Do not invent a second Python tool loop.
+Cursor runner: GROK_HOME taskboard MCP and grok `--plugin-dir` **do not transfer**. Two catalogs (see Two-runtime mind law). Cursor CLI uses Cursor builtins plus repo `.cursor/mcp.json`, never a copied `GROK_HOME`. Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`. No third Python tool loop.
 
 A missing binary returns an error string from the MCP tool. Plugin output is redacted (`CURSOR_API_KEY`, webhook secrets, bearer tokens) and never printed as credentials.
 

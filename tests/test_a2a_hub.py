@@ -61,7 +61,22 @@ def hub(tmp_path: Path):
 
 def test_registry_example_seats() -> None:
     seats = subprocess.check_output(["python3", str(LIB), "launch-seats"], cwd=str(ROOT), text=True)
-    assert seats.strip().splitlines() == ["floor", "ops", "cloud", "qa-a", "qa-b"]
+    names = seats.strip().splitlines()
+    for seat in (
+        "floor",
+        "ops",
+        "cloud",
+        "floor-ops",
+        "studio-ops",
+        "art",
+        "content",
+        "systems",
+        "qa-a",
+        "qa-b",
+    ):
+        assert seat in names
+    assert "orchestrator" not in names
+    assert "donald" not in names
 
 
 def test_hub_health_and_send_ack(hub: dict) -> None:

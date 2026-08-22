@@ -2,7 +2,10 @@
 
 Grok Cloud Studio is a **local control plane**:
 
-1. **Directors** are Grok Build CLI seats (`floor`, `ops`, `cloud`, `qa-a`, `qa-b` by default). They assign work and collect PRs. They do not implement large diffs locally.
+1. **Directors** are Grok Build CLI seats (`floor`, `ops`/`studio-ops`, `cloud`,
+   `floor-ops`, `art`, `content`, `systems`, `qa-a`, `qa-b`). They assign work
+   and collect PRs. They do not implement large diffs locally. Crash-safe ACP
+   cap is `GCS_ACP_SEATS` (default `floor,studio-ops`). Palemon wipe: `docs/studio/WIPE.md`.
 2. **Extra High grunts** are Cursor Cloud agents (`grok-4.6`, `effort=xhigh`) that open PRs against `GCS_CLOUD_REPO` / `CLOUD_REPO_URL`.
 3. **A2A** is seat-to-seat. **MCP** is agent-to-tool.
 

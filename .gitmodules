@@ -1,0 +1,4 @@
+[submodule "vendor/taskboard"]
+	path = vendor/taskboard
+	url = https://github.com/tcarac/taskboard.git
+	branch = v0.6.0

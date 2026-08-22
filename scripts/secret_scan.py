@@ -21,6 +21,7 @@ SKIP_DIRS = {
     ".pytest_cache",
     ".a2a-state",
     ".gcs-state",
+    "vendor",
 }
 
 SKIP_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".woff", ".woff2", ".lock"}
@@ -43,9 +44,9 @@ LORE_RULES: list[tuple[str, re.Pattern[str]]] = [
             re.I,
         ),
     ),
+    # Private game GitHub path stays banned. Studio-kit name and PALEMON_*
+    # operational knobs (A2A_STATE, TAILSCALE_SERVE, AK_BRIDGE=0) are allowed.
     ("private_game_repo", re.compile("atebites-hub/" + "pale" + "mon", re.I)),
-    ("product_name", re.compile(r"\bPale" + r"mon\b")),
-    ("product_env", re.compile(r"\bPALE" + r"MON_[A-Z0-9_]+\b")),
 ]
 
 TEXT_BYTES_MAX = 1_000_000

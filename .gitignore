@@ -14,10 +14,10 @@ venv/
 node_modules/
 scripts/cloud/sdk/node_modules/
 
-# Secrets and local state
-.env
-.env.*
-!.env.example
+studio.env
+!studio.env.example
+/bin/taskboard
+/bin/taskboard-*
 .a2a-state/
 .gcs-state/
 *.log

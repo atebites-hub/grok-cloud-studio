@@ -1,0 +1,42 @@
+{
+  "name": "Art",
+  "description": "In-repo art plus Higgsfield wiring. Spawns own Extra High. No OAuth thrash. Donald liaison only.",
+  "version": "1.0.0",
+  "protocolVersion": "1.0",
+  "provider": {
+    "organization": "Grok Cloud Studio",
+    "url": "https://github.com/atebites-hub/grok-cloud-studio"
+  },
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extendedAgentCard": false
+  },
+  "defaultInputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "art",
+      "name": "Art",
+      "description": "In-repo art plus Higgsfield wiring. Spawns own Extra High. No OAuth thrash. Donald liaison only.",
+      "tags": [
+        "art",
+        "gcs",
+        "a2a"
+      ]
+    }
+  ],
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:8732/a2a/art",
+      "protocolBinding": "HTTP+JSON",
+      "protocolVersion": "1.0"
+    }
+  ]
+}

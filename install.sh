@@ -37,12 +37,18 @@ fi
 chmod +x \
   "$ROOT/install.sh" \
   "$ROOT/doctor.sh" \
+  "$ROOT/setup.sh" \
+  "$ROOT/cleanup.sh" \
+  "$ROOT/health_check.sh" \
+  "$ROOT/recover.sh" \
   "$ROOT"/scripts/*.sh \
   "$ROOT"/scripts/a2a/*.sh \
   "$ROOT"/scripts/cloud/*.sh \
   "$ROOT"/scripts/cloud/sdk/*.sh \
   "$ROOT"/scripts/directors/*.sh \
   "$ROOT"/scripts/webhook/*.sh \
+  "$ROOT"/scripts/studio/taskboard/*.sh \
+  "$ROOT"/scripts/host/cursor-grok \
   2>/dev/null || true
 
 chmod +x "$ROOT/scripts/a2a/bot-bridge.py" "$ROOT/scripts/a2a/bind-bot-agent.sh" \
@@ -60,5 +66,8 @@ else
 fi
 
 echo "install ok — run ./doctor.sh then .venv/bin/pytest -q"
+echo "DR: ./setup.sh (deploy) and ./cleanup.sh (teardown); ./health_check.sh / ./recover.sh; docs/studio/WIPE.md"
 echo "A2A: scripts/a2a/start-studio-bus.sh (hub+dispatch+bot-bridge+shepherd); GROW: start --daemons"
-echo "Mind: GCS_MIND_SEATS=floor,ops (docs/studio/MIND.md); ACP inject timeout default 180s (GCS_ACP_INJECT_TIMEOUT); dispatch lock TTL 240s (GCS_DISPATCH_LOCK_TTL_SEC)"
+echo "Mind: GCS_MIND_SEATS from studio.env (docs/studio/MIND.md); Palemon wipe: docs/studio/WIPE.md"
+echo "Board: scripts/studio/taskboard/ (install-taskboard.sh is documented, not run here)"
+echo "ACP inject timeout overlay 600s via studio.env (code default remains 180s in acp_inject.py)"

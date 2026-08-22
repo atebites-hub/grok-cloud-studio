@@ -81,6 +81,13 @@ def _offset(state: Path, seat: str) -> int:
     return int(path.read_text(encoding="utf-8").strip() or "0")
 
 
+def _runner_name(state: Path, seat: str) -> str:
+    path = state / seat / "mind" / "runner"
+    if not path.is_file():
+        return ""
+    return path.read_text(encoding="utf-8").strip()
+
+
 def _session_id(state: Path, seat: str) -> str:
     path = state / seat / "mind" / "session"
     assert path.is_file(), "pinned session UUID missing"
@@ -343,11 +350,22 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "usage balance exhausted" in doc.lower()
     assert "GCS_MIND_RUNNER" in src
     assert "GCS_MIND_RUNNER" in doc
+    assert "GCS_MIND_RUNNER=auto" in doc or 'default "auto"' in src or 'or "auto"' in src
+    assert "MIND_SWITCH" in src
+    assert "MIND_SWITCH" in doc
+    assert "MIND_FALLBACK" not in src
+    assert "mind/runner" in src or ' / "runner"' in src
+    assert "mind/runner" in doc
     assert "--verbatim" in doc
     assert "--always-approve" in doc
     assert "bypassPermissions" in doc
     assert "--max-turns" in doc
     assert "do not transfer" in doc.lower() or "does not transfer" in doc.lower() or "do not transfer" in src.lower()
+    assert "two catalogs" in doc.lower()
+    assert "higgsfield" in doc.lower()
+    assert "deliver_wake" in doc
+    assert "fast=false" in doc
+    assert "cursor cloud" in doc.lower()
 
 
 def test_fake_grok_mints_then_resumes_same_uuid(
@@ -1247,7 +1265,7 @@ def test_cursor_create_chat_then_resume_separate_pin(
     assert "create-chat" not in rows2[2]["argv"]
 
 
-def test_grok_402_falls_back_to_cursor_without_reminting_grok(
+def test_grok_402_switches_to_cursor_without_reminting_grok(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     grok_log = tmp_path / "grok.argv.json"
@@ -1285,7 +1303,14 @@ def test_grok_402_falls_back_to_cursor_without_reminting_grok(
     )
     assert grok_sid not in cursor_rows[1]["argv"]
     captured = capsys.readouterr()
-    assert "MIND_FALLBACK" in captured.out + captured.err
+    switch_blob = captured.out + captured.err
+    assert "MIND_SWITCH" in switch_blob
+    assert "MIND_FALLBACK" not in switch_blob
+    assert "seat=floor" in switch_blob
+    assert "from=grok" in switch_blob
+    assert "to=cursor" in switch_blob
+    assert "reason=" in switch_blob
+    assert _runner_name(state, "floor") == "cursor"
     rows = _transcript_rows(state, "floor")
     assert any(r.get("role") == "assistant" for r in rows)
 
@@ -1294,14 +1319,17 @@ def test_grok_402_falls_back_to_cursor_without_reminting_grok(
     assert again["consumed"] == 1
     assert _session_id(state, "floor") == grok_sid
     assert _cursor_session_id(state, "floor") == chat_id
+    assert _runner_name(state, "floor") == "cursor"
     grok_rows = _argv_log(grok_log)
-    assert _flag_value(grok_rows[-1]["argv"], "--session-id") == grok_sid
-    assert "--resume" not in grok_rows[-1]["argv"]
+    assert len(grok_rows) == 1
     cursor_rows2 = _argv_log(cursor_log)
     assert sum(1 for r in cursor_rows2 if r["argv"] == ["create-chat"]) == 1
     _assert_cursor_clap(
         cursor_rows2[-1]["argv"], chat_id=chat_id, prompt="second 402 mail"
     )
+    captured2 = capsys.readouterr()
+    again_blob = captured2.out + captured2.err
+    assert "MIND_SWITCH" not in again_blob
 
 
 def test_offset_not_advanced_on_402_when_cursor_also_fails(
@@ -1337,6 +1365,7 @@ def test_offset_not_advanced_on_402_when_cursor_also_fails(
     err = capsys.readouterr().err
     assert "MIND_FAIL" in err
     assert "test-cursor-api-key-not-leaked" not in err
+    assert _runner_name(state, "floor") == "cursor"
 
 
 def test_non_402_grok_failure_does_not_call_cursor(
@@ -1357,6 +1386,100 @@ def test_non_402_grok_failure_does_not_call_cursor(
     assert _offset(state, "floor") == 0
     assert _argv_log(cursor_log) == []
     assert not (state / "floor" / "mind" / "cursor-session").is_file()
+
+
+def test_forced_grok_runner_does_not_switch_on_402(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = _write_fake_grok(
+        tmp_path,
+        grok_log,
+        rc=1,
+        stdout="",
+        stderr="HTTP 402 usage balance exhausted",
+    )
+    cursor = _write_fake_cursor_agent(tmp_path, cursor_log)
+    monkeypatch.setenv("CURSOR_API_KEY", "test-cursor-api-key-not-leaked")
+    mind, state = _prep_mind(
+        tmp_path, monkeypatch, unique="forcedgrok", grok=grok, cursor=cursor
+    )
+    monkeypatch.setenv("GCS_MIND_RUNNER", "grok")
+    _append_inbox(state, "floor", "task-forced-grok", "do work")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 0
+    assert result.get("reason") == "runner-fail"
+    assert _offset(state, "floor") == 0
+    assert _argv_log(cursor_log) == []
+    assert _runner_name(state, "floor") != "cursor"
+    captured = capsys.readouterr()
+    blob = captured.out + captured.err
+    assert "MIND_SWITCH" not in blob
+
+
+def test_cursor_quota_switches_to_grok_and_retries_same_mail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = _write_fake_grok(tmp_path, grok_log)
+    cursor = _write_fake_cursor_agent(
+        tmp_path,
+        cursor_log,
+        rc=1,
+        stdout="",
+        stderr="Error: HTTP 402 usage balance exhausted",
+    )
+    monkeypatch.setenv("CURSOR_API_KEY", "test-cursor-api-key-not-leaked")
+    mind, state = _prep_mind(
+        tmp_path, monkeypatch, unique="cur402", grok=grok, cursor=cursor
+    )
+    mind_dir = state / "floor" / "mind"
+    mind_dir.mkdir(parents=True)
+    (mind_dir / "runner").write_text("cursor\n", encoding="utf-8")
+    _append_inbox(state, "floor", "task-cur-402", "switch back to grok")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 1
+    assert result.get("reason") == "ok"
+    assert _offset(state, "floor") > 0
+    assert _runner_name(state, "floor") == "grok"
+    assert _argv_log(cursor_log), "cursor runner must run first"
+    grok_rows = _argv_log(grok_log)
+    assert len(grok_rows) == 1
+    captured = capsys.readouterr()
+    blob = captured.out + captured.err
+    assert "MIND_SWITCH" in blob
+    assert "from=cursor" in blob
+    assert "to=grok" in blob
+
+    cursor_n = len(_argv_log(cursor_log))
+    _append_inbox(state, "floor", "task-cur-402b", "stay on grok")
+    again = mind.process_once("floor")
+    assert again["consumed"] == 1
+    grok_rows2 = _argv_log(grok_log)
+    assert len(grok_rows2) == 2
+    captured2 = capsys.readouterr()
+    again_blob = captured2.out + captured2.err
+    assert "MIND_SWITCH" not in again_blob
+    assert len(_argv_log(cursor_log)) == cursor_n
+
+
+def test_auto_success_persists_grok_runner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = _write_fake_grok(tmp_path, grok_log)
+    cursor = _write_fake_cursor_agent(tmp_path, cursor_log)
+    mind, state = _prep_mind(
+        tmp_path, monkeypatch, unique="persistgrok", grok=grok, cursor=cursor
+    )
+    _append_inbox(state, "floor", "task-auto-1", "first grok mail")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 1
+    assert _runner_name(state, "floor") == "grok"
+    assert _argv_log(cursor_log) == []
 
 
 def test_cursor_runner_sources_agent_env_without_printing_key(

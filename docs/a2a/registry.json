@@ -29,19 +29,49 @@
       "card": "docs/a2a/cards/cloud.json",
       "endpoint": "http://127.0.0.1:8732/a2a/cloud",
       "wellKnown": "http://127.0.0.1:8732/a2a/cloud/.well-known/agent-card.json",
+      "acpPort": 8745
+    },
+    "floor-ops": {
+      "card": "docs/a2a/cards/floor-ops.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/floor-ops",
+      "wellKnown": "http://127.0.0.1:8732/a2a/floor-ops/.well-known/agent-card.json",
+      "acpPort": 8753
+    },
+    "studio-ops": {
+      "card": "docs/a2a/cards/studio-ops.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/studio-ops",
+      "wellKnown": "http://127.0.0.1:8732/a2a/studio-ops/.well-known/agent-card.json",
+      "acpPort": 8752
+    },
+    "art": {
+      "card": "docs/a2a/cards/art.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/art",
+      "wellKnown": "http://127.0.0.1:8732/a2a/art/.well-known/agent-card.json",
+      "acpPort": 8746
+    },
+    "content": {
+      "card": "docs/a2a/cards/content.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/content",
+      "wellKnown": "http://127.0.0.1:8732/a2a/content/.well-known/agent-card.json",
       "acpPort": 8742
+    },
+    "systems": {
+      "card": "docs/a2a/cards/systems.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/systems",
+      "wellKnown": "http://127.0.0.1:8732/a2a/systems/.well-known/agent-card.json",
+      "acpPort": 8744
     },
     "qa-a": {
       "card": "docs/a2a/cards/qa-a.json",
       "endpoint": "http://127.0.0.1:8732/a2a/qa-a",
       "wellKnown": "http://127.0.0.1:8732/a2a/qa-a/.well-known/agent-card.json",
-      "acpPort": 8743
+      "acpPort": 8748
     },
     "qa-b": {
       "card": "docs/a2a/cards/qa-b.json",
       "endpoint": "http://127.0.0.1:8732/a2a/qa-b",
       "wellKnown": "http://127.0.0.1:8732/a2a/qa-b/.well-known/agent-card.json",
-      "acpPort": 8744
+      "acpPort": 8751
     }
   }
 }

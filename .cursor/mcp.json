@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "taskboard": {
+      "command": "bash",
+      "args": [
+        "${workspaceFolder}/scripts/studio/taskboard/run-mcp.sh"
+      ]
+    }
+  }
+}

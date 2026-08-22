@@ -1,3 +1,3 @@
 # Memory — studio-ops
 
-Same seat as `ops` on the example registry. Bus and daemon notes live here.
+Bus and daemon notes live here across turns. First-class seat; not only an ops alias.

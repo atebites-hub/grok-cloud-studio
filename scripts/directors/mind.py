@@ -3,17 +3,19 @@
 
 Python is not the agent. It harvests one inbox line, pins a grok session UUID,
 runs one `grok --prompt-file` turn, persists json stdout, and stays up. Grok is
-the agent for that turn (its own tool loop, `--max-turns 40`). On grok HTTP 402
-/ usage balance exhausted (or `GCS_MIND_RUNNER=cursor`), the same mail line
-runs Cursor CLI with a separate `mind/cursor-session` pin. Never remint the grok
-UUID because harvest was empty or because we fell back.
+the agent for that turn (its own tool loop, `--max-turns 40`). Default
+`GCS_MIND_RUNNER=auto` persists `$GCS_A2A_STATE/<seat>/mind/runner` (`grok` or
+`cursor`). Each mail line uses that file. On quota / HTTP 402, flip the file
+and retry that same mail line once on the other runner (`MIND_SWITCH`). Forced
+`GCS_MIND_RUNNER=grok|cursor` does not flip. Never remint the grok UUID because
+harvest was empty or because the runner switched.
 
 Do not parse grok stdout for function calls. Do not run a second tool-calling
 loop. Do not use grok agent serve or leftover ACP inject on opted-in mind
 seats. Pin one UUID in mind/session; first turn `--session-id`, later turns
 `--resume` that id. Never remint because harvest was empty. Never bare `-p` on
 grok (`--single` requires a prompt; `--prompt-file` is the prompt). Cursor
-fallback uses `-p` (print mode) and a positional prompt. `--agent-profile`,
+CLI uses `-p` (print mode) and a positional prompt. `--agent-profile`,
 `--trust`, and `--plugin-dir` are grok agent flags, not grok headless.
 
 Stdlib only. Donald/orchestrator (skipSeats) are not mind seats.
@@ -536,9 +538,49 @@ def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str,
 
 
 def grok_usage_exhausted(text: str, stderr: str = "") -> bool:
-    """True when grok refused the turn for HTTP 402 / usage balance exhausted."""
+    """True when a runner refused the turn for HTTP 402 / usage balance exhausted."""
     blob = f"{text}\n{stderr}"
     return bool(_USAGE_EXHAUSTED_RE.search(blob))
+
+
+MIND_RUNNERS = ("grok", "cursor")
+
+
+def mind_runner_file(seat: str) -> Path:
+    return mind_dir(seat) / "runner"
+
+
+def load_persisted_mind_runner(seat: str) -> str | None:
+    path = mind_runner_file(seat)
+    if not path.is_file():
+        return None
+    try:
+        val = path.read_text(encoding="utf-8").strip().lower()
+    except OSError:
+        return None
+    if val in MIND_RUNNERS:
+        return val
+    return None
+
+
+def persist_mind_runner(seat: str, runner: str) -> None:
+    if runner not in MIND_RUNNERS:
+        return
+    path = mind_runner_file(seat)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(runner + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def mind_runner_mode() -> str:
+    raw = (os.environ.get("GCS_MIND_RUNNER") or "auto").strip().lower()
+    if raw in ("grok", "cursor", "auto"):
+        return raw
+    return "auto"
+
+
+def other_mind_runner(runner: str) -> str:
+    return "cursor" if runner == "grok" else "grok"
 
 
 def cursor_agent_env_path() -> Path:
@@ -748,22 +790,34 @@ def cursor_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[st
     return _run_cursor_cmd(argv, env=env, timeout=timeout)
 
 
+def _invoke_mind_backend(
+    runner: str, prompt: str, *, seat: str = "", **kwargs: Any
+) -> dict[str, Any]:
+    if runner == "cursor":
+        return cursor_cli_runner(prompt, seat=seat, **kwargs)
+    return grok_cli_runner(prompt, seat=seat, **kwargs)
+
+
 def mind_turn_runner(prompt: str, *, seat: str = "", **kwargs: Any) -> dict[str, Any]:
-    """Grok first. Cursor CLI on GCS_MIND_RUNNER=cursor or grok HTTP 402."""
-    prefer = (os.environ.get("GCS_MIND_RUNNER") or "").strip().lower()
-    if prefer == "cursor":
-        return cursor_cli_runner(prompt, seat=seat, **kwargs)
-    grok_result = grok_cli_runner(prompt, seat=seat, **kwargs)
-    text, rc, stderr = _runner_payload(grok_result)
+    """Use persisted mind/runner. Switch once on quota. Forced env does not flip."""
+    mode = mind_runner_mode()
+    forced = mode in MIND_RUNNERS
+    current = mode if forced else (load_persisted_mind_runner(seat) or "grok")
+    result = _invoke_mind_backend(current, prompt, seat=seat, **kwargs)
+    text, rc, stderr = _runner_payload(result)
     if rc == 0:
-        return grok_result
-    if grok_usage_exhausted(text, stderr):
-        print(
-            f"MIND_FALLBACK seat={seat} reason=grok-402 runner=cursor",
-            flush=True,
-        )
-        return cursor_cli_runner(prompt, seat=seat, **kwargs)
-    return grok_result
+        if not forced:
+            persist_mind_runner(seat, current)
+        return result
+    if forced or not grok_usage_exhausted(text, stderr):
+        return result
+    nxt = other_mind_runner(current)
+    print(
+        f"MIND_SWITCH seat={seat} from={current} to={nxt} reason=quota-exhausted",
+        flush=True,
+    )
+    persist_mind_runner(seat, nxt)
+    return _invoke_mind_backend(nxt, prompt, seat=seat, **kwargs)
 
 
 DEFAULT_RUNNER: Callable[..., Any] = mind_turn_runner
