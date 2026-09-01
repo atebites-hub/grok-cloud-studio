@@ -339,3 +339,32 @@ def test_grok_nonzero_after_hub_receipt_does_not_consume_mail(
     assert _get_task(hub, "floor", task_id)["status"]["state"] == "TASK_STATE_COMPLETED"
     assert _mind_offset(state, "floor") == 0
     assert not (state / "floor" / "mind" / "transcript.jsonl").is_file()
+
+
+def test_none_runner_after_hub_ack_is_not_mail_consumed(
+    hub: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A runner that did not run (None) must not treat the receipt as MIND_TURN."""
+
+    def silent(_prompt: str, **_kwargs: object):
+        return None
+
+    proc = _send(hub, "floor", "must not fake success")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "kind=receipt" in proc.stdout
+    state = Path(hub["state"])
+    inbox = state / "floor" / "inbox.jsonl"
+    task_id = _task_id_from_send(proc.stdout, inbox)
+
+    mind = _load_mind("gcs_mind_hub_ack_none")
+    monkeypatch.setattr(mind, "STATE_DIR", state)
+    monkeypatch.setattr(mind, "ROOT", ROOT)
+    monkeypatch.setattr(mind, "DEFAULT_RUNNER", silent)
+    monkeypatch.setenv("GCS_A2A_STATE", str(state))
+
+    result = mind.process_once("floor")
+    assert result.get("consumed") == 0
+    assert result.get("reason") == "runner-fail"
+    assert _get_task(hub, "floor", task_id)["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert _mind_offset(state, "floor") == 0
+    assert not (state / "floor" / "mind" / "transcript.jsonl").is_file()
