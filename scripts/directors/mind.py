@@ -42,6 +42,7 @@ _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from lib import canonical_seat, skip_seats  # noqa: E402
+from mind_bot_like import prepare_mail_turn  # noqa: E402
 import duplex as a2a_duplex  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
@@ -901,7 +902,12 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """One inbox line → one agent turn. Offset advances only on runner exit 0."""
+    """One inbox line → one agent turn. Offset advances only on runner exit 0.
+
+    Mailbox harvest writes mind/mail.txt + mind/turn.txt before the runner
+    (Bot-like disk turn). Empty harvest does not remint and does not invent
+    a turn file.
+    """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
         print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)
@@ -920,8 +926,8 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             continue
         task_id = str(rec.get("taskId") or "")
         context_id = str(rec.get("contextId") or "")
-        text = _extract_text(rec.get("parts"))
-        prompt = wrap_mind_mail(task_id, context_id, text or json.dumps(rec, ensure_ascii=False))
+        raw_text = prepare_mail_turn(STATE_DIR, seat, rec)
+        prompt = wrap_mind_mail(task_id, context_id, raw_text)
         try:
             raw = run(prompt, seat=seat)
         except Exception as e:
