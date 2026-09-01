@@ -2,6 +2,10 @@
 """Write Director RESULT back onto an A2A task and notify the caller seat.
 
 Idempotent per taskId (.duplex marker). Local studio only. Stdlib.
+
+Hub enqueue is TASK_STATE_SUBMITTED. set_task_state marks COMPLETED after
+the Grok Build mind harvests and the runner exits 0. RESULT duplex is
+optional overlay, not a fake ACP HANDOFF.
 """
 from __future__ import annotations
 
@@ -85,6 +89,52 @@ def extract_caller(record: dict[str, Any]) -> str | None:
 
 def _tasks_path(state_dir: Path, seat: str) -> Path:
     return Path(state_dir) / seat / "tasks.json"
+
+
+def set_task_state(
+    state_dir: Path,
+    seat: str,
+    task_id: str,
+    state: str,
+    *,
+    text: str | None = None,
+) -> dict[str, Any] | None:
+    """Update an existing hub task's status. No-op if the task is missing.
+
+    Mail stays TASK_STATE_SUBMITTED until the Grok Build mind harvests and
+    finishes (runner exit 0). Do not invent a task here.
+    """
+    tid = str(task_id or "").strip()
+    if not tid:
+        return None
+    path = _tasks_path(state_dir, seat)
+    if not path.is_file():
+        return None
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(loaded, dict):
+        return None
+    task = loaded.get(tid)
+    if not isinstance(task, dict):
+        return None
+    status = dict(task.get("status") or {})
+    status["state"] = state
+    status["timestamp"] = now_iso()
+    if text:
+        status["message"] = {
+            "messageId": str(uuid.uuid4()),
+            "role": "ROLE_AGENT",
+            "parts": [{"kind": "text", "text": text}],
+        }
+    task["status"] = status
+    loaded[tid] = task
+    tmp = path.with_suffix(".tmp")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp.write_text(json.dumps(loaded, indent=2) + "\n", encoding="utf-8")
+    tmp.replace(path)
+    return task
 
 
 def _duplex_marker(state_dir: Path, seat: str, task_id: str) -> Path:

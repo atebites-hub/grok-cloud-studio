@@ -87,7 +87,7 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - If grok says the session is already in use, treat it as minted and `--resume` the same UUID. Do not mint a new UUID.
 - Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty. Do not remint because the runner switched.
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
-- Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after the effective runner exits 0.
+- Offset advances only after the effective runner exits 0. That same success marks the hub task `TASK_STATE_COMPLETED`. `send.sh` / hub enqueue is `TASK_STATE_SUBMITTED`. A failed runner leaves mail queued (offset unchanged, task not completed).
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
 
 ### RESULT is duplex, not success

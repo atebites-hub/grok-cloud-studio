@@ -2,8 +2,11 @@
 """Grok Build seat mind: mailbox + pin + stay-up.
 
 Python is not the agent. It harvests one inbox line, pins a grok session UUID,
-runs one `grok --prompt-file` turn, persists json stdout, and stays up. Grok is
-the agent for that turn (its own tool loop, `--max-turns 40`). Default
+runs one `grok --prompt-file` turn, persists json stdout, marks the hub
+task COMPLETED, and stays up. Grok is the agent for that turn (its own
+tool loop, `--max-turns 40`). send.sh / hub enqueue is SUBMITTED; mail
+stays queued until this harvest finishes. Failed runner does not complete
+the task and does not advance offset. Default
 `GCS_MIND_RUNNER=auto` persists `$GCS_A2A_STATE/<seat>/mind/runner` (`grok` or
 `cursor`). Each mail line uses that file. On quota / HTTP 402, flip the file
 and retry that same mail line once on the other runner (`MIND_SWITCH`). Forced
@@ -41,6 +44,7 @@ from typing import Any, Callable
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
+from duplex import set_task_state  # noqa: E402
 from lib import canonical_seat, skip_seats  # noqa: E402
 from mind_bot_like import prepare_mail_turn  # noqa: E402
 import duplex as a2a_duplex  # noqa: E402
@@ -982,6 +986,14 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             },
         )
         _write_offset(seat, end_offset)
+        if task_id:
+            set_task_state(
+                STATE_DIR,
+                seat,
+                task_id,
+                "TASK_STATE_COMPLETED",
+                text=f"MIND_TURN seat={seat} task={task_id}",
+            )
         print(
             f"MIND_TURN seat={seat} task={task_id} offset={end_offset}",
             flush=True,

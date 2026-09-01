@@ -4,7 +4,7 @@
 scripts/a2a/start-studio-bus.sh                 # hub + leftover dispatch + shepherd
                                                 # bot-bridge only if GCS_BOT_BRIDGE=1
 scripts/a2a/start-studio-bus.sh start --daemons # ACP serve + GROW wake loops + host ticker (opt-in)
-scripts/a2a/send.sh ops "ping: hello"
+scripts/a2a/send.sh ops "ping: hello"           # TASK_STATE_SUBMITTED until mind finishes
 scripts/a2a/start-studio-bus.sh status
 ```
 
@@ -63,7 +63,7 @@ export GCS_BOT_SEAT=orchestrator   # optional; default
 
 `./doctor.sh` **FAIL**s if any bot seat `agentId` is empty or `REPLACE_WITH_YOUR_GROK_BOT_AGENT_ID`, unless `GCS_BOT_BIND_OPTIONAL=1` (CI clone checks). Local bind state is gitignored `.a2a-state/bot-bind.json`.
 
-`start-studio-bus.sh` starts `scripts/a2a/bot-bridge.py` **only when `GCS_BOT_BRIDGE=1`**. Default off: Bot seats stay standby. The bridge polls Bot inboxes and writes `.a2a-state/<seat>/bot-wake.jsonl` + latest `bot-wake.txt` (offset: `bot-bridge.offset`). Logs `BOT_BRIDGE_WAKE seat=… task=…` (never secrets). Optional `BOT_BRIDGE_HOOK` for a local wake command.
+`start-studio-bus.sh` starts `scripts/a2a/bot-bridge.py` **only when `GCS_BOT_BRIDGE=1`**. Default off: Bot seats stay standby. The bridge polls Bot inboxes and writes `.a2a-state/<seat>/bot-wake.jsonl` + latest `bot-wake.txt` (offset: `bot-bridge.offset`). Logs `BOT_BRIDGE_WAKE seat=… task=…` (never secrets). Optional `BOT_BRIDGE_HOOK` for a local wake command. `recover.sh` / `start` do not start the bridge unless that env is set.
 
 Standing Bot routine (short prompt):
 

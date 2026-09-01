@@ -171,7 +171,10 @@ def test_hub_ack_is_not_director_result() -> None:
     hub_src = (REPO / "scripts" / "a2a" / "hub.py").read_text(encoding="utf-8")
     send_src = (REPO / "scripts" / "a2a" / "send.sh").read_text(encoding="utf-8")
     assert "kind=receipt" not in send_src or "MIND_TURN" not in send_src
-    assert "Simple ack hub" in hub_src
+    assert duplex.extract_result_line("QUEUED seat=floor messageId=m-hub-1") is None
+    assert "TASK_STATE_SUBMITTED" in hub_src
+    assert "Enqueue is not done" in hub_src
+    assert '"kind": "queued"' in hub_src or "kind\": \"queued\"" in hub_src
 
 
 def test_duplex_writes_result_onto_task_and_skips_pong(
