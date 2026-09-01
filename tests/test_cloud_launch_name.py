@@ -5,6 +5,7 @@ Palemon Linear is Living Sky (LIV). Does not remint GCS #49 followup-refuse.
 """
 from __future__ import annotations
 
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -73,7 +74,10 @@ def _fleet(
 
 
 def test_launch_name_refuses_live_running_twin(tmp_path: Path) -> None:
-    """A live Extra High with the same --name must not be reminted."""
+    """Given ACTIVE+RUNNING same --name, when launch, then refuse (not leftover-green).
+
+    Membership ACTIVE is not liveness. The gate is latest-run runStatus=RUNNING.
+    """
     items, runs = _fleet()
     with MockCursorAPI(list_items=items, run_status_by_id=runs) as api:
         proc = _run(
@@ -197,6 +201,111 @@ def test_launch_name_skips_bot_cloudagent(tmp_path: Path) -> None:
     assert len(_create_posts(api)) == 1
     assert not any(path.endswith("/runs/run-bot") for path in api.gets), api.gets
     assert FAKE_KEY not in combined
+
+
+def test_launch_name_creating_is_not_running(tmp_path: Path) -> None:
+    """CREATING is in-flight membership, not runStatus=RUNNING. Do not refuse."""
+    items, runs = _fleet(live_status="CREATING")
+    with MockCursorAPI(list_items=items, run_status_by_id=runs) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", LIVE_NAME, "CREATING is not RUNNING. Open a PR."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode == 0, combined
+    assert "CLOUD_LAUNCH_OK" in proc.stdout
+    assert "CLOUD_LAUNCH_ERR" not in proc.stdout
+    assert len(_create_posts(api)) == 1
+    body = _create_posts(api)[0]["body"]
+    assert body["model"]["id"] == "grok-4.6"
+    params = {(p["id"], p["value"]) for p in body["model"]["params"]}
+    assert ("effort", "xhigh") in params
+    assert ("fast", "false") in params
+
+
+def test_launch_name_equals_form_refuses_running(tmp_path: Path) -> None:
+    items, runs = _fleet()
+    with MockCursorAPI(list_items=items, run_status_by_id=runs) as api:
+        proc = _run(
+            LAUNCH,
+            [f"--name={LIVE_NAME}", "Do not remint via --name=."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode != 0
+    refuse = [ln for ln in proc.stdout.splitlines() if ln.startswith("CLOUD_LAUNCH_ERR")][0]
+    assert "runStatus=RUNNING" in refuse
+    assert not _create_posts(api)
+
+
+def test_launch_name_list_probe_fail_closed(tmp_path: Path) -> None:
+    """List probe failure must not remint blindly (not leftover-green)."""
+    items, runs = _fleet()
+    with MockCursorAPI(list_items=items, run_status_by_id=runs, list_http=500) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", LIVE_NAME, "Fail closed if list cannot be read."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0, combined
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert not _create_posts(api), api.posts
+    assert FAKE_KEY not in combined
+
+
+def test_launch_name_resolves_latest_run_id_when_list_omits_it(tmp_path: Path) -> None:
+    """GET /v1/agents list may omit latestRunId; still refuse a live RUNNING twin."""
+    items = [
+        {
+            "id": "bc-live",
+            "name": LIVE_NAME,
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-live",
+            "detailLatestRunId": "run-live",
+        }
+    ]
+    with MockCursorAPI(list_items=items, run_status_by_id={"run-live": "RUNNING"}) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", LIVE_NAME, "Resolve latestRunId from GET agent."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0, combined
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    refuse = [ln for ln in proc.stdout.splitlines() if ln.startswith("CLOUD_LAUNCH_ERR")][0]
+    assert "runStatus=RUNNING" in refuse
+    assert not _create_posts(api), api.posts
+    assert any(path.rstrip("/").endswith("/v1/agents/bc-live") for path in api.gets), api.gets
+    assert any(path.endswith("/runs/run-live") for path in api.gets), api.gets
+
+
+def test_name_twin_cli_running_vs_finished(tmp_path: Path) -> None:
+    items, runs = _fleet()
+    with MockCursorAPI(list_items=items, run_status_by_id=runs) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        live = subprocess.run(
+            [sys.executable, str(NAME_TWIN), "--name", LIVE_NAME],
+            cwd=str(REPO),
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=20,
+        )
+        leftover = subprocess.run(
+            [sys.executable, str(NAME_TWIN), "--name", "other-seat"],
+            cwd=str(REPO),
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=20,
+        )
+    assert live.returncode == 0, live.stdout + live.stderr
+    assert "runStatus=RUNNING" in live.stdout
+    assert leftover.returncode == 1, leftover.stdout + leftover.stderr
+    assert FAKE_KEY not in live.stdout + live.stderr + leftover.stdout + leftover.stderr
 
 
 def test_find_live_name_twin_pure() -> None:
