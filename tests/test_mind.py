@@ -1,1 +1,1 @@
-PLACEHOLDER_WILL_BE_REPLACED
+LOAD_FROM_/tmp/push_ready.json
