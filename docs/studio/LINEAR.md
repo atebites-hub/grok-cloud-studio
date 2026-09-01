@@ -13,6 +13,16 @@ before any GraphQL call.
 Minds comment the owning Living Sky issue (default `LIV-82`) with launch or
 pytest evidence. Do not `send.sh donald` to stamp.
 
+`scripts/directors/mind.py` `process_once` does this automatically after a
+successful TASK (offset already advanced, `MIND_TURN` printed). Floor/ops
+call `maybe_stamp_after_task`. Donald / orchestrator never reach the hook
+(`reason=skipSeats`). Missing `LINEAR_API_KEY` prints `LIV_STAMP_SKIP` and
+does not fail the turn. `GCS_LIV_STAMP=0` disables the hook; `=1` forces
+it on. Default: on outside pytest; off while `PYTEST_CURRENT_TEST` is set.
+
+studio-mind MCP also exposes `liv_stamp` (`task` + `evidence`) for an
+explicit stamp. Same Living Sky checks. Same skipSeats law.
+
 ```bash
 python3 scripts/studio/linear/liv_stamp.py after-task \
   --issue LIV-82 \
@@ -44,6 +54,7 @@ python3 scripts/studio/linear/liv_stamp.py create \
   body from `build_after_task_body()` / `linear_mcp_save_comment_args()`.
 - `LINEAR_API_KEY` from the environment, `$GCS_A2A_STATE/linear.env`, or
   `~/.config/linear/api.key`. Never print it. Never commit it.
+- `GCS_LIV_ISSUE` (default `LIV-82`) is the issue `process_once` stamps.
 - Pytest may set `GCS_LINEAR_GRAPHQL_URL` to a localhost mock.
 
 This CLI does not wait on Linear MCP auth. Extra High Linear MCP login is

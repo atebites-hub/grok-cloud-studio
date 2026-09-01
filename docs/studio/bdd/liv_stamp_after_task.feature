@@ -21,6 +21,14 @@ Feature: Grok Build minds stamp Living Sky Linear after a TASK completes
     And workspace is linear.app/livingsky team LIV
     And stdout is LIV_STAMP_OK with liv= LIV-82
 
+  Scenario: process_once stamps Living Sky after the TASK is consumed
+    Given a mind seat (not skipSeats) consumes an A2A TASK in process_once
+    When the runner exits 0
+    Then maybe_stamp_after_task comments LIV-82
+    And result["liv"] is LIV-82
+    And the comment body contains CLOUD_LAUNCH_OK or pytest evidence
+    And Donald process_once still returns skipSeats with no GraphQL POST
+
   Scenario: pytest mocks Linear and asserts the comment body
     Given LINEAR_API_KEY is a test token and GraphQL is localhost
     When tests/test_liv_stamp_after_task.py runs after-task

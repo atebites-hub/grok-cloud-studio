@@ -1,6 +1,7 @@
 # Living Sky Linear stamp (mind CLI)
 
 Grok Build minds stamp `LIV-*` themselves after a TASK completes.
+`process_once` calls `maybe_stamp_after_task` after a successful turn.
 
 ```bash
 python3 scripts/studio/linear/liv_stamp.py after-task \

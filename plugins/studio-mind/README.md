@@ -1,7 +1,7 @@
 # studio-mind (seat GROK_HOME plugin)
 
 Grok Agent SDK / MCP tools for opted-in seat mind: `ticket`, `a2a_send`,
-`cloud_launch`.
+`cloud_launch`, `liv_stamp`.
 
 `seat-mind-loop.sh` installs this directory into the seat `GROK_HOME` with:
 
@@ -26,4 +26,3 @@ Cursor CLI (`GCS_MIND_RUNNER=cursor`, or auto after `MIND_SWITCH`) does not get
 this plugin or seat `GROK_HOME` taskboard MCP. Those do not transfer. Cursor
 uses Cursor builtins (shell/files); `ticket`, `scripts/a2a/send.sh`, and
 `scripts/launch-cloud-extra-high.sh` stay on PATH.
-

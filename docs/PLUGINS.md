@@ -44,7 +44,8 @@ See root `.cursor-plugin/plugin.json` and `mcp.json`.
 ## Living Sky Linear stamp (mind CLI, not a third agent loop)
 
 Grok Build minds stamp Living Sky (`linear.app/livingsky`, `LIV-*`)
-themselves after a TASK completes. Do not have Donald DIY Linear.
+themselves after a TASK completes (`process_once` → `maybe_stamp_after_task`).
+studio-mind MCP also exposes `liv_stamp`. Do not have Donald DIY Linear.
 
 ```bash
 python3 scripts/studio/linear/liv_stamp.py after-task \
