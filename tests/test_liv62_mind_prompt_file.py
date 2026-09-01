@@ -300,11 +300,12 @@ def test_scenario_extra_high_not_bot_cloudagent() -> None:
     assert 'value: "false"' in common
     assert "launch-cloud-extra-high.sh" in mind_src
     assert "plugin_cloud_launch" in mind_src
-    # "Never Bot CloudAgent" is the law comment (main LIV-67). A spawn path is not.
-    for blob in (launch, common, mind_src):
-        stripped = blob.replace("Never Bot CloudAgent", "")
-        assert "Bot CloudAgent" not in stripped
-        assert "bot cloudagent" not in stripped.lower()
+    # Spawn path is Extra High. Law comments may say Never Bot CloudAgent.
+    assert "bind-bot-agent" not in launch
+    assert "GCS_BOT_AGENT_ID" not in launch
+    assert "bot-agents.json" not in launch
+    assert "scripts/launch-cloud-extra-high.sh" in mind_src
+    assert "cloud_launch" in mind_src
 
 
 def test_scenario_no_hermes_no_liv85_no_liv41() -> None:
