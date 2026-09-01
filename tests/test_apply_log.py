@@ -162,7 +162,7 @@ def test_health_ok_requires_apply_log_line_for_current_beat(tmp_path: Path) -> N
                 "--model",
                 "BDD in Action",
                 "--change",
-                "IaC: live probes up; Palemon: no game code",
+                "IaC: health_check.sh live probes up; Palemon: no game code",
             ],
             env,
         )
@@ -193,7 +193,7 @@ def test_stale_apply_log_from_other_beat_does_not_unlock_health_ok(tmp_path: Pat
                 "--model",
                 "Looks Good to Me",
                 "--change",
-                "IaC: previous window; Palemon: no game code",
+                "IaC: health_check.sh previous window; Palemon: no game code",
                 "--beat",
                 stale,
             ],
@@ -220,7 +220,7 @@ def test_append_writes_dated_studio_archive_log(tmp_path: Path) -> None:
             "--model",
             "Grokking Simplicity",
             "--change",
-            "IaC: GCS_TICKER_SEC=600; Palemon: hive-law apply-log path",
+            "IaC: apply_log.py GCS_TICKER_SEC=600; Palemon: hive-law apply-log path",
         ],
         env,
     )
@@ -255,7 +255,7 @@ def test_append_rejects_unknown_model_and_empty_change(tmp_path: Path) -> None:
             "--model",
             "Not A Manning Book",
             "--change",
-            "IaC: x; Palemon: y",
+            "IaC: health_check.sh x; Palemon: y",
         ],
         env,
     )
@@ -292,7 +292,7 @@ def test_append_is_idempotent_per_beat(tmp_path: Path) -> None:
         "--model",
         "Acing the System Design Interview",
         "--change",
-        "IaC: one beat; Palemon: no game code",
+        "IaC: health_check.sh one beat; Palemon: no game code",
     ]
     first = _py(args, env)
     second = _py(args, env)
@@ -311,7 +311,7 @@ def test_append_is_idempotent_per_beat(tmp_path: Path) -> None:
 def test_beat_subcommand_rotates_allowed_models(tmp_path: Path) -> None:
     env = _base_env(tmp_path, tmp_path / "a2a-state")
     proc = _py(
-        ["beat", "--change", "IaC: watchdog loop; Palemon: no game code"],
+        ["beat", "--change", "IaC: watchdog-studio-ops.sh watchdog loop; Palemon: no game code"],
         env,
     )
     blob = proc.stdout + proc.stderr
@@ -335,7 +335,7 @@ def test_check_fails_closed_without_current_beat_line(tmp_path: Path) -> None:
             "--model",
             "Think Distributed Systems",
             "--change",
-            "IaC: timeouts first-class; Palemon: no game code",
+            "IaC: apply_log.py timeouts first-class; Palemon: no game code",
         ],
         env,
     )

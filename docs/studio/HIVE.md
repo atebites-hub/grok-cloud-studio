@@ -1,11 +1,18 @@
 # Hive law — Manning apply-log (LIV-71)
 
 Studio-ops 10-minute beat is not HEALTH_OK unless it applied a Manning
-model to an IaC/Palemon change and wrote that apply to the dated log.
+model to a **real** IaC/Palemon change and wrote that apply to the dated
+log.
 
-This control plane does **not** ship Palemon game code. Extra High grunts
-that change Palemon still target `GCS_CLOUD_REPO`. The apply-log only
-records the model title plus the ops/IaC change.
+This hive is **Living Sky only**. Never launch Bot CloudAgent for this
+law. This control plane does **not** ship Palemon game code. Extra High
+grunts that change Palemon still target `GCS_CLOUD_REPO`. The apply-log
+only records the model title plus the ops/IaC change.
+
+BDD example (executable spec):
+`tests/features/liv71_bdd_in_action.feature` — apply **BDD in Action**
+to `health_check.sh` so HEALTH_OK is observable behavior of this beat's
+APPLY line.
 
 ## Law
 
@@ -23,7 +30,7 @@ has no apply-log line. Missing apply-log is `HEALTH_DEGRADED` (hub still
 up) or stays `HEALTH_DOWN` if the hub is down.
 
 Never paste copyrighted book text. Cite the **model name** (book title)
-and the **IaC/Palemon change** only.
+and the **real IaC/Palemon change** only.
 
 ## Allowed models (titles only)
 
@@ -41,12 +48,14 @@ is omitted. Unknown titles are rejected.
 ## Line format
 
 ```text
-- APPLY beat=2026-09-01T15:50Z seat=studio-ops model=BDD in Action change=IaC: bus=ok; Palemon: no game code
+- APPLY beat=2026-09-01T15:50Z seat=studio-ops model=BDD in Action change=IaC: health_check.sh gates HEALTH_OK; Palemon: no game code
 ```
 
 `beat=` is the UTC window floored to 10 minutes. One APPLY per beat
-(idempotent). `change=` must include both `IaC` and `Palemon` and stay
-under 240 characters.
+(idempotent). `change=` must include `IaC`, `Palemon`, and at least one
+**real kit path** that exists (`health_check.sh`,
+`scripts/studio/apply_log.py`, `setup.sh`, …). Status-only lines such as
+`bus=ok` are not an apply. Stay under 240 characters.
 
 ## Who writes
 
@@ -58,7 +67,7 @@ claim health without the line.
 ## Check
 
 ```bash
-python3 scripts/studio/apply_log.py beat --change 'IaC: …; Palemon: …'
+python3 scripts/studio/apply_log.py beat --change 'IaC: health_check.sh …; Palemon: …'
 python3 scripts/studio/apply_log.py check
 ./health_check.sh
 ```

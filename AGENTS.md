@@ -12,6 +12,6 @@ Public control plane for Grok Build CLI Directors and Cursor Cloud Extra High gr
 - MCP = tools (`plugins/a2a`, `plugins/cursor-cloud`). Seat taskboard stdio MCP lives in each isolated `GROK_HOME/config.toml` (`taskboard --db $GCS_TASKBOARD_DB mcp`), never Cursor `${workspaceFolder}`. A2A = seat-to-seat.
 - Board is tcarac/taskboard (ticket CLI + HTTP `/mcp`). Agent Kanban was removed.
 - Palemon studio wipe: `docs/studio/WIPE.md` (`studio.env.example` → `$GCS_A2A_STATE/studio.env`; board scripts under `scripts/studio/taskboard/`; `start-studio-bus.sh start` with **no** `--daemons`).
-- Hive law (LIV-71): each 10-minute studio-ops beat appends one Manning apply-log line under `studio-archive/log/YYYY-MM-DD.md` (book title + IaC/Palemon change; never copyrighted book text). `HEALTH_OK` is illegal without that beat's APPLY line. See `docs/studio/HIVE.md`.
+- Hive law (LIV-71): each 10-minute studio-ops beat appends one Manning apply-log line under `studio-archive/log/YYYY-MM-DD.md` (book title + **real** IaC/Palemon path; never copyrighted book text). Living Sky only; never Bot CloudAgent. `HEALTH_OK` is illegal without that beat's APPLY line. See `docs/studio/HIVE.md` and `tests/features/liv71_bdd_in_action.feature`.
 - Director prompts: `prompts/` or `docs/studio/directors/*_director_prompt.txt` (`GCS_PROMPT_DIR`). Remint must resolve either layout.
 - Ship gate: `.venv/bin/pytest -q` and `python3 scripts/secret_scan.py`.

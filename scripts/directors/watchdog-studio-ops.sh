@@ -156,7 +156,7 @@ while true; do
     fi
   fi
 
-  change="IaC: bus=${bus_status} serve=${serve_status} wake=${wake_status} ticker=${ticker_status}; Palemon: no game code"
+  change="IaC: health_check.sh apply_log.py bus=${bus_status} serve=${serve_status} wake=${wake_status} ticker=${ticker_status}; Palemon: no game code"
   if [[ -f "$APPLY_LOG_PY" ]] && python3 "$APPLY_LOG_PY" beat --change "$change" --seat "$SEAT" >>"$LOG" 2>&1; then
     log "APPLY_LOG_OK"
   else

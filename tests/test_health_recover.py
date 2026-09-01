@@ -210,7 +210,7 @@ def test_health_ok_with_live_probes_tailscale_warn(tmp_path: Path) -> None:
                 "--model",
                 "BDD in Action",
                 "--change",
-                "IaC: live probes; Palemon: no game code",
+                "IaC: health_check.sh live probes; Palemon: no game code",
             ],
             cwd=str(REPO),
             env=env,
