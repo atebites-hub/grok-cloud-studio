@@ -53,6 +53,8 @@ for p in \
   scripts/cloud/sdk/wait-notify.ts \
   scripts/cloud/webhook_receiver.py \
   scripts/mcp/gcs_mcp.py \
+  scripts/linear_purge_closed.py \
+  docs/studio/LINEAR.md \
   plugins/a2a/.cursor-plugin/plugin.json \
   plugins/cursor-cloud/.cursor-plugin/plugin.json \
   docs/a2a/registry.json \
