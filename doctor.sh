@@ -39,6 +39,8 @@ for p in \
   cleanup.sh \
   health_check.sh \
   recover.sh \
+  scripts/studio/apply_log.py \
+  docs/studio/HIVE.md \
   .gitmodules \
   .cursor/mcp.json \
   scripts/studio/taskboard/run-mcp.sh \

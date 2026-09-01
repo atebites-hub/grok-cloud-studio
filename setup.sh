@@ -108,5 +108,9 @@ echo "SETUP_OK hub=http://127.0.0.1:${HUB_PORT} board_ui=http://${UI_HOST}:${UI_
 if [[ "${GCS_SETUP_SKIP_HEALTH:-0}" == "1" || "${GCS_SETUP_SKIP_START:-0}" == "1" ]]; then
   echo "SETUP_HEALTH_SKIP"
 else
+  python3 "$ROOT/scripts/studio/apply_log.py" beat \
+    --seat studio-ops \
+    --change "IaC: setup.sh deploy bus+board; Palemon: no game code" \
+    || echo "SETUP_APPLY_LOG_WARN"
   bash "$ROOT/health_check.sh"
 fi

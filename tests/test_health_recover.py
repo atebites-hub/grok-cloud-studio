@@ -202,6 +202,23 @@ def test_health_ok_with_live_probes_tailscale_warn(tmp_path: Path) -> None:
         env["GCS_TASKBOARD_UI_PORT"] = str(ui_port)
         env["GCS_TASKBOARD_MCP_PORT"] = str(mcp_port)
         env["PATH"] = "/usr/bin:/bin"
+        apply = subprocess.run(
+            [
+                "python3",
+                str(REPO / "scripts" / "studio" / "apply_log.py"),
+                "append",
+                "--model",
+                "BDD in Action",
+                "--change",
+                "IaC: health_check.sh live probes; Palemon: no game code",
+            ],
+            cwd=str(REPO),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        assert apply.returncode == 0, apply.stdout + apply.stderr
         proc = _run(HEALTH, [], env)
         blob = proc.stdout + proc.stderr
         assert proc.returncode == 0, blob

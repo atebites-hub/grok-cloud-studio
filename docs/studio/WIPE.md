@@ -20,11 +20,14 @@ One-command deploy and teardown:
 
 `setup.sh` / `cleanup.sh` are the deploy/teardown entrypoints.
 `health_check.sh` + `recover.sh` are the **DR loop** once the box is supposed
-to be up: probe live hub `/health`, taskboard `:3010`, mcp-http `:3011`, and
-each `GCS_MIND_SEATS` mind pid; restart only the down pieces via
-`start-studio-bus.sh start` (NO `--daemons`), `start-taskboard.sh start`, and
-`mcp-http.sh start`. Do not remint sessions. Do not wipe state. Do not launch
-Cursor Cloud. Tailscale missing is WARN, not FAIL.
+to be up: probe live hub `/health`, taskboard `:3010`, mcp-http `:3011`,
+each `GCS_MIND_SEATS` mind pid, and this beat's Manning apply-log
+(`studio-archive/log/YYYY-MM-DD.md`, hive law LIV-71); restart only the
+down pieces via `start-studio-bus.sh start` (NO `--daemons`),
+`start-taskboard.sh start`, and `mcp-http.sh start`. Do not remint
+sessions. Do not wipe state. Do not launch Cursor Cloud. Tailscale
+missing is WARN, not FAIL. `HEALTH_OK` is illegal without this beat's
+APPLY line. See `docs/studio/HIVE.md`.
 
 Default cleanup does not delete `studio.env`, `.env`, grok login, Cursor
 login, inboxes, or pins. `CLEANUP_WIPE_STATE=1 ./cleanup.sh` also stops

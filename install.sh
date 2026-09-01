@@ -48,6 +48,7 @@ chmod +x \
   "$ROOT"/scripts/directors/*.sh \
   "$ROOT"/scripts/webhook/*.sh \
   "$ROOT"/scripts/studio/taskboard/*.sh \
+  "$ROOT"/scripts/studio/apply_log.py \
   "$ROOT"/scripts/host/cursor-grok \
   2>/dev/null || true
 
