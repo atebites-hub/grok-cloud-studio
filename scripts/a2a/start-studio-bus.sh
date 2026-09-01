@@ -16,6 +16,7 @@
 # STUDIO_BUS_DISPATCH_ALREADY. Recycle does not kill hub, bot-bridge,
 # fleet-shepherd, seat minds, host ticker, or grok agent serve.
 # Host ticker enqueues ACP_PING STATUS/CONTINUE keep-alives (work turns).
+# Ticker also starts when GCS_MIND_SEATS is set (mind stay-up, no --daemons).
 # Agent Kanban / `ak` was removed. Board is tcarac/taskboard (ticket CLI + HTTP /mcp).
 # Host board after a wipe: scripts/studio/taskboard/start-taskboard.sh start
 # and mcp-http.sh start. Full Palemon floor recreate: docs/studio/WIPE.md.
@@ -79,6 +80,7 @@ Usage: start-studio-bus.sh [start|stop|status] [--daemons]
 start            hub + dispatch + fleet-shepherd (idempotent; recycle leftover
                  dispatch only when dispatch.mind-seats != current GCS_MIND_SEATS)
 start --daemons  also start per-seat ACP daemons + GROW wake loops + host ticker
+                 (ticker also starts when GCS_MIND_SEATS is set, no --daemons)
 stop             stop hub/dispatch/shepherd/wake/mind/ticker (leaves seat serve)
 stop --daemons   also stop seat ACP daemons and clear daemons.enabled
 status           print bus + optional daemon / wake / mind / ticker flag
@@ -89,6 +91,7 @@ Opt-in mind (GCS_MIND_SEATS, example floor,ops): seat-mind-loop.sh → mind.py.
 Mind replaces ACP wake for those seats (set GCS_MIND_PLUS_ACP_WAKE=1 to run
 ACP wake in addition). Do not kill existing grok agent serve.
 Host ticker enqueues ACP_PING STATUS/CONTINUE work turns (not PONG, not LAUNCH).
+Mind seats get that mailbox keep-alive even when --daemons is off.
 Board is tcarac/taskboard. Agent Kanban was removed; do not reconnect `ak`.
 
 Opt-in without the flag: GCS_START_SEAT_DAEMONS=1
@@ -561,6 +564,9 @@ case "$cmd" in
     fi
 
     start_mind_daemons
+    if [[ -n "$(canonical_mind_seats)" ]]; then
+      start_host_ticker
+    fi
     if want_daemons; then
       start_seat_daemons
     else

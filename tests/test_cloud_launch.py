@@ -204,6 +204,92 @@ def test_launch_posts_parameterized_repo(tmp_path: Path) -> None:
     assert body["name"] == "gcs-eh-test"
 
 
+def test_launch_rejects_non_grok_cursor_cloud_model(tmp_path: Path) -> None:
+    """Non-grok CURSOR_CLOUD_MODEL cannot create (LIV-67 / LIV-69). Opus must never run."""
+    with MockCursorAPI(create_http=201) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", "gcs-eh-pin", "Implement the assigned outcome. Open a PR."],
+            _script_env(
+                tmp_path,
+                api.base,
+                CURSOR_API_KEY=FAKE_KEY,
+                CURSOR_CLOUD_MODEL="claude-opus-4.5-thinking",
+            ),
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    assert "CLOUD_BLOCKED" in proc.stderr
+    assert not api.posts
+
+
+def test_followup_rejects_non_grok_cursor_cloud_model(tmp_path: Path) -> None:
+    """Non-grok CURSOR_CLOUD_MODEL cannot send (LIV-67)."""
+    followup = REPO / "scripts" / "cloud" / "followup.sh"
+    with MockCursorAPI(followup_http=201) as api:
+        proc = _run(
+            followup,
+            ["bc-mock", "Continue the assigned outcome."],
+            _script_env(
+                tmp_path,
+                api.base,
+                CURSOR_API_KEY=FAKE_KEY,
+                CURSOR_CLOUD_MODEL="claude-opus-4.5-thinking",
+            ),
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_FOLLOWUP_ERR" in proc.stdout
+    assert "CLOUD_FOLLOWUP_OK" not in proc.stdout
+    assert "CLOUD_BLOCKED" in proc.stderr
+    assert not api.posts
+
+
+@pytest.mark.parametrize(
+    "leaked",
+    ["Auto", "claude-4.5-sonnet", "gemini-3.1-pro", "claude-opus"],
+)
+def test_followup_rest_pins_grok_46_xhigh(tmp_path: Path, leaked: str) -> None:
+    """Leaked CURSOR_CLOUD_MODEL must CLOUD_FOLLOWUP_ERR with no POST (LIV-67)."""
+    followup = REPO / "scripts" / "cloud" / "followup.sh"
+    with MockCursorAPI(followup_http=201) as api:
+        proc = _run(
+            followup,
+            ["bc-mock", "Continue the assigned outcome."],
+            _script_env(
+                tmp_path,
+                api.base,
+                CURSOR_API_KEY=FAKE_KEY,
+                CURSOR_CLOUD_MODEL=leaked,
+            ),
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_FOLLOWUP_ERR" in proc.stdout
+    assert "CLOUD_FOLLOWUP_OK" not in proc.stdout
+    assert "CLOUD_BLOCKED" in proc.stderr
+    assert not api.posts
+
+
+def test_followup_rest_pins_grok_46_xhigh_when_env_unset(tmp_path: Path) -> None:
+    """Unset env: REST /v1/agents/{id}/runs still pins grok-4.6 xhigh fast=false."""
+    followup = REPO / "scripts" / "cloud" / "followup.sh"
+    with MockCursorAPI(followup_http=201) as api:
+        proc = _run(
+            followup,
+            ["bc-mock", "Continue the assigned outcome."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "CLOUD_FOLLOWUP_OK" in proc.stdout
+    posts = [p for p in api.posts if p["path"].endswith("/runs")]
+    assert posts, api.posts
+    body = posts[0]["body"]
+    assert body["model"]["id"] == "grok-4.6"
+    params = {(p["id"], p["value"]) for p in body["model"]["params"]}
+    assert ("effort", "xhigh") in params
+    assert ("fast", "false") in params
+
+
 def test_launch_fail_closed_without_cloud_repo(tmp_path: Path) -> None:
     with MockCursorAPI() as api:
         env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)

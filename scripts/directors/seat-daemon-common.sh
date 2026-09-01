@@ -448,7 +448,7 @@ Host clock is host-ticker.py / host-clock-ticker.sh ACP_PING STATUS/CONTINUE inb
 If this serve dies, start-seat-daemon.sh / ensure_seat_serve restarts it.
 After each session/prompt: do work (taskboard ticket move, send.sh, your own
 scripts/launch-cloud-extra-high.sh). Tools are allowed. Do not idle.
-RESULT is optional duplex, not a hang-up; RESULT-only / PONG is a bug.
+RESULT is optional duplex, not a hang-up; RESULT is duplex, not success. RESULT-only / PONG is a bug.
 Stay in this serve for the next inbox ping. Do not exit the serve process.
 Export awareness: GCS_DIRECTOR_SEAT=${seat}
 PERSIST

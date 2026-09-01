@@ -46,6 +46,8 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 | `session.minted` | Written after the first grok exit 0 (later grok turns `--resume`) |
 | `cursor-session` | Pinned Cursor chat id (from `agent create-chat`; not the grok UUID) |
 | `mail.txt` | Current inbox line (grok `--prompt-file`; Cursor positional prompt) |
+| `turn.txt` | Latest harvested mail turn (Bot `bot-wake.txt` analog). Written **before** the runner. |
+| `turn.jsonl` | Append log of harvested turns (Bot `bot-wake.jsonl` analog) |
 | `transcript.jsonl` | Agent json stdout plus the user mail row |
 | `offset` | Byte offset into that seat’s `inbox.jsonl` (advanced only on runner exit 0) |
 | `pid` | Live mind process |
@@ -54,6 +56,13 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Process cwd is `$GCS_ROOT`. Cursor runner does **not** set `GROK_HOME`.
 
 ### Mail is a turn (grok)
+
+Executable BDD example (Living Sky **LIV-63** remaining, grok-bot-like):
+[`tests/features/liv63_mind_bot_like.feature`](../../tests/features/liv63_mind_bot_like.feature).
+Mailbox harvest writes `mind/mail.txt` + `mind/turn.txt` before the runner
+(Bot-like wake analog). Spawn PATH remaining is `cloud_launch` →
+`scripts/launch-cloud-extra-high.sh` plus `a2a_send` → `scripts/a2a/send.sh`.
+Do not vendor Hermes. Do not land harvest mailbox PRs #26 and #28.
 
 Each inbox line (`scripts/directors/mind.py` `grok_cli_argv`). Live clap (2026-08-21, #21):
 
@@ -78,6 +87,24 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
 - Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after the effective runner exits 0.
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
+
+### RESULT is duplex, not success
+
+Mailbox consume is runner exit 0, not a RESULT line. After a successful turn,
+`duplex_after_mind` writes a Director RESULT onto the A2A task (`scripts/a2a/duplex.py`)
+and may ping the caller (`A2A_REPLY`). Hub `TASK_STATE_COMPLETED` / send.sh ACK is a
+protocol receipt (not this mechanic).
+
+Directors print:
+
+```text
+RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>
+```
+
+`wrap_mind_mail` prepends that law plus `A2A_TASK_ID` / `A2A_CONTEXT`. RESULT-only /
+PONG is a bug. PONG is not a RESULT line. A2A_REPLY is a duplex caller ping — never
+launch a Cursor Cloud agent or Bot CloudAgent for it. Extra High stays **grok-4.6
+xhigh**, `fast=false`.
 
 No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.
 
