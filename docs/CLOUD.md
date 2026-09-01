@@ -19,3 +19,5 @@ scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
+
+MCP `cloud_list` (`plugins/cursor-cloud`, `scripts/cloud/list_helper.py`) prints latest-run `runStatus` (`RUNNING` vs `FINISHED`) next to agent `status`. Cursor Cloud agents stay `ACTIVE` until archive, so leftover `ACTIVE`+`FINISHED` rows are not live workers. This is independent of bash `list.sh`.

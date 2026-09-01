@@ -3,6 +3,7 @@
 MCP tools wrapping the Extra High control plane:
 
 - `cloud_launch` — `scripts/launch-cloud-extra-high.sh`
+- `cloud_list` — `scripts/cloud/list_helper.py` (agent `status` plus latest-run `runStatus`; ACTIVE+FINISHED leftovers are not workers)
 - `cloud_status` — `scripts/cloud/status-cloud-agent.sh`
 - `cloud_result` — `scripts/cloud/result-cloud-agent.sh`
 
