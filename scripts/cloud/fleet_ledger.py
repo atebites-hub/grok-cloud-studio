@@ -13,8 +13,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,6 +28,14 @@ if str(_LIB_DIR) not in sys.path:
 from lib import env_first, pid_alive, repo_root, state_root  # noqa: E402
 
 TERMINAL = frozenset({"FINISHED", "ERROR", "CANCELLED", "EXPIRED"})
+_GITHUB_PULL_RE = re.compile(
+    r"^https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/pulls?/(\d+)(?:[/?#].*)?$",
+    re.IGNORECASE,
+)
+MERGE_READY = "ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST"
+_MERGEABLE_TOKENS = frozenset({"CONFLICTING", "MERGEABLE", "UNKNOWN"})
+_CONFLICTING_STATES = frozenset({"dirty", "conflicting"})
+_MERGEABLE_STATES = frozenset({"clean", "unstable", "blocked", "behind", "has_hooks", "draft"})
 
 
 def _now() -> str:
@@ -159,6 +170,98 @@ def ping_seat(seat: str, text: str) -> bool:
     return proc.returncode == 0
 
 
+def parse_github_pull_url(pr_url: object) -> tuple[str, str, int] | None:
+    """Parse https://github.com/<owner>/<repo>/pull/<n> (also /pulls/)."""
+    if not isinstance(pr_url, str):
+        return None
+    match = _GITHUB_PULL_RE.match(pr_url.strip())
+    if not match:
+        return None
+    return match.group(1), match.group(2), int(match.group(3))
+
+
+def map_github_mergeable(body: dict[str, Any]) -> str | None:
+    """Map GitHub REST/GraphQL pull fields to MERGEABLE|CONFLICTING|UNKNOWN.
+
+    REST mergeable_state=dirty is GraphQL mergeable=CONFLICTING (PRs #301/#304).
+    """
+    raw = body.get("mergeable")
+    if isinstance(raw, str):
+        token = raw.strip().upper()
+        if token in _MERGEABLE_TOKENS:
+            return token
+    state = str(body.get("mergeable_state") or "").strip().lower()
+    if state in _CONFLICTING_STATES:
+        return "CONFLICTING"
+    if raw is False:
+        return "CONFLICTING"
+    if state in _MERGEABLE_STATES or raw is True:
+        return "MERGEABLE"
+    return "UNKNOWN"
+
+
+def github_pr_mergeable(pr_url: object) -> str | None:
+    """GET GitHub pulls API. CONFLICTING/MERGEABLE/UNKNOWN, or None on lookup miss.
+
+    One-shot. Do not reuse Extra High get_agent_run 429 backoff (GCS #35).
+    Never prints GH_TOKEN / GITHUB_TOKEN.
+    """
+    parsed = parse_github_pull_url(pr_url)
+    if parsed is None:
+        return None
+    owner, repo, number = parsed
+    base = (os.environ.get("GITHUB_API_BASE") or "https://api.github.com").rstrip("/")
+    url = f"{base}/repos/{owner}/{repo}/pulls/{number}"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "grok-cloud-studio-waiter",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    token = (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read().decode("utf-8")
+        body = json.loads(raw)
+    except (OSError, urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    return map_github_mergeable(body)
+
+
+def payload_mergeable(payload: dict[str, Any]) -> str | None:
+    value = payload.get("mergeable")
+    if isinstance(value, str):
+        token = value.strip().upper()
+        if token in _MERGEABLE_TOKENS:
+            return token
+        lowered = token.lower()
+        if lowered in {"true", "1", "yes"}:
+            return "MERGEABLE"
+        if lowered in {"false", "0", "no", "dirty"}:
+            return "CONFLICTING"
+    if value is True:
+        return "MERGEABLE"
+    if value is False:
+        return "CONFLICTING"
+    return None
+
+
+def resolve_mergeable(payload: dict[str, Any]) -> dict[str, Any]:
+    """Honor waiter-supplied mergeable; otherwise look up GitHub when prUrl is a pull."""
+    known = payload_mergeable(payload)
+    if known is not None:
+        payload["mergeable"] = known
+        return payload
+    flag = github_pr_mergeable(payload.get("prUrl"))
+    if flag is not None:
+        payload["mergeable"] = flag
+    return payload
+
+
 def notify_owner(
     bc_id: str,
     payload: dict[str, Any],
@@ -172,6 +275,7 @@ def notify_owner(
     """
     hit = find_by_bc(bc_id)
     seat_name = seat or (hit[0] if hit else _seat_name())
+    payload = resolve_mergeable(dict(payload))
     text = notify_text(bc_id, payload)
     ok = ping_seat(seat_name, text)
     if not ok:
@@ -184,19 +288,34 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
     pr = payload.get("prUrl") or "none"
     name = payload.get("name") or ""
     url = payload.get("url") or f"https://cursor.com/agents/{bc_id}"
+    mergeable = payload_mergeable(payload)
+    merge_tag = f" mergeable={mergeable}" if mergeable else ""
     if run_status == "FINISHED":
+        if mergeable == "CONFLICTING":
+            return (
+                f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
+                f"runStatus=FINISHED pr={pr}{merge_tag} url={url}. "
+                f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
+                f"GitHub PR is CONFLICTING: QA HOLD squash; do not ping QA MERGE_REQUEST; "
+                f"Extra High rebase only. RESULT with bc-id + pr."
+            )
         return (
             f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
-            f"runStatus=FINISHED pr={pr} url={url}. "
+            f"runStatus=FINISHED pr={pr}{merge_tag} url={url}. "
             f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
-            f"If pr is a URL: ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST; "
+            f"If pr is a URL: {MERGE_READY}; "
             f"do not launch a twin. RESULT with bc-id + pr."
         )
+    hold = (
+        " GitHub PR is CONFLICTING: QA HOLD squash; Extra High rebase only."
+        if mergeable == "CONFLICTING"
+        else ""
+    )
     return (
         f"FLEET_DONE: Extra High {bc_id} ({name}) "
-        f"runStatus={run_status} pr={pr} url={url}. "
+        f"runStatus={run_status} pr={pr}{merge_tag} url={url}. "
         f"Inspect with scripts/cloud/result-cloud-agent.sh {bc_id}; "
-        f"follow-up or close; do not ignore. RESULT."
+        f"follow-up or close; do not ignore.{hold} RESULT."
     )
 
 
@@ -225,6 +344,9 @@ def complete(
     assert row is not None
     row["run_status"] = str(payload.get("runStatus") or payload.get("status") or "")
     row["pr_url"] = payload.get("prUrl")
+    mergeable = payload_mergeable(payload)
+    if mergeable is not None:
+        row["mergeable"] = mergeable
     row["notified"] = True
     row["status"] = "closed"
     row["notified_by"] = notified_by
