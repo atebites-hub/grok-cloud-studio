@@ -39,7 +39,7 @@ Stdlib HTTP+JSON (`scripts/a2a/hub.py`):
 
 - `GET /health` `GET /registry`
 - `GET /a2a/{seat}/.well-known/agent-card.json`
-- `POST /a2a/{seat}/message:send` — appends `.a2a-state/<seat>/inbox.jsonl`, returns `TASK_STATE_COMPLETED` + receipt
+- `POST /a2a/{seat}/message:send` — resolve aliases (`donald` → `orchestrator` Bot), append `.a2a-state/<canonical>/inbox.jsonl`, return `TASK_STATE_COMPLETED` + receipt
 - tasks get/list/cancel
 
 Default bind `127.0.0.1:8732`. Cards live in `docs/a2a/cards/`. Seats and ACP ports live in `docs/a2a/registry.json` (`scripts/a2a/lib.py` is the source of truth).

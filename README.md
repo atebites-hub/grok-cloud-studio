@@ -63,7 +63,7 @@ See `.env.example`. Prefix is **`GCS_*`**. Important:
 
 - `GCS_CLOUD_REPO` / `CLOUD_REPO_URL` — **required** for Extra High create (fail closed)
 - `GCS_BOT_AGENT_ID` — Grok Bot orchestrator id (binds into A2A on install)
-- `GCS_BOT_SEAT` — default `orchestrator` (`donald` still works; kept in `skipSeats` for back-compat)
+- `GCS_BOT_SEAT` — default `orchestrator` (`donald` aliases to orchestrator when donald is skipSeats-only; kept in `skipSeats` for back-compat)
 - `GCS_BOT_BIND_OPTIONAL=1` — doctor will not FAIL on placeholder agentId (CI clones only)
 - `GCS_CLOUD_REF` — default `main`
 - `GCS_PROMPT_DIR` — director prompts dir; empty uses `prompts/` or `docs/studio/directors`

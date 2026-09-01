@@ -44,6 +44,10 @@ if [[ -z "$SEAT" || -z "$TEXT" ]]; then
   exit 2
 fi
 
+# donald → orchestrator (Bot) when donald is skipSeats-only. First-class
+# registry names still win. Capacity ACK must land in the Bot inbox.
+SEAT="$(python3 "$ROOT/scripts/a2a/lib.py" canonical "$SEAT")"
+
 MSG_ID=$(python3 - <<'PY'
 import uuid; print(uuid.uuid4())
 PY
