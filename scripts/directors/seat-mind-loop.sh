@@ -2,7 +2,8 @@
 # Long-lived Grok Build mind for one seat. Mail is a turn.
 # inbox.jsonl growth → scripts/directors/mind.py (mailbox + pin + stay-up;
 # grok --resume pinned UUID --prompt-file mail; never bare -p).
-# Installs plugins/studio-mind into seat GROK_HOME via grok plugin install --trust.
+# Installs grok-bot-like mind plugins (studio-mind, a2a, cursor-cloud)
+# into seat GROK_HOME via grok plugin install --trust. Not Hermes plugin.yaml.
 # No ACP WebSocket. No leftover inject. Does not start or kill grok agent serve.
 #
 # Usage: seat-mind-loop.sh <seat>
@@ -42,7 +43,7 @@ echo $$ >"$PID_FILE"
   echo "mode=grok-build-mind"
 } >"$MIND_DIR/mode"
 
-install_studio_mind_plugin "$SEAT"
+install_mind_grok_plugins "$SEAT"
 
 echo "MIND_LOOP_START seat=$SEAT pid=$$ grok_home=${GROK_HOME} mode=grok-build-mind"
 
