@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Start/stop/status for local Grok Cloud Studio A2A hub + leftover dispatch +
-# bot-bridge + fleet-shepherd. Seat ACP daemons are opt-in:
+# fleet-shepherd. bot-bridge is opt-in: GCS_BOT_BRIDGE=1 (Bot seats stay
+# standby otherwise). Seat ACP daemons are opt-in:
 # GCS_START_SEAT_DAEMONS=1 or `start --daemons`.
 #
 # GROW: one `grok agent serve` per opted-in seat plus seat-wake-loop.sh →
@@ -13,8 +14,9 @@
 # Leftover ACP GROW is session/prompt inside serve, not this grok --resume path.
 # start recycles leftover dispatch only when .a2a-state/dispatch.mind-seats
 # differs from current GCS_MIND_SEATS (env / studio.env). Matching keeps
-# STUDIO_BUS_DISPATCH_ALREADY. Recycle does not kill hub, bot-bridge,
-# fleet-shepherd, seat minds, host ticker, or grok agent serve.
+# STUDIO_BUS_DISPATCH_ALREADY. Recycle does not kill hub, leftover
+# bot-bridge, fleet-shepherd, seat minds, host ticker, or grok agent serve.
+# start / recover.sh do not spawn bot-bridge unless GCS_BOT_BRIDGE=1.
 # Host ticker enqueues ACP_PING STATUS/CONTINUE keep-alives (work turns).
 # Agent Kanban / `ak` was removed. Board is tcarac/taskboard (ticket CLI + HTTP /mcp).
 # Host board after a wipe: scripts/studio/taskboard/start-taskboard.sh start
@@ -23,6 +25,7 @@
 #
 # Usage:
 #   start-studio-bus.sh          # start hub+dispatch+shepherd (idempotent)
+#                                # bot-bridge only if GCS_BOT_BRIDGE=1
 #   start-studio-bus.sh start
 #   start-studio-bus.sh start --daemons
 #   start-studio-bus.sh stop
@@ -77,7 +80,8 @@ usage() {
 Usage: start-studio-bus.sh [start|stop|status] [--daemons]
 
 start            hub + dispatch + fleet-shepherd (idempotent; recycle leftover
-                 dispatch only when dispatch.mind-seats != current GCS_MIND_SEATS)
+                 dispatch only when dispatch.mind-seats != current GCS_MIND_SEATS).
+                 bot-bridge stays off unless GCS_BOT_BRIDGE=1 (Bot seats standby).
 start --daemons  also start per-seat ACP daemons + GROW wake loops + host ticker
 stop             stop hub/dispatch/shepherd/wake/mind/ticker (leaves seat serve)
 stop --daemons   also stop seat ACP daemons and clear daemons.enabled
@@ -203,6 +207,11 @@ want_daemons() {
   [[ "${WITH_DAEMONS:-0}" == "1" ]] && return 0
   [[ "${GCS_START_SEAT_DAEMONS:-0}" == "1" ]] && return 0
   [[ -f "$DAEMONS_FLAG" ]] && return 0
+  return 1
+}
+
+want_bot_bridge() {
+  [[ "${GCS_BOT_BRIDGE:-0}" == "1" ]] && return 0
   return 1
 }
 
@@ -542,7 +551,7 @@ case "$cmd" in
     bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
     if pid_alive "$bridge_pid"; then
       echo "STUDIO_BUS_BOT_BRIDGE_ALREADY pid=$bridge_pid"
-    else
+    elif want_bot_bridge; then
       rm -f "$BOT_BRIDGE_PID_FILE"
       if [[ -f "$BOT_BRIDGE_PY" ]]; then
         nohup python3 "$BOT_BRIDGE_PY" >>"$BOT_BRIDGE_LOG" 2>&1 &
@@ -558,6 +567,10 @@ case "$cmd" in
         echo "STUDIO_BUS_BOT_BRIDGE_SKIP missing $BOT_BRIDGE_PY"
         bridge_pid=""
       fi
+    else
+      rm -f "$BOT_BRIDGE_PID_FILE"
+      bridge_pid=""
+      echo "STUDIO_BUS_BOT_BRIDGE_SKIP reason=standby (set GCS_BOT_BRIDGE=1 to start)"
     fi
 
     start_mind_daemons
