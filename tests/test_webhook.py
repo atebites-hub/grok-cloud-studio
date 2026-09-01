@@ -97,16 +97,18 @@ def test_webhook_receiver_does_not_poll_get_agent_run() -> None:
 
 
 def test_followup_does_not_vendor_hermes_or_retune_waiter() -> None:
-    """FOLLOWUP_FIRST: keep #57 isolated. No Hermes vendor, no #35 remint.
+    """Webhook isolation: no Hermes vendor. GCS #35 429 backoff stays in wait-notify.
 
-    #34 waiter skip landed on main. This PR must leave fleet_ledger.notify_owner
-    alone and skip Cursor retries at the statusChange handler instead.
+    statusChange skips Cursor retries at the handler. Do not remint occupancy.
+    Never Bot CloudAgent.
     """
     wait = (ROOT / "scripts" / "cloud" / "sdk" / "wait-notify.ts").read_text(encoding="utf-8")
     ledger = (ROOT / "scripts" / "cloud" / "fleet_ledger.py").read_text(encoding="utf-8")
     receiver = (ROOT / "scripts" / "cloud" / "webhook_receiver.py").read_text(encoding="utf-8")
     launch = (ROOT / "scripts" / "launch-cloud-extra-high.sh").read_text(encoding="utf-8")
-    assert "CLOUD_WAITER_RETRY" not in wait
+    assert "CLOUD_WAITER_RETRY" in wait
+    assert "CLOUD_WAITER_RETRY" not in receiver
+    assert "rateLimitBackoffMs" not in receiver
     assert "_already_notified_by_waiter" in ledger
     assert "_already_notified_by_waiter" not in receiver
     assert 'hit[1].get("notified")' in receiver

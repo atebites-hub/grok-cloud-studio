@@ -1,8 +1,9 @@
-"""wait-notify FLEET_DONE flags GitHub draft PRs and mergeable=CONFLICTING.
+"""wait-notify FLEET_DONE: draft/CONFLICTING flags plus get_agent_run 429 backoff.
 
 GCS #41 (LIV-67) draft is not MERGE_REQUEST-ready. Sibling product PRs
 #301/#304 are mergeable_state=dirty: QA HOLD squash.
-Does not remint occupancy or get_agent_run 429 backoff GCS #35.
+GCS #35: Extra High waiters backoff on get_agent_run HTTP 429 and resume
+until the run is terminal. Do not remint occupancy.
 Never Bot CloudAgent. Occupancy HOLD. Living Sky LIV-41 / LIV-67.
 """
 from __future__ import annotations
@@ -10,8 +11,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
 import subprocess
+import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -22,9 +26,13 @@ ROOT = Path(__file__).resolve().parents[1]
 CLOUD = ROOT / "scripts" / "cloud"
 WAIT_TS = CLOUD / "sdk" / "wait-notify.ts"
 WAIT_NOTIFY = CLOUD / "sdk" / "run.sh"
+SPAWN_WAITER = CLOUD / "spawn-waiter.sh"
 PR_MERGEABLE_TS = CLOUD / "sdk" / "pr-mergeable.ts"
 PR_DRAFT_TS = CLOUD / "sdk" / "pr-draft.ts"
 FAKE_KEY = "test-cursor-api-key-waiter-mergeable"
+
+sys.path.insert(0, str(CLOUD))
+from fleet_ledger import is_orphan, load_entries  # noqa: E402
 PR301 = "https://github.com/atebites-hub/grok-cloud-studio/pull/301"
 GCS41 = "https://github.com/atebites-hub/grok-cloud-studio/pull/41"
 MERGE_READY = "ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST"
@@ -128,10 +136,16 @@ def _script_env(
         "CLOUD_OWNER_SEAT": "ops",
         "CLOUD_WATCH_INTERVAL": "5",
         "CLOUD_WATCH_TIMEOUT_SEC": "15",
+        "CLOUD_WAITER_BACKOFF_MS": "50",
+        "CLOUD_WAITER_BACKOFF_CAP_MS": "200",
+        "CLOUD_WAITER_RESTART_MS": "50",
+        "CLOUD_WAITER_RESTART_CAP_MS": "200",
         "LC_ALL": "C",
         "CLOUD_FORCE_REST": "1",
         "NODE_NO_WARNINGS": "1",
         "REPORT_TO": "ops",
+        "GCS_SPAWN_WAITER": "1",
+        "CLOUD_SPAWN_WAITER": "1",
     }
     env.pop("GH_TOKEN", None)
     env.pop("GITHUB_TOKEN", None)
@@ -344,9 +358,13 @@ class FakeA2AHub:
             self._thread.join(timeout=2)
 
 
-def _run_wait_notify(env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def _run_wait_notify(
+    env: dict[str, str],
+    agent_id: str = "bc-liv41",
+    run_id: str = "run-mock",
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["bash", str(WAIT_NOTIFY), "wait-notify", "--id", "bc-liv41", "--run", "run-mock"],
+        ["bash", str(WAIT_NOTIFY), "wait-notify", "--id", agent_id, "--run", run_id],
         cwd=str(ROOT),
         capture_output=True,
         text=True,
@@ -429,3 +447,224 @@ def test_wait_notify_ping_includes_draft_true_not_merge_ready(tmp_path: Path) ->
     assert "draft=true" in ping
     assert MERGE_READY not in ping
     assert ping.startswith("FLEET_DONE / PR_READY:")
+
+
+@dataclass
+class MockCursorWaiterAPI:
+    """Cursor Cloud v1 mock. Agent stays ACTIVE; run GET can 429 then FINISHED."""
+
+    run_http: list[int] = field(default_factory=lambda: [200])
+    run_status: str = "FINISHED"
+    agent_status: str = "ACTIVE"
+    run_id: str = "run-mock"
+    paths: list[str] = field(default_factory=list)
+    _httpd: ThreadingHTTPServer | None = None
+    _thread: threading.Thread | None = None
+    base: str = ""
+    _run_i: int = 0
+
+    def __enter__(self) -> "MockCursorWaiterAPI":
+        api = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, fmt: str, *args: Any) -> None:
+                return
+
+            def _send(self, code: int, payload: dict[str, Any] | None = None) -> None:
+                blob = b"" if payload is None else json.dumps(payload).encode("utf-8")
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(blob)))
+                if code == 429:
+                    self.send_header("Retry-After", "0")
+                self.end_headers()
+                if blob:
+                    self.wfile.write(blob)
+
+            def _run(self, run_id: str, agent_id: str) -> dict[str, Any]:
+                return {
+                    "id": run_id,
+                    "agentId": agent_id,
+                    "status": api.run_status,
+                    "createdAt": 1_000,
+                }
+
+            def _next_run_code(self) -> int:
+                seq = api.run_http or [200]
+                if api._run_i < len(seq):
+                    code = seq[api._run_i]
+                    api._run_i += 1
+                    return code
+                return seq[-1]
+
+            def do_GET(self) -> None:
+                parsed = urlparse(self.path)
+                api.paths.append(parsed.path)
+                parts = [p for p in parsed.path.split("/") if p]
+                if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
+                    self._send(
+                        200,
+                        {
+                            "id": parts[2],
+                            "name": "leftover-grunt",
+                            "status": api.agent_status,
+                            "url": f"https://cursor.com/agents/{parts[2]}",
+                            "latestRunId": api.run_id,
+                        },
+                    )
+                    return
+                if len(parts) == 4 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
+                    code = self._next_run_code()
+                    if code != 200:
+                        self._send(code, {"error": "rate_limited", "message": "get_agent_run 429"})
+                        return
+                    self._send(200, {"items": [self._run(api.run_id, parts[2])]})
+                    return
+                if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
+                    code = self._next_run_code()
+                    if code != 200:
+                        self._send(code, {"error": "rate_limited", "message": "get_agent_run 429"})
+                        return
+                    self._send(200, self._run(parts[4], parts[2]))
+                    return
+                self._send(404, {"error": "not_found"})
+
+        self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.base = f"http://127.0.0.1:{self._httpd.server_address[1]}"
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._httpd is not None:
+            self._httpd.shutdown()
+            self._httpd.server_close()
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+
+
+def test_wait_notify_retries_get_agent_run_429_until_finished(tmp_path: Path) -> None:
+    """First get_agent_run 429 must backoff and resume; leftover ACTIVE+FINISHED is terminal."""
+    with MockCursorWaiterAPI(run_http=[429, 429, 200], run_status="FINISHED") as api, FakeA2AHub() as hub:
+        env = _script_env(tmp_path, api_base=api.base, hub=hub.base, CLOUD_WATCH_TIMEOUT_SEC="0")
+        proc = _run_wait_notify(env, agent_id="bc-wait", run_id="run-mock")
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode == 0, combined
+    assert "CLOUD_WAITER_DONE" in combined
+    assert "runStatus=FINISHED" in combined
+    assert "CLOUD_WAITER_RETRY" in combined
+    assert combined.count("CLOUD_WAITER_RETRY") >= 2
+    run_gets = [p for p in api.paths if "/runs" in p]
+    assert len(run_gets) >= 3
+    assert FAKE_KEY not in combined
+    assert api.agent_status == "ACTIVE"
+
+
+def test_wait_notify_does_not_retry_401(tmp_path: Path) -> None:
+    with MockCursorWaiterAPI(run_http=[401], run_status="FINISHED") as api, FakeA2AHub() as hub:
+        env = _script_env(tmp_path, api_base=api.base, hub=hub.base, CLOUD_WATCH_TIMEOUT_SEC="8")
+        proc = _run_wait_notify(env, agent_id="bc-wait", run_id="run-mock")
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0
+    assert "CLOUD_WAITER_ERR" in combined
+    assert "CLOUD_WAITER_DONE" not in combined
+    assert "CLOUD_WAITER_RETRY" not in combined
+    assert FAKE_KEY not in combined
+
+
+def test_wait_notify_source_exponential_backoff_on_429() -> None:
+    src = WAIT_TS.read_text(encoding="utf-8")
+    common = (CLOUD / "sdk" / "common.ts").read_text(encoding="utf-8")
+    blob = src + "\n" + common
+    assert "CLOUD_WAITER_RETRY" in src
+    assert "429" in blob
+    assert "rateLimitBackoffMs" in blob
+    assert "Bot CloudAgent" not in src
+    assert "Grok Bot CloudAgent" not in src
+    assert "occupancy-count" not in src
+
+
+def test_spawn_waiter_source_restarts_after_rate_limit_err() -> None:
+    src = SPAWN_WAITER.read_text(encoding="utf-8")
+    assert "CLOUD_WAITER_RESTART" in src
+    assert "CLOUD_WAITER_BIN" in src
+    assert "429" in src
+    assert "Bot CloudAgent" not in src
+
+
+def _write_rate_limit_then_ok_waiter(tmp_path: Path) -> Path:
+    stamp = tmp_path / "waiter-calls"
+    stamp.write_text("0\n", encoding="utf-8")
+    fake = tmp_path / "fake-wait-notify.sh"
+    fake.write_text(
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+STAMP="{stamp}"
+n=$(($(cat "$STAMP") + 1))
+echo "$n" > "$STAMP"
+if [[ "$n" -eq 1 ]]; then
+  echo "CLOUD_WAITER_ERR id=bc-rl REST 429 get_agent_run (6000/hour)" >&2
+  exit 1
+fi
+echo "CLOUD_WAITER_DONE id=bc-rl runStatus=FINISHED pr=none"
+exit 0
+""",
+        encoding="utf-8",
+    )
+    fake.chmod(fake.stat().st_mode | stat.S_IEXEC)
+    return fake
+
+
+def test_spawn_waiter_does_not_orphan_after_rate_limit_err(tmp_path: Path) -> None:
+    """Supervisor pid stays live after CLOUD_WAITER_ERR 429 so fleet-shepherd sees no orphan."""
+    fake = _write_rate_limit_then_ok_waiter(tmp_path)
+    stamp = tmp_path / "waiter-calls"
+    env = _script_env(tmp_path, CLOUD_WAITER_BIN=str(fake))
+    proc = subprocess.run(
+        ["bash", str(SPAWN_WAITER), "--id", "bc-rl", "--run", "run-1"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=20,
+    )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode == 0, combined
+    assert "CLOUD_WAITER_SPAWNED" in combined
+    pid_s = ""
+    for token in combined.split():
+        if token.startswith("pid="):
+            pid_s = token.split("=", 1)[1]
+    assert pid_s.isdigit(), combined
+    waiter_pid = int(pid_s)
+
+    deadline = time.time() + 8
+    calls = 0
+    row = None
+    log_text = ""
+    log_dir = tmp_path / "cloud-logs"
+    while time.time() < deadline:
+        try:
+            calls = int(stamp.read_text(encoding="utf-8").strip() or "0")
+        except ValueError:
+            calls = 0
+        fleet = tmp_path / "a2a-state" / "ops" / "fleet.jsonl"
+        if fleet.is_file():
+            entries = load_entries(fleet)
+            row = next((e for e in entries if e.get("bc_id") == "bc-rl"), None)
+        logs = list(log_dir.glob("waiter-*.log")) if log_dir.is_dir() else []
+        if logs:
+            log_text = logs[0].read_text(encoding="utf-8")
+        if calls >= 2 and "CLOUD_WAITER_RESTART" in log_text and "CLOUD_WAITER_DONE" in log_text:
+            break
+        if row is not None and calls >= 1 and calls < 2:
+            assert is_orphan(row) is False, row
+        time.sleep(0.05)
+
+    assert calls >= 2, f"waiter not restarted after 429 death; calls={calls} log={log_text!r} out={combined}"
+    assert "CLOUD_WAITER_RESTART" in log_text
+    assert "CLOUD_WAITER_DONE" in log_text
+    assert row is not None
+    assert waiter_pid > 0
+    assert FAKE_KEY not in combined
+    assert FAKE_KEY not in log_text
