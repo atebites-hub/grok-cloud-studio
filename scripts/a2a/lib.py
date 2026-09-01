@@ -53,6 +53,13 @@ CCGS_LEAD_ALIASES = {
 # after normalize_seat (not substring — gcs-install-bind-bot stays allowed).
 BOT_CLOUDAGENT_NAMES = frozenset({"donald", "orchestrator", "grok-bot", "bot"})
 
+# Grok Bot orchestrator. `donald` is skipSeats back-compat for the Bot seat
+# (`orchestrator`). First-class registry names still win. Never a CloudAgent.
+BOT_SEAT_ALIASES = {
+    "donald": "orchestrator",
+    "orchestrator": "donald",
+}
+
 
 def env_first(*names: str, default: str = "") -> str:
     for name in names:
@@ -104,7 +111,9 @@ def canonical_seat(seat: str, root: Path | None = None) -> str:
 
     First-class registry names win. `studio-ops` / `floor-ops` stay themselves
     when present; they only fold onto `ops` / `floor` on extract registries
-    that still ship the short names.
+    that still ship the short names. `donald` folds onto `orchestrator` (Bot)
+    when orchestrator is the registry seat so capacity ACK can land; the
+    reverse applies when only `donald` is bound.
     """
     key = normalize_seat(seat)
     entries = _seat_entries(root)
@@ -115,6 +124,7 @@ def canonical_seat(seat: str, root: Path | None = None) -> str:
         "ops": "studio-ops",
         "floor-ops": "floor",
         "floor": "floor-ops",
+        **BOT_SEAT_ALIASES,
         **CCGS_LEAD_ALIASES,
     }
     alt = aliases.get(key)

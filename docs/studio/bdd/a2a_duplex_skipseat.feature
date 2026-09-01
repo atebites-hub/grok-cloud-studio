@@ -8,7 +8,8 @@ Feature: Duplex RESULT notify must not 404 skipSeat donald
   Hub enqueue is TASK_STATE_SUBMITTED until mind harvests (LIV-85 receipt).
   Director RESULT is a separate duplex write onto the working seat's A2A task.
   A2A_REPLY must succeed after that RESULT. A missed ping must not fail the
-  task reply. send.sh donald may 404; duplex must not point A2A_REPLY at donald.
+  task reply. send.sh donald aliases to orchestrator (capacity ACK);
+  duplex must not point A2A_REPLY at donald.
 
   Scenario: donald caller remaps to a hub card seat
     Given a Director RESULT whose inbox caller is skipSeat donald

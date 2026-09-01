@@ -50,7 +50,7 @@ Stdlib HTTP+JSON (`scripts/a2a/hub.py`):
 
 - `GET /health` `GET /registry`
 - `GET /a2a/{seat}/.well-known/agent-card.json`
-- `POST /a2a/{seat}/message:send` — appends `.a2a-state/<seat>/inbox.jsonl`, returns `TASK_STATE_SUBMITTED` (queued until mind harvests and finishes). A2A ACK / `kind=receipt` is a receipt, not mind-turn done. Later `TASK_STATE_COMPLETED` is still a protocol receipt, not `MIND_TURN`. Duplex `A2A_REPLY` maps skipSeat `donald` → `floor-ops` / `orchestrator` so notify does not 404; a missed ping does not fail the task reply.
+- `POST /a2a/{seat}/message:send` — resolve aliases (`donald` → `orchestrator` Bot), append `.a2a-state/<canonical>/inbox.jsonl`, return `TASK_STATE_SUBMITTED` (queued until mind harvests and finishes). A2A ACK / `kind=receipt` is a receipt, not mind-turn done. Later `TASK_STATE_COMPLETED` is still a protocol receipt, not `MIND_TURN`. Duplex `A2A_REPLY` maps skipSeat `donald` → `floor-ops` / `orchestrator` so notify does not 404; a missed ping does not fail the task reply.
 - tasks get/list/cancel
 
 Default bind `127.0.0.1:8732`. Cards live in `docs/a2a/cards/`. Seats and ACP ports live in `docs/a2a/registry.json` (`scripts/a2a/lib.py` is the source of truth).
