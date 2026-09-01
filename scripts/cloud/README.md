@@ -35,7 +35,7 @@ Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|res
 
 Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 
-- `model.id = grok-4.6`
+- `model.id = grok-4.6` (pinned; Extra High create does not take the Cursor CLI mind model id)
 - `model.params`: `effort=xhigh`, `fast=false`
 - `repos[0].url` from **`GCS_CLOUD_REPO` or `CLOUD_REPO_URL`** (required; fail closed)
 - `repos[0].startingRef` from `GCS_CLOUD_REF` / `CLOUD_REPO_REF` / `CURSOR_CLOUD_REF` (default `main`)

@@ -172,6 +172,46 @@ EOF
   chmod +x "$dest"
 }
 
+_write_cloud_wrapper() {
+  # PATH wrapper for Extra High scripts. Not MCP. Not a GROK_HOME copy
+  # into Cursor CLI — Cursor uses .cursor/mcp.json (second catalog).
+  local dest="$1" script="$2"
+  local script_q
+  script_q="$(printf '%q' "$script")"
+  cat >"$dest" <<EOF
+#!/bin/bash
+# gcs-seat-cloud-wrapper
+set -euo pipefail
+exec bash $script_q "\$@"
+EOF
+  chmod +x "$dest"
+}
+
+install_seat_cloud_cli() {
+  # Put cloud_launch / cloud_list / cloud_status / cloud_followup / cloud_result
+  # on grok serve PATH. Wrappers exec the Extra High bash scripts. Do not wrap
+  # watch (Directors must not block a turn). Do not copy GROK_HOME MCP.
+  local seat="${1:-}"
+  local sd gh wrap_dir launch list status followup result
+  sd="$(seat_state_dir "${seat:-floor}")"
+  gh="${GROK_HOME:-$sd/grok-home}"
+  mkdir -p "$gh/bin" "${HOME:-$gh}/.grok/bin"
+  launch="$(_gcs_abs_path "$ROOT/scripts/launch-cloud-extra-high.sh")"
+  list="$(_gcs_abs_path "$ROOT/scripts/cloud/list-cloud-agents.sh")"
+  status="$(_gcs_abs_path "$ROOT/scripts/cloud/status-cloud-agent.sh")"
+  followup="$(_gcs_abs_path "$ROOT/scripts/cloud/followup-cloud-agent.sh")"
+  result="$(_gcs_abs_path "$ROOT/scripts/cloud/result-cloud-agent.sh")"
+  for wrap_dir in "$gh/bin" "${HOME:-$gh}/.grok/bin"; do
+    mkdir -p "$wrap_dir"
+    _write_cloud_wrapper "$wrap_dir/cloud_launch" "$launch"
+    _write_cloud_wrapper "$wrap_dir/cloud_list" "$list"
+    _write_cloud_wrapper "$wrap_dir/cloud_status" "$status"
+    _write_cloud_wrapper "$wrap_dir/cloud_followup" "$followup"
+    _write_cloud_wrapper "$wrap_dir/cloud_result" "$result"
+  done
+  echo "SEAT_CLOUD_CLI_OK seat=${seat:-?} wrap=$gh/bin" >&2
+}
+
 _gcs_abs_path() {
   python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$1"
 }
@@ -317,6 +357,7 @@ install_seat_identity() {
   mkdir -p "$sd/grok-home"
   install_seat_grok_auth "$seat"
   install_seat_taskboard_cli "$seat"
+  install_seat_cloud_cli "$seat"
   install_seat_grok_mcp "$seat"
   if [[ -f "$src/SOUL.md" ]]; then
     cp "$src/SOUL.md" "$sd/SOUL.md"

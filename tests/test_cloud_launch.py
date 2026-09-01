@@ -263,3 +263,67 @@ def test_sdk_launch_does_not_hardcode_private_repo() -> None:
     assert banned not in common
     assert "cloudRepo()" in common
     assert "GCS_CLOUD_REPO" in common
+
+
+def test_launch_reads_key_from_agent_env_and_never_prints_it(tmp_path: Path) -> None:
+    env_dir = tmp_path / ".config" / "cursor"
+    env_dir.mkdir(parents=True)
+    (env_dir / "agent.env").write_text(f"export CURSOR_API_KEY={FAKE_KEY}\n", encoding="utf-8")
+    with MockCursorAPI(create_http=201) as api:
+        env = _script_env(tmp_path, api.base)
+        assert "CURSOR_API_KEY" not in env
+        proc = _run(
+            LAUNCH,
+            ["--name", "from-agent-env", "Implement the assigned outcome. Open a PR."],
+            env,
+        )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "CLOUD_LAUNCH_OK" in proc.stdout
+    assert FAKE_KEY not in proc.stdout
+    assert FAKE_KEY not in proc.stderr
+    assert api.auth_users
+    assert api.auth_users[0] == FAKE_KEY
+    body = api.posts[0]["body"]
+    assert body["repos"][0]["url"] == EXAMPLE_REPO
+    assert body["model"]["id"] == "grok-4.6"
+    assert body["autoCreatePR"] is True
+
+
+def test_followup_posts_prompt_and_never_prints_key(tmp_path: Path) -> None:
+    with MockCursorAPI() as api:
+        proc = _run(
+            CLOUD / "followup.sh",
+            ["bc-1", "Keep the PR; fix the failing check."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "CLOUD_FOLLOWUP_OK" in proc.stdout
+    assert "CLOUD_FOLLOWUP_ERR" not in proc.stdout
+    assert FAKE_KEY not in proc.stdout + proc.stderr
+    posted = [p for p in api.posts if str(p["path"]).endswith("/runs")]
+    assert posted
+    assert posted[0]["body"]["prompt"]["text"] == "Keep the PR; fix the failing check."
+
+
+def test_watch_exits_zero_on_finished(tmp_path: Path) -> None:
+    with MockCursorAPI(run_statuses=["FINISHED"]) as api:
+        proc = _run(
+            CLOUD / "watch.sh",
+            ["bc-1"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert FAKE_KEY not in proc.stdout + proc.stderr
+    assert "FINISHED" in proc.stdout or "bc-1" in proc.stdout
+
+
+def test_watch_exits_nonzero_on_error(tmp_path: Path) -> None:
+    with MockCursorAPI(run_statuses=["ERROR"]) as api:
+        proc = _run(
+            CLOUD / "watch.sh",
+            ["bc-1"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode != 0
+    assert FAKE_KEY not in proc.stdout + proc.stderr
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
