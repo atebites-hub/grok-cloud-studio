@@ -39,10 +39,24 @@ FAKE_KEY = "lin_" + "test" + ("0" * 20)
 
 
 def _load() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("gcs_liv_stamp", STAMP)
+    existing = sys.modules.get("liv_stamp")
+    stamp_path = STAMP.resolve()
+    existing_file = getattr(existing, "__file__", None) if existing is not None else None
+    if existing is not None and existing_file and Path(existing_file).resolve() == stamp_path:
+        return existing
+    spec = importlib.util.spec_from_file_location("liv_stamp", stamp_path)
     assert spec is not None and spec.loader is not None
     mod = importlib.util.module_from_spec(spec)
-    sys.modules["gcs_liv_stamp"] = mod
+    sys.modules["liv_stamp"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _load_mind(name: str) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(name, REPO / "scripts" / "directors" / "mind.py")
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
     spec.loader.exec_module(mod)
     return mod
 
@@ -195,6 +209,7 @@ def test_feature_and_docs_name_living_sky_not_black_swan() -> None:
     assert "donald" in low and "diy" in low
     assert "never" in low and "black swan" in low
     assert "liv_stamp" in low or "stamp.py" in low or "liv_stamp.py" in low
+    assert "process_once" in blob
     assert GCS_LABEL in blob
     assert PRIVATE_GAME not in blob
     assert "runStatus" not in blob
@@ -572,3 +587,191 @@ def test_allowed_labels_are_living_sky_only() -> None:
     assert PRIVATE_GAME in labels
     assert all("black swan" not in n.lower() for n in labels)
     assert all(n.startswith("atebites-hub/") for n in labels)
+
+
+# --- Remaining mechanic: stamp after process_once consumes a TASK (LIV-96 FAT) -
+
+
+def test_maybe_stamp_after_task_posts_cloud_launch_ok() -> None:
+    mod = _load()
+    fake = FakeLinear()
+    mod._TEST_CLIENT = mod.LinearGraphQL(FAKE_KEY, transport=fake)
+    try:
+        result = mod.maybe_stamp_after_task(
+            seat="floor",
+            task_id="T-99",
+            evidence=_evidence(),
+            issue="LIV-82",
+        )
+    finally:
+        mod._TEST_CLIENT = None
+    assert result.get("ok") is True
+    assert result.get("issue") == "LIV-82"
+    bodies = fake.comment_bodies()
+    assert len(bodies) == 1
+    assert "CLOUD_LAUNCH_OK" in bodies[0]
+    assert "pytest evidence" in bodies[0]
+
+
+def test_maybe_stamp_after_task_skips_without_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mod = _load()
+    mod._TEST_CLIENT = None
+    monkeypatch.setenv("GCS_LIV_STAMP", "1")
+    monkeypatch.delenv("LINEAR_API_KEY", raising=False)
+    monkeypatch.delenv("GCS_LINEAR_KEY_FILE", raising=False)
+    monkeypatch.setenv("GCS_A2A_STATE", str(tmp_path / "a2a-state"))
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    result = mod.maybe_stamp_after_task(
+        seat="floor",
+        task_id="T-1",
+        evidence=_evidence(),
+        issue="LIV-82",
+        env={},
+        state_dir=tmp_path / "a2a-state",
+        home=tmp_path / "home",
+    )
+    assert result.get("ok") is False
+    assert result.get("reason") == "no-key"
+
+
+def test_maybe_stamp_after_task_donald_does_not_post() -> None:
+    mod = _load()
+    fake = FakeLinear()
+    mod._TEST_CLIENT = mod.LinearGraphQL(FAKE_KEY, transport=fake)
+    try:
+        result = mod.maybe_stamp_after_task(
+            seat="donald",
+            task_id="T-1",
+            evidence=_evidence(),
+            issue="LIV-82",
+        )
+    finally:
+        mod._TEST_CLIENT = None
+    assert result.get("ok") is False
+    assert "skip" in str(result.get("reason", "")).lower()
+    assert fake.calls == []
+
+
+def test_process_once_stamps_liv_after_task_completes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Harness remaining mechanic: A2A TASK consumed → Living Sky comment."""
+    stamp = _load()
+    fake = FakeLinear()
+    stamp._TEST_CLIENT = stamp.LinearGraphQL(FAKE_KEY, transport=fake)
+    monkeypatch.setenv("GCS_LIV_STAMP", "1")
+    monkeypatch.setenv("GCS_LIV_ISSUE", "LIV-82")
+    monkeypatch.setenv("GCS_ROOT", str(REPO))
+    monkeypatch.setenv("GCS_A2A_STATE", str(tmp_path / "a2a-state"))
+    mind = _load_mind("gcs_mind_liv_stamp_hook")
+    mind.STATE_DIR = tmp_path / "a2a-state"
+    mind.ROOT = REPO
+    inbox = tmp_path / "a2a-state" / "floor" / "inbox.jsonl"
+    inbox.parent.mkdir(parents=True, exist_ok=True)
+    inbox.write_text(
+        json.dumps(
+            {
+                "taskId": "T-99",
+                "contextId": "ctx-1",
+                "parts": [{"kind": "text", "text": "ship Extra High"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    try:
+        result = mind.process_once(
+            "floor",
+            runner=lambda *_a, **_k: {
+                "text": (
+                    "CLOUD_LAUNCH_OK id=bc-fake\n"
+                    "pytest evidence: tests/test_liv_stamp_after_task.py"
+                )
+            },
+        )
+    finally:
+        stamp._TEST_CLIENT = None
+    assert result["consumed"] == 1
+    assert result.get("reason") == "ok"
+    assert result.get("liv") == "LIV-82"
+    bodies = fake.comment_bodies()
+    assert bodies, "process_once must stamp Living Sky after TASK completes"
+    assert "CLOUD_LAUNCH_OK" in bodies[0]
+    assert "pytest evidence" in bodies[0]
+    assert "T-99" in bodies[0]
+
+
+def test_process_once_donald_still_does_not_diy_linear(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stamp = _load()
+    fake = FakeLinear()
+    stamp._TEST_CLIENT = stamp.LinearGraphQL(FAKE_KEY, transport=fake)
+    monkeypatch.setenv("GCS_LIV_STAMP", "1")
+    monkeypatch.setenv("GCS_LIV_ISSUE", "LIV-82")
+    monkeypatch.setenv("GCS_ROOT", str(REPO))
+    monkeypatch.setenv("GCS_A2A_STATE", str(tmp_path / "a2a-state"))
+    mind = _load_mind("gcs_mind_liv_stamp_donald")
+    mind.STATE_DIR = tmp_path / "a2a-state"
+    mind.ROOT = REPO
+    inbox = tmp_path / "a2a-state" / "donald" / "inbox.jsonl"
+    inbox.parent.mkdir(parents=True, exist_ok=True)
+    inbox.write_text(
+        json.dumps({"taskId": "T-1", "parts": [{"kind": "text", "text": "stamp LIV-82"}]})
+        + "\n",
+        encoding="utf-8",
+    )
+    try:
+        result = mind.process_once(
+            "donald",
+            runner=lambda *_a, **_k: {"text": "CLOUD_LAUNCH_OK id=bc-fake"},
+        )
+    finally:
+        stamp._TEST_CLIENT = None
+    assert result["consumed"] == 0
+    assert "skip" in str(result.get("reason", "")).lower()
+    assert fake.calls == []
+
+
+def test_studio_mind_plugin_exposes_liv_stamp() -> None:
+    mind = _load_mind("gcs_mind_liv_stamp_plugin")
+    assert "liv_stamp" in mind.PLUGINS
+    out = mind.call_plugin(
+        "liv_stamp",
+        {
+            "seat": "donald",
+            "task": "T-1",
+            "evidence": _evidence(),
+            "issue": "LIV-82",
+        },
+    )
+    assert "LIV_STAMP_ERR" in out or "skip" in out.lower() or "donald" in out.lower()
+    assert FAKE_KEY not in out
+
+
+def test_studio_mind_plugin_floor_stamps_liv() -> None:
+    stamp = _load()
+    fake = FakeLinear()
+    stamp._TEST_CLIENT = stamp.LinearGraphQL(FAKE_KEY, transport=fake)
+    mind = _load_mind("gcs_mind_liv_stamp_plugin_floor")
+    try:
+        out = mind.call_plugin(
+            "liv_stamp",
+            {
+                "seat": "floor",
+                "task": "T-99",
+                "evidence": _evidence(),
+                "issue": "LIV-82",
+            },
+        )
+    finally:
+        stamp._TEST_CLIENT = None
+    assert "LIV_STAMP_OK" in out
+    assert "LIV-82" in out
+    assert FAKE_KEY not in out
+    bodies = fake.comment_bodies()
+    assert bodies
+    assert "CLOUD_LAUNCH_OK" in bodies[0]
+    assert "pytest evidence" in bodies[0]
