@@ -3,7 +3,9 @@
 
 The per-launch waiter (scripts/cloud/sdk/wait-notify.ts) is the primary path.
 This process only notifies when a ledger row has no live waiter_pid and was
-never closed by waiter/webhook. Local studio. Stdlib + existing cloud scripts.
+never closed by waiter/webhook. A waiter_pid that names a dead process is not
+liveness: eviction is written to fleet.jsonl (waiter_tombstone) before the
+orphan notify. Local studio. Stdlib + existing cloud scripts.
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ from fleet_ledger import (
     is_orphan,
     load_entries,
     notify_owner,
+    sweep_stale_waiters,
     write_entries,
 )
 
@@ -91,6 +94,21 @@ def _cycle() -> int:
         if not seat_dir.is_dir() or seat_dir.name.startswith("."):
             continue
         fleet_path = seat_dir / "fleet.jsonl"
+        pending = [
+            (e.get("bc_id"), e.get("waiter_pid"))
+            for e in load_entries(fleet_path)
+            if e.get("waiter_pid") is not None
+        ]
+        n_evict = sweep_stale_waiters(fleet_path)
+        if n_evict:
+            after = {row.get("bc_id"): row for row in load_entries(fleet_path)}
+            for bc_id, pid_was in pending:
+                row = after.get(bc_id)
+                if row and row.get("waiter_tombstone") and row.get("waiter_pid") is None:
+                    _log(
+                        f"WAITER_EVICT seat={seat_dir.name} id={bc_id} "
+                        f"pid={pid_was} reason=dead"
+                    )
         entries = load_entries(fleet_path)
         if not entries:
             continue
