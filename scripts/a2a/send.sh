@@ -3,6 +3,10 @@
 # Usage: send.sh [--from SEAT] <seat> "<text>" [optional-data-json]
 # Env: GCS_A2A_HUB (default http://127.0.0.1:8732)
 #      GCS_A2A_FROM (caller seat; --from wins)
+# Hub returns TASK_STATE_COMPLETED as a receipt / A2A ACK, not mind-turn done.
+# Mail is consumed only after grok/cursor runner exit 0. send.sh does not wait
+# for that turn and does not fake ACP HANDOFF. Stdout binds kind=receipt from
+# the hub receipt artifact (not from MIND_TURN).
 set -euo pipefail
 
 FROM_SEAT="${GCS_A2A_FROM:-}"
@@ -93,7 +97,12 @@ python3 - <<PY
 import json
 d=json.load(open("$TMP"))
 task=d.get("task") or d
-print(f"A2A_SEND_OK seat=$SEAT task={task.get('id','')} state={(task.get('status') or {}).get('state','')}")
+status=task.get("status") or {}
+state=status.get("state") or ""
+arts=task.get("artifacts") or []
+has_receipt=any(isinstance(a, dict) and a.get("name")=="receipt" for a in arts)
+kind="receipt" if has_receipt else str((task.get("metadata") or {}).get("kind") or "")
+print(f"A2A_SEND_OK seat=$SEAT task={task.get('id','')} state={state} kind={kind}")
 print(task.get("id",""))
 PY
 rm -f "$TMP"

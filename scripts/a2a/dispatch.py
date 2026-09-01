@@ -11,7 +11,8 @@ with a live wake.pid) and must not advance dispatch.offset there.
 Non-GROW seats may still use leftover `grok agent serve` + acp_inject.py.
 STATUS / FLEET_* / A2A_REPLY never launch (A2A_REPLY is a duplex caller ping).
 
-Hub TASK_STATE_COMPLETED is a receipt, not proof the Director acted.
+Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not mind-turn done.
+Mail is consumed only after grok/cursor runner exit 0.
 Local studio only. Stdlib only.
 """
 from __future__ import annotations
