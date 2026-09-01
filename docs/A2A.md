@@ -111,4 +111,4 @@ producer` prints `floor-ops`. Unmapped specialist titles (`composer`,
 FAT: [`tests/features/ccgs_audio_narrative_map.feature`](../tests/features/ccgs_audio_narrative_map.feature).
 Distinct from LIV-41 mind-must-launch clones.
 
-Board is **tcarac/taskboard** (ticket CLI + HTTP `/mcp`). See `docs/studio/TASKBOARD.md`. Agent Kanban was removed; do not reconnect `ak`. The local HTML dashboard under `scripts/studio/dashboard/` is LEGACY.
+Board is **tcarac/taskboard** (ticket CLI + HTTP `/mcp`). See `docs/studio/TASKBOARD.md`. Agent Kanban was removed; do not reconnect `ak`. `start-studio-bus.sh`, `recover.sh`, and `doctor.sh` refuse `PALEMON_AK_BRIDGE` (`AK_REFUSE`). The local HTML dashboard under `scripts/studio/dashboard/` is LEGACY.

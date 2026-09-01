@@ -225,10 +225,14 @@ python3 scripts/secret_scan.py
 
 `./doctor.sh` **WARN**s (does not FAIL) if `grok`, `agent`/`cursor-grok`, or
 `taskboard` is missing. It **FAIL**s if `scripts/studio/agent-kanban` reappears
+or if `PALEMON_AK_BRIDGE` is set to anything other than `0`/empty,
 or if Higgsfield/Sentry art MCP would leak keys (`scripts/studio/higgsfield_sentry.py`)
 or if the LIV-84 Extra High Cursor catalog is merged (Higgsfield/Sentry MCP)
 or cloud-env is reminted (`scripts/studio/liv84_art_env.py`). `./recover.sh`
 fails closed before restarts. Do not remint LIV-84.
+`start-studio-bus.sh start` and `./recover.sh` refuse the same reconnect
+temptation (`AK_REFUSE`) and never exec leftover `ak` / AMA. Board stays
+tcarac/taskboard.
 
 ## Seats (first-class)
 
