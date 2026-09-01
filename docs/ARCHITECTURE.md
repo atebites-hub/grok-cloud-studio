@@ -41,7 +41,8 @@ launch-cloud-extra-high.sh → @cursor/sdk Agent.create
                            CANCELLED latest + prUrl → FLEET_DONE / INSPECT (not MERGE_REQUEST)
                            Directors never block-wait; collect via result-cloud-agent.sh.
 
-fleet-shepherd.py = orphan-only Extra High safety net (no live waiter_pid; dead waiter_pid is evicted);
+fleet-shepherd.py = orphan-only Extra High safety net (no live waiter_pid; dead waiter_pid is evicted;
+                    skip ACTIVE+FINISHED leftovers so it does not get_agent_run them);
                     also TASKBOARD_HEALTH_OK / TASKBOARD_HEALTH_FAIL
 Host board maintainer kit = scripts/studio/taskboard/maintainer.sh (start/health/docs); not shepherd, not seat MCP
 webhook_receiver.py = optional signed statusChange path (no get_agent_run)
@@ -80,14 +81,15 @@ MERGE_REQUEST / QA squash requires pasted `.venv/bin/pytest -q` (`N passed`) and
 |---|---|
 | Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`). GitHub draft PRs ping `draft=true` (not MERGE_REQUEST-ready). GitHub CONFLICTING PRs ping `mergeable=CONFLICTING` (QA HOLD squash). Empty GitHub checks (`check_runs=0`) are not MERGE_REQUEST-ready. MERGEABLE+empty CI is leftover-green theatre. Latest run `CANCELLED` with `prUrl` pings `INSPECT follow-up-or-close` (not MERGE_REQUEST). |
 | Webhook | `GCS_WEBHOOK_SECRET` set; bus starts `webhook_receiver.py`; Cursor `statusChange` POST (or `webhook-harness.sh serve`) |
-| Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook). Dead `waiter_pid` is evicted on `fleet.jsonl` before notify-once. |
+| Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook). Dead `waiter_pid` is evicted on `fleet.jsonl` before notify-once. Skip leftover `ACTIVE`+`FINISHED` shells (no `get_agent_run`). |
 
 Each shepherd cycle also probes tcarac/taskboard: the SQLite DB file
 (`GCS_TASKBOARD_DB` or `$GCS_A2A_STATE/taskboard/taskboard.db`) plus
 `taskboard --db $DB ticket list` **or** HTTP `POST /mcp`. It logs
 `TASKBOARD_HEALTH_OK` or `TASKBOARD_HEALTH_FAIL`. GET `/health` alone is
-not enough. The probe does not start the board, skip leftover shells,
-install seat stdio MCP, or reconnect Agent Kanban.
+not enough. The health probe does not start the board, install seat
+stdio MCP, or reconnect Agent Kanban. The orphan cycle skips leftover
+`ACTIVE`+`FINISHED` shells and does not `get_agent_run` them.
 
 Do not double-notify a live waiter. A leftover `waiter_pid` number is not liveness.
 `notify_owner` is idempotent: a second notify on a row already `notified_by=waiter`
