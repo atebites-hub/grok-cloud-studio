@@ -49,6 +49,7 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 | `transcript.jsonl` | Agent json stdout plus the user mail row |
 | `offset` | Byte offset into that seat’s `inbox.jsonl` (advanced only on runner exit 0) |
 | `pid` | Live mind process |
+| `heartbeat` | ISO timestamp written on every `process_once` (including empty harvest). Stay-up liveness, not a second tool loop. |
 | `runner` | Persisted `grok` or `cursor` for `GCS_MIND_RUNNER=auto`. Missing file means grok. Forced env does not rewrite this file. |
 
 Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Process cwd is `$GCS_ROOT`. Cursor runner does **not** set `GROK_HOME`.
@@ -77,6 +78,7 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty. Do not remint because the runner switched.
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
 - Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after the effective runner exits 0.
+- Each mail line is wrapped with a server-side envelope (`Message from <seat>:`) plus task/context. Inbound injection markers are defanged; the body is capped at 16000 characters. Python still does **not** parse grok stdout for function calls.
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
 
 No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.
@@ -131,7 +133,7 @@ agent --resume "$CURSOR_CHAT_ID" -p --force --output-format json --trust \
 |---|---|
 | Grok builtins | Shell, files, etc. inside grok |
 | Seat `GROK_HOME/config.toml` | Taskboard stdio MCP: `taskboard --db $GCS_TASKBOARD_DB mcp` |
-| `grok plugin install --trust` | `plugins/studio-mind` into seat `GROK_HOME` from `seat-mind-loop.sh` (`ticket`, `a2a_send`, `cloud_launch`) |
+| `grok plugin install --trust` | `plugins/studio-mind` into seat `GROK_HOME` from `seat-mind-loop.sh` (`ticket`, `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_result`) |
 
 `--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install "$ROOT/plugins/studio-mind" --trust` with that seat’s `GROK_HOME`. Already-installed / idempotent reinstall is `MIND_PLUGIN_OK` (grok may print `Error: repo studio-mind-... already installed` and exit non-zero). If install is skipped (no grok, missing dir, genuine install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop. Do not copy `GROK_HOME` MCP into Cursor CLI.
 
@@ -174,4 +176,30 @@ specialists only via `scripts/launch-cloud-extra-high.sh`.
 | release-manager | `studio-ops` |
 | audio | `audio` (first-class) |
 | narrative | `narrative` (first-class) |
+
+## Hermes harvest (v0.21.0+)
+
+Ported **ideas** from public [NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent) (v0.21.0 / v2026.8.31+) into this Python mailbox. Do not vendor Hermes. Do not copy 49 specialist seats. Directors and leads stay Grok Build minds. Specialists are Cursor Cloud via `scripts/launch-cloud-extra-high.sh` (model `grok-4.6`, effort `xhigh`, `fast=false`).
+
+### Ported
+
+| Idea | Where |
+|---|---|
+| Mail is a turn (Agent Inbox → one CLI turn) | `format_mail_turn` + `grok --prompt-file` / Cursor positional prompt |
+| Server-side sender envelope | `Message from <seat>:` (task/context on the same header) |
+| Inbound injection defang | `filter_inbound_mail` on the mail body |
+| Mail body cap | `MAIL_MAX_CHARS` (16000) |
+| Stay-up liveness | `mind/heartbeat` on every `process_once`, including empty harvest |
+| Plugin surface as PATH wrappers | `plugins/studio-mind`: `ticket`, `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_result` |
+| Specialist spawn | `cloud_launch` → `scripts/launch-cloud-extra-high.sh` only |
+
+### Skipped
+
+- Hermes tree, `plugin.yaml` SDK, Bot Mode roster, 49 specialist seats, group chats, `message_agent`
+- Hermes Kanban desktop plugin (board is tcarac/taskboard)
+- Copying `GROK_HOME` MCP into Cursor CLI (two catalogs; never fake a transfer)
+- Grok Bot as the grunt runtime
+- ACP `session/prompt` GROW, cron/routines, desktop browser, subagent mid-flight steer, relay/live-cards, memory providers
+- A2A ping-pong hard-reject (directors stay-up and keep talking)
+- Leftover #165/#167
 

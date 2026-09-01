@@ -29,6 +29,19 @@ python3 plugins/cursor-cloud/server.py
 
 Requires `GCS_CLOUD_REPO` / `CLOUD_REPO_URL` for create. `CURSOR_API_KEY` is read from the environment or `~/.config/cursor/agent.env` and is never returned in tool output.
 
+## Studio mind (`plugins/studio-mind`)
+
+Seat `GROK_HOME` plugin installed with `grok plugin install --trust` (not `--plugin-dir` on headless grok). Same PATH wrappers as the planes above, plus taskboard `ticket`. Not copied into Cursor CLI.
+
+| Tool | Action |
+|---|---|
+| `ticket` | `taskboard --db $GCS_TASKBOARD_DB ticket <argv>` |
+| `a2a_list_seats` | Seats from `docs/a2a/registry.json` |
+| `a2a_send` | `scripts/a2a/send.sh [--from SEAT] <seat> <text>` |
+| `cloud_launch` | `scripts/launch-cloud-extra-high.sh` (grok-4.6 xhigh, `fast=false`) |
+| `cloud_status` | `scripts/cloud/status-cloud-agent.sh` |
+| `cloud_result` | `scripts/cloud/result-cloud-agent.sh` |
+
 ## Cursor local plugins
 
 Each plugin has `.cursor-plugin/plugin.json` with relative `mcpServers` (`./mcp.json`) and `./server.py`. No `..` path traversal in manifests.
