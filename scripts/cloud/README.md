@@ -1,6 +1,6 @@
 # Cursor Cloud Extra High control plane
 
-**Audience:** Grok Build Studio Directors (and QA for rebase-only Extra High)  
+**Audience:** Grok Cloud Studio Directors (and QA for rebase-only Extra High)  
 **Auth:** `CURSOR_API_KEY` via env or `~/.config/cursor/agent.env` (never print)  
 **Canonical:** `@cursor/sdk` in `scripts/cloud/sdk/` (Node **>= 22.13**)  
 **REST:** `https://api.cursor.com/v1/agents` curl is **fallback only**  
