@@ -20,7 +20,8 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK` |
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
-| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
+| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus` |
+| `running-count.sh [--work TEXT]` | Count in-flight runs; `CLOUD_MUST_LAUNCH=1` if playability/art below cap 8 |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
@@ -104,6 +105,19 @@ scripts/cloud/result-cloud-agent.sh bc-…
 # 4) Follow-up if needed (agent idle)
 scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check."
 ```
+
+## List rows: agent status vs run status
+
+Cloud agents are durable membership. `GET /v1/agents` `status` stays `ACTIVE` until archive, even after the latest run is terminal. Directors who only look at `ACTIVE` treat leftover FINISHED grunts as spinning workers (stale membership).
+
+`list.sh` / `list-cloud-agents.sh` print both on each row:
+
+- `status=` agent lifecycle (`ACTIVE` leftover vs `ARCHIVED`)
+- `runStatus=` latest run (`RUNNING` vs `FINISHED`, also `CREATING` / `ERROR` / `CANCELLED` / `EXPIRED` / `none`)
+
+`scripts/cloud/running-count.sh --work "playability …"` counts `RUNNING`/`CREATING` for `GCS_CLOUD_REPO`. If playability/art work is in progress and that count is below `GCS_CLOUD_RUNNING_CAP` (default 8), it prints `CLOUD_MUST_LAUNCH=1` — the cloud mind MUST launch. Do not treat `ACTIVE`+`FINISHED` leftovers as workers.
+
+REST resolves `latestRunId` via `GET /v1/agents/{id}/runs/{runId}`. SDK uses `Agent.listRuns`. A missing or failed run fetch prints `runStatus=none`.
 
 ## Terminal run statuses
 
