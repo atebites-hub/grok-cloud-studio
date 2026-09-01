@@ -3,7 +3,7 @@
 # PATH refresh only: does not start or remint a live serve.
 #
 # Usage: install-grok-mcp.sh [seat ...]
-#   no args → every registry launch seat
+#   no args → mcp-seats (mind ∪ launch, never skipSeats / Bot CloudAgent)
 #   one seat + GROK_HOME set → write that GROK_HOME (tests / explicit override)
 set -euo pipefail
 
@@ -21,17 +21,26 @@ fi
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   echo "Usage: $(basename "$0") [seat ...]" >&2
   echo "Register taskboard stdio MCP (absolute --db) plus Living Sky Linear HTTP into seat GROK_HOME/config.toml." >&2
+  echo "Default seats: lib.py mcp-seats (mind ∪ launch, never skipSeats)." >&2
   echo "Does not remint a live serve." >&2
   exit 0
 fi
 
 seats=("$@")
 if [[ ${#seats[@]} -eq 0 ]]; then
-  seats=("${LAUNCH_SEATS[@]}")
+  # Compute after studio.env so GCS_MIND_SEATS / GCS_ACP_SEATS apply.
+  # Do not use LAUNCH_SEATS captured before studio.env (ACP subset drops mind-only).
+  mcp_list="$(python3 "$LIB_PY" mcp-seats)"
+  seats=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    seats+=("$line")
+  done <<< "$mcp_list"
 fi
 
 saved_gh="${GROK_HOME:-}"
-for raw in "${seats[@]}"; do
+for raw in "${seats[@]+"${seats[@]}"}"; do
+  [[ -n "$raw" ]] || continue
   seat="$(normalize_seat "$raw")"
   sd="$(seat_state_dir "$seat")"
   if [[ ${#seats[@]} -eq 1 && -n "$saved_gh" ]]; then

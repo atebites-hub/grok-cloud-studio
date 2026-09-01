@@ -238,6 +238,24 @@ def launch_seats(root: Path | None = None) -> tuple[str, ...]:
     return ordered
 
 
+def mcp_seats(root: Path | None = None) -> tuple[str, ...]:
+    """Seats that receive isolated GROK_HOME taskboard stdio MCP.
+
+    Union of launch-seats and mind-seats. skipSeats (Bot / donald /
+    orchestrator) never join. Palemon ``GCS_ACP_SEATS`` is often a subset of
+    ``GCS_MIND_SEATS``; mind-only directors still need GROK_HOME catalogs.
+    """
+    skipped = skip_seats(root)
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in (*launch_seats(root), *sorted(mind_seats(root))):
+        if not name or name in skipped or name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return tuple(out)
+
+
 def seat_acp_port(seat: str, root: Path | None = None) -> int:
     key = canonical_seat(seat, root)
     if key in skip_seats(root):
@@ -634,7 +652,7 @@ def ensure_prompt_links(root: Path | None = None) -> list[Path]:
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print(
-            "usage: lib.py <launch-seats|skip-seats|grow-seats|mind-seats|port SEAT|"
+            "usage: lib.py <launch-seats|skip-seats|grow-seats|mind-seats|mcp-seats|port SEAT|"
             "normalize SEAT|canonical SEAT|known SEAT|root|state|registry|cloud-repo|"
             "cloud-ref|prompts-dir|prompt-file SEAT|ensure-prompts|cloudagent-ok NAME>",
             file=sys.stderr,
@@ -652,6 +670,9 @@ def main(argv: list[str]) -> int:
         return 0
     if cmd == "mind-seats":
         print("\n".join(sorted(mind_seats())))
+        return 0
+    if cmd == "mcp-seats":
+        print("\n".join(mcp_seats()))
         return 0
     if cmd == "port":
         if len(argv) < 2:

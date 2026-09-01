@@ -21,14 +21,17 @@ One-command deploy (idempotent). Disaster recovery entrypoint with cleanup.sh.
      there (does not overwrite a live studio.env).
   2. Run ./install.sh (venv + chmod).
   3. Init vendor/taskboard submodule if missing (git submodule update --init).
-  4. Board: scripts/studio/taskboard/setup-taskboard.sh start
+  4. Register seat GROK_HOME taskboard stdio MCP (install-grok-mcp.sh;
+     mcp-seats = mind ∪ launch, never skipSeats). Does not remint serve.
+     Runs even when GCS_SETUP_SKIP_START=1.
+  5. Board: scripts/studio/taskboard/setup-taskboard.sh start
      (host ticket/tb PATH links, start-taskboard.sh UI :3010, mcp-http.sh :3011).
-  5. Start scripts/a2a/start-studio-bus.sh start   (NO --daemons)
-  6. Optional Tailscale Serve (scripts/studio/taskboard/start-tailscale-serve.sh start).
+  6. Start scripts/a2a/start-studio-bus.sh start   (NO --daemons)
+  7. Optional Tailscale Serve (scripts/studio/taskboard/start-tailscale-serve.sh start).
      Skip if PALEMON_TAILSCALE_SERVE=0, tailscale missing, or not joined.
-  7. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if Agent Kanban returns)
-  8. Print SETUP_OK with hub/board ports and mind seat list.
-  9. Run ./health_check.sh (HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN).
+  8. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if Agent Kanban returns)
+  9. Print SETUP_OK with hub/board ports and mind seat list.
+ 10. Run ./health_check.sh (HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN).
 
 Never auto-spawn a 13-seat grok serve floor. Do not pass --daemons.
 GCS_ACP_SEATS comes from env (studio.env) only; this script does not set it.
@@ -38,6 +41,7 @@ See docs/studio/WIPE.md.
 Optional skips (already-bootstrapped box / tests):
   GCS_SETUP_SKIP_INSTALL=1    skip ./install.sh
   GCS_SETUP_SKIP_SUBMODULE=1  skip git submodule update --init
+  GCS_SETUP_SKIP_MCP=1        skip seat GROK_HOME taskboard stdio MCP install
   GCS_SETUP_SKIP_START=1      skip taskboard install/start and bus start
   GCS_SETUP_SKIP_DOCTOR=1     skip ./doctor.sh
   GCS_SETUP_SKIP_HEALTH=1     skip ./health_check.sh (implied by SKIP_START)
@@ -88,6 +92,11 @@ fi
 
 if [[ "${GCS_SETUP_SKIP_SUBMODULE:-0}" == "1" ]]; then
   export GCS_TASKBOARD_SKIP_SUBMODULE=1
+fi
+
+if [[ "${GCS_SETUP_SKIP_MCP:-0}" != "1" ]]; then
+  # Isolated GROK_HOME catalogs. No grok agent serve. Not Cursor ${workspaceFolder}.
+  bash "$ROOT/scripts/directors/install-grok-mcp.sh"
 fi
 
 if [[ "${GCS_SETUP_SKIP_START:-0}" != "1" ]]; then
