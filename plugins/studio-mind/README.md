@@ -1,7 +1,12 @@
 # studio-mind (seat GROK_HOME plugin)
 
 Grok Agent SDK / MCP tools for opted-in seat mind: `ticket`, `a2a_send`,
-`cloud_launch`.
+`cloud_launch`, `cloud_wait`.
+
+LIV-41: minds themselves call `cloud_wait` (this plugin) or PATH
+`scripts/cloud/spawn-waiter.sh` so wait-notify A2A-pings the owning seat
+`FLEET_DONE`. A director turn without watching its own grunt is FAIL.
+Never Bot CloudAgent.
 
 `seat-mind-loop.sh` installs this directory into the seat `GROK_HOME` with:
 

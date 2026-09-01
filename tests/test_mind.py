@@ -594,6 +594,7 @@ def test_injected_runner_inbox_grows_transcript_and_offset(
     assert "ticket" in mind.PLUGINS
     assert "a2a_send" in mind.PLUGINS
     assert "cloud_launch" in mind.PLUGINS
+    assert "cloud_wait" in mind.PLUGINS
 
 
 def test_missing_ticket_binary_returns_error_string_not_crash(
@@ -1246,7 +1247,7 @@ def test_bus_keeps_dispatch_when_mind_seats_file_missing_and_current_empty(
 
 def test_plugin_schemas_are_json_objects() -> None:
     mind = _load(MIND_PY, "gcs_mind_schema")
-    for name in ("ticket", "a2a_send", "cloud_launch"):
+    for name in ("ticket", "a2a_send", "cloud_launch", "cloud_wait"):
         plugin = mind.PLUGINS[name]
         schema = plugin["schema"] if isinstance(plugin, dict) else plugin.schema
         assert isinstance(schema, dict)
@@ -1270,7 +1271,7 @@ def test_studio_mind_plugin_lists_tools() -> None:
     assert proc.returncode == 0, proc.stderr
     reply = json.loads(proc.stdout.splitlines()[0])
     names = {t["name"] for t in reply["result"]["tools"]}
-    assert names == {"ticket", "a2a_send", "cloud_launch"}
+    assert names == {"ticket", "a2a_send", "cloud_launch", "cloud_wait"}
 
 
 def test_cursor_cli_argv_pins_model_and_never_continues() -> None:

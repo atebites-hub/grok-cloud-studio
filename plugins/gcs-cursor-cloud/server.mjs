@@ -13,6 +13,7 @@ const server = new Server({ name: "gcs-cursor-cloud", version: "1.0.0" }, { capa
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     { name: "cloud_launch", description: "Launch Extra High grunt", inputSchema: { type: "object", properties: { prompt: { type: "string" }, name: { type: "string" } }, required: ["prompt"] } },
+    { name: "cloud_wait", description: "Spawn wait-notify; FLEET_DONE to owning seat", inputSchema: { type: "object", properties: { id: { type: "string" }, run: { type: "string" }, name: { type: "string" }, seat: { type: "string" } }, required: ["id"] } },
     { name: "cloud_status", description: "Status for bc-id", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
     { name: "cloud_result", description: "Result JSON for bc-id", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
     { name: "cloud_followup", description: "Follow-up on bc-id", inputSchema: { type: "object", properties: { id: { type: "string" }, prompt: { type: "string" } }, required: ["id", "prompt"] } },
@@ -23,6 +24,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const args = req.params.arguments || {};
   let r;
   if (name === "cloud_launch") r = run("scripts/launch-cloud-extra-high.sh", args.name ? ["--name", String(args.name), String(args.prompt)] : [String(args.prompt)]);
+  else if (name === "cloud_wait") {
+    const argv = ["--id", String(args.id)];
+    if (args.run) argv.push("--run", String(args.run));
+    if (args.name) argv.push("--name", String(args.name));
+    if (args.seat) argv.push("--seat", String(args.seat));
+    r = run("scripts/cloud/spawn-waiter.sh", argv);
+  }
   else if (name === "cloud_status") r = run("scripts/cloud/status-cloud-agent.sh", [String(args.id)]);
   else if (name === "cloud_result") r = run("scripts/cloud/result-cloud-agent.sh", [String(args.id)]);
   else if (name === "cloud_followup") r = run("scripts/cloud/followup-cloud-agent.sh", [String(args.id), String(args.prompt)]);

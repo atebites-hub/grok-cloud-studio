@@ -292,6 +292,37 @@ install_seat_taskboard_cli() {
   done
 }
 
+install_seat_spawn_waiter_cli() {
+  # Put cloud_wait / spawn_waiter on grok/Cursor PATH so minds monitor Extra
+  # High themselves (scripts/cloud/spawn-waiter.sh → wait-notify FLEET_DONE).
+  # Runtime GCS_ROOT wins so tests can overlay a fake waiter. Never prints keys.
+  local seat="${1:-}"
+  local sd gh wrap_dir dest dest_name root_q
+  sd="$(seat_state_dir "${seat:-floor}")"
+  gh="${GROK_HOME:-$sd/grok-home}"
+  mkdir -p "$gh/bin" "${HOME:-$gh}/.grok/bin"
+  root_q="$(printf '%q' "$ROOT")"
+  for wrap_dir in "$gh/bin" "${HOME:-$gh}/.grok/bin"; do
+    for dest_name in cloud_wait spawn_waiter; do
+      dest="$wrap_dir/$dest_name"
+      cat >"$dest" <<EOF
+#!/bin/bash
+# gcs-seat-spawn-waiter-wrapper
+set -euo pipefail
+ROOT="\${GCS_ROOT:-$root_q}"
+WAITER="\$ROOT/scripts/cloud/spawn-waiter.sh"
+if [[ ! -f "\$WAITER" ]]; then
+  echo "CLOUD_WAITER_ERR missing \$WAITER" >&2
+  exit 127
+fi
+exec /bin/bash "\$WAITER" "\$@"
+EOF
+      chmod +x "$dest"
+    done
+  done
+  echo "SEAT_SPAWN_WAITER_OK seat=${seat:-?} wrap=$gh/bin/cloud_wait" >&2
+}
+
 export_seat_serve_env() {
   local seat="$1"
   local sd
@@ -317,6 +348,7 @@ install_seat_identity() {
   mkdir -p "$sd/grok-home"
   install_seat_grok_auth "$seat"
   install_seat_taskboard_cli "$seat"
+  install_seat_spawn_waiter_cli "$seat"
   install_seat_grok_mcp "$seat"
   if [[ -f "$src/SOUL.md" ]]; then
     cp "$src/SOUL.md" "$sd/SOUL.md"
@@ -425,7 +457,9 @@ Named identity is SOUL.md + MEMORY.md + GROK_MEMORY=1 on this serve process
 Host clock is host-ticker.py / host-clock-ticker.sh ACP_PING STATUS/CONTINUE inbox lines (tools allowed), not /loop and not watchdog ACP-inject.
 If this serve dies, start-seat-daemon.sh / ensure_seat_serve restarts it.
 After each session/prompt: do work (taskboard ticket move, send.sh, your own
-scripts/launch-cloud-extra-high.sh). Tools are allowed. Do not idle.
+scripts/launch-cloud-extra-high.sh / cloud_wait). LIV-41: a turn without
+watching your own grunt (spawn-waiter / wait-notify FLEET_DONE) is FAIL.
+Tools are allowed. Do not idle.
 RESULT is optional duplex, not a hang-up; RESULT-only / PONG is a bug.
 Stay in this serve for the next inbox ping. Do not exit the serve process.
 Export awareness: GCS_DIRECTOR_SEAT=${seat}

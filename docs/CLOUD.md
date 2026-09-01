@@ -19,3 +19,20 @@ scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
+
+## LIV-41 directors-watch (FAIL closed)
+
+Directors spawn **and monitor** their own Extra High bc-ids. After
+`CLOUD_LAUNCH_OK`, invoke `cloud_wait` or `scripts/cloud/spawn-waiter.sh --id
+<bc-id>` so `wait-notify.ts` A2A-pings the **owning seat** `FLEET_DONE` /
+`PR_READY`. Do not block the director turn on `watch-cloud-agent.sh`.
+fleet-shepherd is orphan-only, not the monitor. Never Bot CloudAgent
+(orchestrator / donald). Do not dump watching to Donald.
+
+A director turn that owns a grunt and does not actually watch it is **FAIL**
+(`reason=no-watch`). Demonstrate, don't theatre. Studio Linear is **Living Sky**
+(`LIV`), never Black Swan. Extra High stays **grok-4.6**, `effort=xhigh`,
+`fast=false`.
+
+Judge: `scripts/directors/director_turn_watch.py`. Feature:
+`docs/studio/bdd/liv41_directors_watch.feature`.

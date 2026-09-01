@@ -92,7 +92,7 @@ grok plugin install ./plugins/a2a --trust
 grok plugin install ./plugins/cursor-cloud --trust
 ```
 
-Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_result`. Details: `docs/PLUGINS.md`.
+Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_wait`, `cloud_status`, `cloud_result`. Details: `docs/PLUGINS.md`.
 
 ## Tests + secret scan
 

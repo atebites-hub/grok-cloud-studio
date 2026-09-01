@@ -51,6 +51,10 @@ After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.
 
 Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
+LIV-41: directors still must monitor. A turn that owns a grunt with waiter
+skipped (`GCS_SPAWN_WAITER=0` / `CLOUD_WAITER_SKIPPED`) is **FAIL**
+(`reason=no-watch`). The waiter A2A-pings the **owning seat** `FLEET_DONE`.
+
 `scripts/directors/fleet-shepherd.py` is an **orphan-only** safety net: it skips rows with a live `waiter_pid` or `notified_by` in `{waiter, webhook, shepherd}`.
 
 Optional signed webhooks (`scripts/cloud/webhook_receiver.py`) are the other completion path. Waiter remains the fallback when `GCS_WEBHOOK_SECRET` is unset.

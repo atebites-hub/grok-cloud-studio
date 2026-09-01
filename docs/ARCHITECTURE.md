@@ -66,6 +66,13 @@ See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / 
 
 Do not double-notify a live waiter.
 
+## LIV-41 directors-watch
+
+Directors spawn **and monitor** Extra High. `spawn-waiter.sh` / `cloud_wait`
+is the monitor: waiter `FLEET_DONE` to the owning seat. A director turn without
+watching its own grunt is FAIL. Demonstrate, don't theatre. Never Bot
+CloudAgent. Living Sky (`LIV`), never Black Swan.
+
 ## Prompts
 
 Generic seat prompts ship in `prompts/`. Product floors keep `*_director_prompt.txt` under `docs/studio/directors/`. `GCS_PROMPT_DIR` / `PROMPTS_DIR` override the default directory. When `$ROOT/prompts` is missing or has no `*_director_prompt.txt` files, daemons default to `$ROOT/docs/studio/directors`. `write_agent_profile` / `launch-director.sh` resolve `${seat}_director_prompt.txt` from either layout (including `floor_ops_director_prompt.txt`) so remint does not fail when only the docs tree is populated. `install.sh` links docs files into `prompts/` when missing.

@@ -131,11 +131,11 @@ agent --resume "$CURSOR_CHAT_ID" -p --force --output-format json --trust \
 |---|---|
 | Grok builtins | Shell, files, etc. inside grok |
 | Seat `GROK_HOME/config.toml` | Taskboard stdio MCP: `taskboard --db $GCS_TASKBOARD_DB mcp` |
-| `grok plugin install --trust` | `plugins/studio-mind` into seat `GROK_HOME` from `seat-mind-loop.sh` (`ticket`, `a2a_send`, `cloud_launch`) |
+| `grok plugin install --trust` | `plugins/studio-mind` into seat `GROK_HOME` from `seat-mind-loop.sh` (`ticket`, `a2a_send`, `cloud_launch`, `cloud_wait`) |
 
 `--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install "$ROOT/plugins/studio-mind" --trust` with that seat’s `GROK_HOME`. Already-installed / idempotent reinstall is `MIND_PLUGIN_OK` (grok may print `Error: repo studio-mind-... already installed` and exit non-zero). If install is skipped (no grok, missing dir, genuine install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop. Do not copy `GROK_HOME` MCP into Cursor CLI.
 
-Cursor runner: GROK_HOME taskboard MCP and grok `--plugin-dir` **do not transfer**. Two catalogs (see Two-runtime mind law). Cursor CLI uses Cursor builtins plus repo `.cursor/mcp.json`, never a copied `GROK_HOME`. Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`. No third Python tool loop.
+Cursor runner: GROK_HOME taskboard MCP and grok `--plugin-dir` **do not transfer**. Two catalogs (see Two-runtime mind law). Cursor CLI uses Cursor builtins plus repo `.cursor/mcp.json`, never a copied `GROK_HOME`. Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`, `scripts/cloud/spawn-waiter.sh`. No third Python tool loop.
 
 A missing binary returns an error string from the MCP tool. Plugin output is redacted (`CURSOR_API_KEY`, webhook secrets, bearer tokens) and never printed as credentials.
 
@@ -174,4 +174,23 @@ specialists only via `scripts/launch-cloud-extra-high.sh`.
 | release-manager | `studio-ops` |
 | audio | `audio` (first-class) |
 | narrative | `narrative` (first-class) |
+
+## LIV-41 directors-watch (FAIL closed)
+
+Minds **themselves** call `cloud_wait` or `scripts/cloud/spawn-waiter.sh` after
+they own a Cursor Cloud bc-id. The waiter (`wait-notify.ts`) A2A-pings the
+**owning seat** `FLEET_DONE`. Do not have Donald DIY Extra High watch. Python
+does not `run.wait()` for the mind. fleet-shepherd is orphan-only.
+
+A director turn that owns a grunt and does not actually invoke the waiter is
+**FAIL** (`MIND_FAIL reason=no-watch`) and does not advance inbox offset.
+Demonstrate, don't theatre: prose or `ls`/`cat`/`rg` of the waiter is not
+watching.
+
+Never Bot CloudAgent. Model **grok-4.6** `xhigh` `fast=false`. Studio Linear is
+**Living Sky** (`LIV`), never Black Swan.
+
+Seat PATH: `install_seat_spawn_waiter_cli` puts `cloud_wait` / `spawn_waiter`
+on `GROK_HOME/bin` (execs the same script). Cursor CLI still uses the PATH
+launcher — GROK_HOME plugin does not transfer.
 

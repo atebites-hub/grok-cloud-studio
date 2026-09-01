@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Studio-mind MCP: ticket, a2a_send, cloud_launch.
+"""Studio-mind MCP: ticket, a2a_send, cloud_launch, cloud_wait.
 
 Grok is the agent. This process only exposes tools. Python mind.py does not
 parse grok stdout for function calls. Installed into seat GROK_HOME with

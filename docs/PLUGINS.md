@@ -19,6 +19,7 @@ python3 plugins/a2a/server.py
 | Tool | Action |
 |---|---|
 | `cloud_launch` | `scripts/launch-cloud-extra-high.sh` |
+| `cloud_wait` | `scripts/cloud/spawn-waiter.sh` (wait-notify → FLEET_DONE) |
 | `cloud_status` | `scripts/cloud/status-cloud-agent.sh` |
 | `cloud_result` | `scripts/cloud/result-cloud-agent.sh` |
 

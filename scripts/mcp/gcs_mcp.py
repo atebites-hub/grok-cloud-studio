@@ -3,7 +3,7 @@
 
 Planes:
   --plane a2a     tools: a2a_list_seats, a2a_send
-  --plane cloud   tools: cloud_launch, cloud_status, cloud_result
+  --plane cloud   tools: cloud_launch, cloud_wait, cloud_status, cloud_result
   --plane all     both (default)
 
 Framing: Content-Length (MCP) or NDJSON when GCS_MCP_NDJSON=1.
@@ -68,6 +68,24 @@ def cloud_tools() -> list[dict[str, Any]]:
                     "name": {"type": "string", "description": "Short agent name"},
                 },
                 "required": ["prompt"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "cloud_wait",
+            "description": (
+                "Register a Cursor Cloud bc-id and spawn wait-notify so FLEET_DONE "
+                "A2A-pings the owning director seat. Never Bot CloudAgent."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "bc-id"},
+                    "run": {"type": "string", "description": "Optional run id"},
+                    "name": {"type": "string", "description": "Optional agent name"},
+                    "seat": {"type": "string", "description": "Owning director seat"},
+                },
+                "required": ["id"],
                 "additionalProperties": False,
             },
         },
@@ -143,6 +161,23 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
             cmd.extend(["--name", agent_name])
         cmd.append(prompt)
         proc = _run(cmd, timeout=180)
+        out = (proc.stdout or "") + (proc.stderr or "")
+        return _text_result(out.strip() or f"rc={proc.returncode}", proc.returncode != 0)
+    if name == "cloud_wait":
+        agent_id = str(arguments.get("id") or arguments.get("bc_id") or "").strip()
+        if not agent_id:
+            return _text_result("id is required", True)
+        cmd = ["bash", str(ROOT / "scripts" / "cloud" / "spawn-waiter.sh"), "--id", agent_id]
+        run_id = str(arguments.get("run") or "").strip()
+        if run_id:
+            cmd.extend(["--run", run_id])
+        agent_name = str(arguments.get("name") or "").strip()
+        if agent_name:
+            cmd.extend(["--name", agent_name])
+        seat = str(arguments.get("seat") or "").strip()
+        if seat:
+            cmd.extend(["--seat", seat])
+        proc = _run(cmd, timeout=30)
         out = (proc.stdout or "") + (proc.stderr or "")
         return _text_result(out.strip() or f"rc={proc.returncode}", proc.returncode != 0)
     if name == "cloud_status":

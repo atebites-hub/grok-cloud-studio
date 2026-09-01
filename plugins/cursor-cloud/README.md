@@ -3,6 +3,7 @@
 MCP tools wrapping the Extra High control plane:
 
 - `cloud_launch` — `scripts/launch-cloud-extra-high.sh`
+- `cloud_wait` — `scripts/cloud/spawn-waiter.sh` (FLEET_DONE to owning seat)
 - `cloud_status` — `scripts/cloud/status-cloud-agent.sh`
 - `cloud_result` — `scripts/cloud/result-cloud-agent.sh`
 

@@ -38,8 +38,15 @@ from pathlib import Path
 from typing import Any, Callable
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
-if str(_LIB_DIR) not in sys.path:
-    sys.path.insert(0, str(_LIB_DIR))
+_DIRECTORS_DIR = Path(__file__).resolve().parent
+for _extra in (_LIB_DIR, _DIRECTORS_DIR):
+    if str(_extra) not in sys.path:
+        sys.path.insert(0, str(_extra))
+from director_turn_watch import (  # noqa: E402
+    judge_director_watch,
+    unwatched_bc_ids,
+    wrap_prompt_if_required,
+)
 from lib import canonical_seat, skip_seats  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
@@ -380,6 +387,34 @@ def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
     return _run_cmd(cmd, timeout=180)
 
 
+def plugin_cloud_wait(arguments: dict[str, Any]) -> str:
+    """scripts/cloud/spawn-waiter.sh --id BC_ID [--run RUN] [--name NAME].
+
+    Detaches wait-notify so FLEET_DONE A2A-pings the owning seat. Never Bot
+    CloudAgent. Does not block this turn on watch-cloud-agent.sh.
+    """
+    script = ROOT / "scripts" / "cloud" / "spawn-waiter.sh"
+    if not script.is_file():
+        return "PLUGIN_ERR cloud_wait: missing scripts/cloud/spawn-waiter.sh"
+    bc_id = str(arguments.get("id") or arguments.get("bc_id") or "").strip()
+    if not bc_id:
+        return "PLUGIN_ERR cloud_wait: id is required"
+    name = str(arguments.get("name") or "").strip()
+    seat = str(arguments.get("seat") or "").strip()
+    lowered = (name or seat).strip().lower()
+    if lowered in {"donald", "orchestrator", "grok-bot", "bot"} or "bot cloudagent" in lowered:
+        return "PLUGIN_ERR cloud_wait: never Bot CloudAgent"
+    cmd = ["bash", str(script), "--id", bc_id]
+    run_id = str(arguments.get("run") or "").strip()
+    if run_id:
+        cmd.extend(["--run", run_id])
+    if name:
+        cmd.extend(["--name", name])
+    if seat:
+        cmd.extend(["--seat", seat])
+    return _run_cmd(cmd, timeout=30)
+
+
 TICKET_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -417,10 +452,23 @@ CLOUD_LAUNCH_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+CLOUD_WAIT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string", "description": "Cursor Cloud bc-id"},
+        "run": {"type": "string", "description": "Optional run id"},
+        "name": {"type": "string", "description": "Optional Extra High agent name"},
+        "seat": {"type": "string", "description": "Owning director seat"},
+    },
+    "required": ["id"],
+    "additionalProperties": False,
+}
+
 PLUGINS: dict[str, Plugin] = {
     "ticket": Plugin(schema=TICKET_SCHEMA, call=plugin_ticket),
     "a2a_send": Plugin(schema=A2A_SEND_SCHEMA, call=plugin_a2a_send),
     "cloud_launch": Plugin(schema=CLOUD_LAUNCH_SCHEMA, call=plugin_cloud_launch),
+    "cloud_wait": Plugin(schema=CLOUD_WAIT_SCHEMA, call=plugin_cloud_wait),
 }
 
 
@@ -855,7 +903,12 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """One inbox line → one agent turn. Offset advances only on runner exit 0."""
+    """One inbox line → one agent turn.
+
+    Offset advances only on runner exit 0. A director turn that owns an Extra
+    High bc-id and does not invoke spawn-waiter.sh / cloud_wait / wait-notify
+    is FAIL (reason=no-watch) and does not consume mail.
+    """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
         print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)
@@ -875,7 +928,9 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
         task_id = str(rec.get("taskId") or "")
         context_id = str(rec.get("contextId") or "")
         text = _extract_text(rec.get("parts"))
-        prompt = text or json.dumps(rec, ensure_ascii=False)
+        original = text or json.dumps(rec, ensure_ascii=False)
+        open_ids = unwatched_bc_ids(seat, state_dir=STATE_DIR)
+        prompt = wrap_prompt_if_required(original, open_ids)
         try:
             raw = run(prompt, seat=seat)
         except Exception as e:
@@ -898,6 +953,24 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
                 "reason": "runner-fail",
                 "task_id": task_id,
                 "returncode": returncode,
+            }
+
+        verdict = judge_director_watch(
+            mail=original,
+            assistant=assistant_text,
+            open_bc_ids=open_ids,
+            seat=seat,
+        )
+        if verdict.get("fail"):
+            reason = str(verdict.get("reason") or "no-watch")
+            print(
+                f"MIND_FAIL seat={seat} task={task_id} reason={reason}",
+                file=sys.stderr,
+            )
+            return {
+                "consumed": 0,
+                "reason": reason,
+                "task_id": task_id,
             }
 
         backend = ""
