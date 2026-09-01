@@ -46,7 +46,7 @@ ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 
 _SECRET_ASSIGN_RE = re.compile(
-    r"(?i)\b(CURSOR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
+    r"(?i)\b(CURSOR_API_KEY|LINEAR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
     r"server-key|ACP_SECRET|api[_-]?key)\s*[=:]\s*\S+"
 )
 _SESSION_IN_USE_RE = re.compile(
@@ -67,7 +67,7 @@ GROK_MIND_REASONING_EFFORT = "xhigh"  # extra-high
 class Plugin:
     """Fallback helper callable plus JSON schema. Not a second agent loop.
 
-    Grok sees tools via builtins, seat GROK_HOME taskboard MCP, and
+    Grok sees tools via builtins, seat GROK_HOME taskboard + Linear MCP, and
     `grok plugin install --trust` of `plugins/studio-mind` into that GROK_HOME.
     This dict stays for `call_plugin` / tests / the studio-mind MCP server.
     """

@@ -54,13 +54,22 @@ advances only on runner exit 0.
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
 - Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio
-  `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust`
-  of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok
-  usage is back.
+  `taskboard --db $GCS_TASKBOARD_DB mcp` plus Linear HTTP
+  `https://mcp.linear.app/mcp`) plus `grok plugin install --trust`
+  of `plugins/studio-mind`. Studio Linear is Living Sky
+  (`linear.app/livingsky`, team Livingsky / `LIV`). NEVER Black Swan Money.
+  Grok minds stamp `LIV-*` themselves. Do not have Donald DIY Linear.
+  Grok-home Higgsfield is grok-only, for when grok usage is back.
 - Cursor CLI catalog: repo `.cursor/mcp.json` wrapping
   `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no
-  `GROK_HOME`). Higgsfield is Cursor catalog login when the runner is Cursor
-  CLI (Art generate). Grok Bot Higgsfield is a different catalog.
+  `GROK_HOME`) and Linear HTTP (`Bearer ${LINEAR_API_KEY}`). Linear +
+  taskboard only. Do not copy the whole Grok catalog. Higgsfield is Cursor
+  catalog login when the runner is Cursor CLI (Art generate). Grok Bot
+  Higgsfield is a different catalog.
+
+Cursor Cloud Extra High cannot scrape `GROK_HOME`. Snapshot env
+`LINEAR_API_KEY` from the cloud-env / dashboard Secrets so those agents
+see Linear via `.cursor/mcp.json`.
 
 Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`,
 `scripts/launch-cloud-extra-high.sh`.
@@ -123,6 +132,12 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
 5. Set `CURSOR_API_KEY` in the environment or `~/.config/cursor/agent.env`.
    Never print it. Never commit it.
 
+   Studio Linear is **Living Sky** (`https://linear.app/livingsky`, team
+   Livingsky / `LIV`). **NEVER Black Swan Money.** Grok Build minds stamp
+   `LIV-*` themselves. Do not have Donald DIY Linear. Cursor Cloud Extra High
+   agents cannot scrape `GROK_HOME`: put `LINEAR_API_KEY` in the cloud-env
+   snapshot or dashboard Secrets so `.cursor/mcp.json` Linear works.
+
 6. Board + MCP HTTP (tcarac/taskboard v0.6.0; do not compile; do not vendor a
    binary). Source pin is `vendor/taskboard`. `install-taskboard.sh` prefers a
    prebuilt in that checkout; brew tap or the matching v0.6.0 GitHub tarball
@@ -137,7 +152,8 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    DB is `$GCS_A2A_STATE/taskboard/taskboard.db` (`PALEMON_A2A_STATE` alias
    accepted). Details: `scripts/studio/taskboard/README.md`.
    Cursor CLI sees the board via checkout `.cursor/mcp.json` (wrapper
-   `scripts/studio/taskboard/run-mcp.sh`). Do not copy `GROK_HOME` MCP.
+   `scripts/studio/taskboard/run-mcp.sh`) plus Linear HTTP. Linear +
+   taskboard only. Do not copy `GROK_HOME` MCP.
    Do not put MagicDNS hostnames or private GitHub URLs in that file.
 
 7. Mind seats come from `studio.env` (`GCS_MIND_SEATS` first-class directors

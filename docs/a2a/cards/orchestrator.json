@@ -1,6 +1,6 @@
 {
   "name": "Orchestrator",
-  "description": "Studio orchestrator on Grok Bot — assigns outcomes, deconflicts seats. Not an ACP inject target.",
+  "description": "Studio orchestrator on Grok Bot — assigns outcomes, deconflicts seats. Not an ACP inject target. Does not DIY Living Sky Linear; Directors stamp LIV-* themselves.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -24,7 +24,7 @@
     {
       "id": "orchestrate",
       "name": "Orchestrate",
-      "description": "Assign tasks and deconflict Directors",
+      "description": "Assign tasks and deconflict Directors. Does not DIY Living Sky Linear.",
       "tags": [
         "orchestration",
         "bot"

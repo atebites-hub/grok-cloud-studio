@@ -15,7 +15,10 @@ GROK_HOME=$GCS_A2A_STATE/<seat>/grok-home \
 the mind argv. Already-installed / idempotent reinstall is success
 (`MIND_PLUGIN_OK`), not `reason=install-fail`. If install is skipped (no grok,
 missing dir, genuine fail), mind is MCP-only: seat `GROK_HOME/config.toml`
-still owns taskboard stdio MCP (`taskboard --db`).
+still owns taskboard stdio MCP (`taskboard --db`) plus Linear HTTP
+(`https://mcp.linear.app/mcp`). Linear is not this plugin — Grok minds
+stamp Living Sky themselves via the GROK_HOME Linear catalog. Do not
+have Donald DIY Linear.
 
 Not a Cursor `${workspaceFolder}` MCP. Not ACP `session/prompt`.
 

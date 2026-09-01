@@ -12,9 +12,13 @@ Do not vendor the `taskboard` binary into git. Source pin:
 fallback when that checkout has no prebuilt.
 
 Cursor CLI sees the board through checkout `.cursor/mcp.json` →
-`run-mcp.sh` (`taskboard --db $DB mcp`). That is the Cursor catalog.
-Grok seats keep `GROK_HOME/config.toml`. Do not copy GROK_HOME MCP.
-Two catalogs. Never fake a transfer.
+`run-mcp.sh` (`taskboard --db $DB mcp`) plus Linear HTTP. Linear +
+taskboard only. That is the Cursor catalog.
+Grok seats keep `GROK_HOME/config.toml` (taskboard stdio + Linear HTTP
+catalog). Do not copy GROK_HOME MCP.
+Two catalogs. Never fake a transfer. Studio Linear is Living Sky;
+never Black Swan Money. Grok Build minds stamp LIV-* themselves.
+Do not have Donald DIY Linear.
 
 ## After a machine wipe
 

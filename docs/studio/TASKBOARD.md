@@ -40,11 +40,14 @@ mcps = false
 [mcp_servers.taskboard]
 command = "/absolute/path/to/taskboard"
 args = ["--db", "/absolute/path/to/taskboard.db", "mcp"]
+
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
 ```
 
 That is the grok serve config. Isolated `GROK_HOME` does not inherit `~/.grok/config.toml`. Cursor `${workspaceFolder}` never expands under grok; grok must not load `.cursor/mcp.json`. Seat start sets `[compat.cursor] mcps = false`. `./doctor.sh` WARNs if a seat `config.toml` still contains `${workspaceFolder}`. Refreshing MCP config does not remint a live serve.
 
-Cursor CLI uses a **second catalog**: checkout `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (`taskboard --db $DB mcp`). Do not copy `GROK_HOME` MCP into Cursor CLI. Two catalogs. Never fake a transfer. No Agent Kanban. No secrets, private GitHub URLs, or MagicDNS hostnames in that file.
+Cursor CLI uses a **second catalog**: checkout `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (`taskboard --db $DB mcp`) **and** Linear HTTP (`https://mcp.linear.app/mcp`, `Bearer ${LINEAR_API_KEY}`). Linear + taskboard only. Do not copy `GROK_HOME` MCP into Cursor CLI. Two catalogs. Never fake a transfer. Studio Linear is Living Sky (linear.app/livingsky, team Livingsky / LIV). NEVER Black Swan Money. Grok Build minds stamp `LIV-*` themselves. Do not have Donald DIY Linear. No Agent Kanban. No secrets, private GitHub URLs, or MagicDNS hostnames in that file.
 
 This repository does not vendor the taskboard binary. The IaC pin is `vendor/taskboard` (submodule, v0.6.0). Host install still uses brew or the v0.6.0 tarball when that checkout has no prebuilt. Point seats at the discovered binary (`TASKBOARD_BIN` / `$GCS_ROOT/bin/taskboard`) the same way you point Cursor Cloud at `GCS_CLOUD_REPO`.
 

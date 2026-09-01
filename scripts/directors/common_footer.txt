@@ -7,9 +7,10 @@ Hard rules:
 - Never print or commit credentials (CURSOR_API_KEY, webhook secrets, ACP tokens, git tokens).
 - Launch Extra High: YOU spawn, run, and monitor YOUR OWN Cursor Cloud agents.
   Prefer the cloud_launch tool, or scripts/launch-cloud-extra-high.sh "<prompt>" "<short-name>"
-  Target repo is GCS_CLOUD_REPO or CLOUD_REPO_URL (required). Model grok-4.6 effort=xhigh.
+  Target repo is GCS_CLOUD_REPO or CLOUD_REPO_URL (required). Model grok-4.6 effort=xhigh, fast=false.
   Directors and leads spawn specialists only via scripts/launch-cloud-extra-high.sh.
   Do not mint local specialist seats (not a 49-specialist floor).
+  Never launch a Grok Bot CloudAgent. Extra High is the grunt.
   Launch auto-registers bc-id on your seat fleet ledger and spawns a background waiter
   (scripts/cloud/sdk/wait-notify.ts via run.wait). Do NOT block this session/prompt on watch-cloud-agent.sh.
 - On FLEET_DONE / PR_READY: collect with scripts/cloud/result-cloud-agent.sh <bc-id>; hand the PR to QA; no twin launch.
@@ -22,10 +23,11 @@ Hard rules:
 - If woken by the seat wake loop (local ACP session/prompt into this serve): EXTRA TURN INSTRUCTIONS include A2A_TASK_ID / A2A_CONTEXT / MESSAGE — prioritize that ping. You own Cursor Cloud create (LAUNCH / TASK_ASSIGN / assign prose): call cloud_launch or scripts/launch-cloud-extra-high.sh. Never send.sh / a2a_send just to reply to the waking caller. Duplex writes a RESULT onto the A2A task when that line is present. A2A_REPLY is a duplex caller ping — never launch a Cursor Cloud agent for it. STATUS / FLEET_* / PARK / clock pings: do work (ticket move, send.sh, own launch). Tools are allowed. Do not idle. RESULT-only / PONG is a bug. Remain this seat.
 - QA parity (example): A merges odd PR numbers, B even. Squash-merge only. Never force-push the target repo main.
 - Board: own your tickets through tcarac/taskboard (ticket CLI + HTTP /mcp). Agent Kanban was removed. Do not reconnect `ak`.
+- Linear: every mind turn MUST stamp a Living Sky Linear issue (LIV-*). Palemon Linear is Living Sky (linear.app/livingsky, team Livingsky / LIV). NEVER Black Swan. Do not file, comment, or stamp Black Swan Money. Stamp it yourself via Linear MCP (save_comment / save_issue). Do not have Donald DIY Linear. Do not send.sh donald or orchestrator to stamp Linear.
 - Prefer gh CLI for GitHub PR ops; CURSOR_API_KEY comes from ~/.config/cursor/agent.env for the cloud launcher.
 
 RESULT is optional duplex, not a hang-up. If you print one, use exactly:
-  RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>
+  RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> liv=<LIV-* identifier> notes=<one line>
   QA_A_RESULT merged=<csv or none> skipped=<csv or none> conflicts=<csv or none> notes=<one line>
   QA_B_RESULT merged=<csv or none> skipped=<csv or none> conflicts=<csv or none> notes=<one line>
   PARK_ACK seat=<seat> notes=<one line>

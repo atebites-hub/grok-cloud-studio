@@ -23,6 +23,7 @@ studio.env
 *.log
 acp.secret
 agent.env
+linear.env
 
 # OS
 .DS_Store
