@@ -22,6 +22,7 @@ from collections.abc import Callable
 from typing import Any
 
 FetchRun = Callable[[str, str], str | None]
+FetchLatest = Callable[[str], str | None]
 
 
 class TwinProbeError(RuntimeError):
@@ -57,6 +58,7 @@ def find_live_name_twin(
     *,
     bot_id: str = "",
     fetch_run_status: FetchRun,
+    fetch_latest_run_id: FetchLatest | None = None,
 ) -> dict[str, str] | None:
     """Return the first non-Bot agent with this name whose latest run is RUNNING."""
     wanted = wanted_name or ""
@@ -72,6 +74,8 @@ def find_live_name_twin(
         if name != wanted:
             continue
         run_id = str(raw.get("latestRunId") or raw.get("latest_run_id") or "")
+        if not run_id and fetch_latest_run_id is not None:
+            run_id = str(fetch_latest_run_id(agent_id) or "")
         if not run_id:
             continue
         status = run_status_upper(fetch_run_status(agent_id, run_id))
@@ -117,6 +121,17 @@ def _api_get(path: str) -> dict[str, Any] | None:
     return payload
 
 
+def fetch_latest_run_id(agent_id: str) -> str | None:
+    payload = _api_get(f"/v1/agents/{agent_id}")
+    if payload is None:
+        return None
+    agent = unwrap(payload, "agent")
+    if not isinstance(agent, dict):
+        return None
+    run_id = str(agent.get("latestRunId") or agent.get("latest_run_id") or "")
+    return run_id or None
+
+
 def fetch_run_status(agent_id: str, run_id: str) -> str | None:
     payload = _api_get(f"/v1/agents/{agent_id}/runs/{run_id}")
     if payload is None:
@@ -159,6 +174,7 @@ def main(argv: list[str] | None = None) -> int:
             wanted,
             bot_id=os.environ.get("GCS_BOT_AGENT_ID") or "",
             fetch_run_status=fetch_run_status,
+            fetch_latest_run_id=fetch_latest_run_id,
         )
     except TwinProbeError as err:
         print(f"error: name-twin probe failed ({err})", file=sys.stderr)
