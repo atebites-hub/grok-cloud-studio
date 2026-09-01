@@ -3,8 +3,9 @@
 
 Planes:
   --plane a2a     tools: a2a_list_seats, a2a_send
-  --plane cloud   tools: cloud_launch, cloud_status, cloud_result
+  --plane cloud   tools: cloud_launch, cloud_list, cloud_status, cloud_followup, cloud_result
   --plane all     both (default)
+  Do not expose cloud_watch (Directors must not block a turn on watch).
 
 Framing: Content-Length (MCP) or NDJSON when GCS_MCP_NDJSON=1.
 Never prints credentials.
@@ -72,12 +73,36 @@ def cloud_tools() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "cloud_list",
+            "description": "List Cursor Cloud Extra High agents (newest first). Never returns API keys.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "string", "description": "Max agents (default 20)"},
+                },
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "cloud_status",
             "description": "Compact status for a Cursor Cloud agent bc-id.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"id": {"type": "string", "description": "bc-id"}},
                 "required": ["id"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "cloud_followup",
+            "description": "Send a follow-up prompt to an existing Cursor Cloud Extra High agent.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "bc-id"},
+                    "prompt": {"type": "string", "description": "Follow-up prompt"},
+                },
+                "required": ["id", "prompt"],
                 "additionalProperties": False,
             },
         },
@@ -116,8 +141,18 @@ def _run(args: list[str], timeout: int = 120) -> subprocess.CompletedProcess[str
     )
 
 
+def redact_tool_output(text: str) -> str:
+    """Never return CURSOR_API_KEY (or the raw secret) in tool output."""
+    if not text:
+        return text
+    key = (os.environ.get("CURSOR_API_KEY") or "").strip()
+    if key:
+        text = text.replace(key, "[redacted]")
+    return text
+
+
 def _text_result(text: str, is_error: bool = False) -> dict[str, Any]:
-    return {"content": [{"type": "text", "text": text}], "isError": is_error}
+    return {"content": [{"type": "text", "text": redact_tool_output(text)}], "isError": is_error}
 
 
 def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -145,11 +180,35 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         proc = _run(cmd, timeout=180)
         out = (proc.stdout or "") + (proc.stderr or "")
         return _text_result(out.strip() or f"rc={proc.returncode}", proc.returncode != 0)
+    if name == "cloud_list":
+        limit = str(arguments.get("limit") or "20").strip() or "20"
+        proc = _run(
+            ["bash", str(ROOT / "scripts" / "cloud" / "list-cloud-agents.sh"), limit],
+            timeout=60,
+        )
+        out = (proc.stdout or "") + (proc.stderr or "")
+        return _text_result(out.strip() or f"rc={proc.returncode}", proc.returncode != 0)
     if name == "cloud_status":
         agent_id = str(arguments.get("id") or "").strip()
         if not agent_id:
             return _text_result("id is required", True)
         proc = _run(["bash", str(ROOT / "scripts" / "cloud" / "status-cloud-agent.sh"), agent_id])
+        out = (proc.stdout or "") + (proc.stderr or "")
+        return _text_result(out.strip() or f"rc={proc.returncode}", proc.returncode != 0)
+    if name == "cloud_followup":
+        agent_id = str(arguments.get("id") or arguments.get("agent_id") or "").strip()
+        prompt = str(arguments.get("prompt") or "").strip()
+        if not agent_id or not prompt:
+            return _text_result("id and prompt are required", True)
+        proc = _run(
+            [
+                "bash",
+                str(ROOT / "scripts" / "cloud" / "followup-cloud-agent.sh"),
+                agent_id,
+                prompt,
+            ],
+            timeout=180,
+        )
         out = (proc.stdout or "") + (proc.stderr or "")
         return _text_result(out.strip() or f"rc={proc.returncode}", proc.returncode != 0)
     if name == "cloud_result":
