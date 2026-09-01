@@ -49,7 +49,11 @@ if [[ -n "$LATEST" ]]; then
 fi
 
 python3 -c '
-import json, sys
+import json
+import sys
+
+sys.path.insert(0, sys.argv[3])
+from ship_gate_evidence import resolve_ship_gate
 
 def unwrap(data, key):
     if isinstance(data, dict) and key in data and "id" not in data:
@@ -92,5 +96,5 @@ out = {
     "result": (run.get("result") or "").strip() or None,
     "error": err,
 }
-print(json.dumps(out, indent=2))
-' "$AGENT_FILE" "$RUN_FILE"
+print(json.dumps(resolve_ship_gate(out), indent=2))
+' "$AGENT_FILE" "$RUN_FILE" "$HERE"

@@ -99,3 +99,36 @@ export async function githubPrShipGate(
     shipGateOk: emptyChecks ? false : shipGateOk,
   };
 }
+
+const EMPTY_GITHUB_PR: ShipGateSnapshot = {
+  emptyChecks: true,
+  checkRuns: 0,
+  mergeableState: null,
+  shipGateOk: false,
+};
+
+/** Fail closed for GitHub pulls: missing lookup is empty checks, not a pass. */
+export async function attachShipGate<
+  T extends {
+    prUrl?: string | null;
+    emptyChecks?: boolean;
+    checkRuns?: number;
+    shipGateOk?: boolean;
+  },
+>(payload: T): Promise<T & Partial<ShipGateSnapshot>> {
+  if (
+    payload.shipGateOk !== undefined ||
+    payload.emptyChecks !== undefined ||
+    payload.checkRuns !== undefined
+  ) {
+    return payload;
+  }
+  const snap = await githubPrShipGate(payload.prUrl);
+  if (snap !== null) {
+    return { ...payload, ...snap };
+  }
+  if (parseGitHubPullUrl(payload.prUrl) !== null) {
+    return { ...payload, ...EMPTY_GITHUB_PR };
+  }
+  return payload;
+}

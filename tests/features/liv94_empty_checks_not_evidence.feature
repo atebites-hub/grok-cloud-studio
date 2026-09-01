@@ -31,3 +31,11 @@ Feature: LIV-94 empty GitHub checks are not ship-gate evidence
     named "pytest -q and secret_scan"
     Then that snapshot is ship-gate evidence
     And FLEET_DONE may ping QA MERGE_REQUEST
+
+  Scenario: Director collect JSON is the remaining evidence path
+    Given Extra High finished with a GitHub prUrl
+    And GitHub check_runs=[] (MERGEABLE is not a substitute)
+    When a Director runs scripts/cloud/result-cloud-agent.sh
+    Then the JSON includes emptyChecks and shipGateOk
+    And emptyChecks=true is not MERGE_REQUEST evidence
+    And collect.ts attaches the same flags (not only the waiter ping)
