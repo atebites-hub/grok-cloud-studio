@@ -94,7 +94,7 @@ def fetch_run_status(base, key, agent_id, run_id, timeout):
 
 base = (os.environ.get("CURSOR_API_BASE") or "https://api.cursor.com").rstrip("/")
 key = os.environ.get("CURSOR_API_KEY") or ""
-timeout = float(os.environ.get("CLOUD_CURL_MAX_TIME") or "120")
+timeout = min(float(os.environ.get("CLOUD_CURL_MAX_TIME") or "120"), 15.0)
 with open(sys.argv[1], encoding="utf-8") as fh:
     data = json.load(fh)
 items = data.get("items") or []

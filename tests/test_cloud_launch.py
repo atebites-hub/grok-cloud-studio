@@ -71,6 +71,7 @@ class MockCursorAPI:
     followup_http: int = 201
     posts: list[dict[str, Any]] = field(default_factory=list)
     gets: list[str] = field(default_factory=list)
+    run_not_found_ids: set[str] = field(default_factory=set)
     auth_users: list[str] = field(default_factory=list)
     _run_i: int = 0
     _httpd: ThreadingHTTPServer | None = None
@@ -122,6 +123,9 @@ class MockCursorAPI:
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
                     run_id = parts[4]
+                    if run_id in api.run_not_found_ids:
+                        self._send(404, {"error": "not_found"})
+                        return
                     if run_id in api.run_status_by_id:
                         status = api.run_status_by_id[run_id]
                     else:
@@ -322,6 +326,27 @@ def test_list_prints_run_status_so_finished_leftovers_are_not_spinning(tmp_path:
     assert "runStatus=none" in idle
     assert any(path.endswith("/runs/run-done") for path in api.gets), api.gets
     assert any(path.endswith("/runs/run-live") for path in api.gets), api.gets
+    assert FAKE_KEY not in listed.stdout + listed.stderr
+
+
+def test_list_run_not_found_prints_run_status_none(tmp_path: Path) -> None:
+    items = [
+        {
+            "id": "bc-stale-id",
+            "name": "ghost-run",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-stale-id",
+            "latestRunId": "run-missing",
+        }
+    ]
+    with MockCursorAPI(list_items=items, run_not_found_ids={"run-missing"}) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        listed = _run(CLOUD / "list-cloud-agents.sh", [], env)
+    assert listed.returncode == 0, listed.stdout + listed.stderr
+    row = _list_row(listed.stdout, "bc-stale-id")
+    assert "status=ACTIVE" in row
+    assert "runStatus=none" in row
+    assert any(path.endswith("/runs/run-missing") for path in api.gets), api.gets
     assert FAKE_KEY not in listed.stdout + listed.stderr
 
 
