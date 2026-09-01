@@ -20,6 +20,7 @@ studio.env
 /bin/taskboard-*
 .a2a-state/
 .gcs-state/
+studio-archive/
 *.log
 acp.secret
 agent.env

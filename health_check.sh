@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Probe LIVE Palemon studio services. Never prints secrets.
 # Exit 0 HEALTH_OK, 1 HEALTH_DEGRADED, 2 HEALTH_DOWN.
+# Hive law (LIV-71): HEALTH_OK requires this beat's Manning apply-log line.
 # Tailscale missing is WARN, not FAIL. Do not remint, wipe, or launch Cursor Cloud.
 set -euo pipefail
 
@@ -21,11 +22,13 @@ Probe live studio services (no secrets):
   taskboard UI :3010
   mcp-http :3011 GET /health
   each GCS_MIND_SEATS mind pid
+  current-beat Manning apply-log (studio-archive/log/YYYY-MM-DD.md)
   tailscale binary (WARN if missing, never FAIL)
 
 Prints HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN and exits 0 / 1 / 2.
-Hub down => HEALTH_DOWN. Hub up but board/mcp/mind down => HEALTH_DEGRADED.
-See docs/studio/WIPE.md (DR loop with recover.sh).
+Hub down => HEALTH_DOWN. Hub up but board/mcp/mind/apply-log down => HEALTH_DEGRADED.
+Hive law (LIV-71): HEALTH_OK is illegal without this beat's APPLY line.
+See docs/studio/HIVE.md and docs/studio/WIPE.md (DR loop with recover.sh).
 EOF
 }
 
@@ -90,6 +93,13 @@ if gcs_health_tailscale_ok; then
   echo "TAILSCALE ok"
 else
   echo "WARN tailscale missing"
+fi
+
+if apply_py="$(gcs_apply_log_py)" && apply_out="$(python3 "$apply_py" check)"; then
+  echo "$apply_out"
+else
+  echo "${apply_out:-APPLY_LOG missing}"
+  degraded=1
 fi
 
 if [[ "$hub_down" -eq 1 ]]; then
