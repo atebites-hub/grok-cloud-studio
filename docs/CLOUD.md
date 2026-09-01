@@ -47,6 +47,12 @@ Palemon Linear is Living Sky (`LIV`).
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
 
+## Followup-first when create cannot verify `main`
+
+`git ls-remote` can see `main` on the Extra High bound repo (`GCS_CLOUD_REPO`) while Cursor Cloud `Agent.create` returns `[validation_error] Failed to verify existence of branch 'main'` (SHA `startingRef` fails the same way). That is Cursor's GitHub App, not a missing branch.
+
+Do **not** retry `launch-cloud-extra-high.sh` create in a loop. Capacity fill: `scripts/cloud/followup-cloud-agent.sh <existing-bc-id> "prompt"` (`CLOUD_FOLLOWUP_OK`). Launch prints `FOLLOWUP_FIRST github_sha=…` on this error. Do not vendor Hermes. Model stays grok-4.6 xhigh `fast=false`. Never Bot CloudAgent.
+
 MCP `cloud_list` (`plugins/cursor-cloud`, `scripts/cloud/list_helper.py`) prints latest-run `runStatus` (`RUNNING` vs `FINISHED`) next to agent `status`. Cursor Cloud agents stay `ACTIVE` until archive, so leftover `ACTIVE`+`FINISHED` rows are not live workers. This is independent of bash `list.sh`.
 
 Fail-closed (LIV-67 / LIV-69): create **and** send/followup always pin grok-4.6 xhigh `fast=false`. Any `CURSOR_CLOUD_MODEL` that is not exactly `grok-4.6` is **rejected** (no create, no send). REST list/runs omit model; omitted send uses dashboard Auto (Jay saw Opus 5). Never Bot CloudAgent. Empty GitHub checks are not merge evidence. MERGEABLE+empty CI is leftover-green theatre.
