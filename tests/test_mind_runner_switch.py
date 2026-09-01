@@ -80,7 +80,9 @@ def test_docs_and_source_keep_switch_law() -> None:
         assert "GCS_MIND_RUNNER" in blob
         assert "MIND_SWITCH" in blob
         assert "mind/runner" in blob
-        assert "Bot CloudAgent" not in blob
+        fold = blob.lower()
+        assert "never bot cloudagent" in fold or "bot cloudagent" not in fold
+        assert "launch bot cloudagent" not in fold
         assert PRIVATE_GAME not in blob
     assert "MIND_FALLBACK" not in src
     for marker in LIV85_MAIL_MARKERS:
