@@ -20,11 +20,12 @@ function envFirst(...names: string[]): string {
   return "";
 }
 
+/** Fail-closed Extra High pin. Ignore CURSOR_CLOUD_MODEL / CURSOR_CLOUD_EFFORT (Jay saw Opus 5 when env leaked). REST list/runs omit model; omitted send uses dashboard Auto. Never Bot CloudAgent. */
 export function extraHighModel(): ModelSelection {
   return {
-    id: process.env.CURSOR_CLOUD_MODEL || "grok-4.6",
+    id: "grok-4.6",
     params: [
-      { id: "effort", value: process.env.CURSOR_CLOUD_EFFORT || "xhigh" },
+      { id: "effort", value: "xhigh" },
       { id: "fast", value: "false" },
     ],
   };

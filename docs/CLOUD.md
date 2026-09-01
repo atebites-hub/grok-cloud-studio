@@ -19,3 +19,5 @@ scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
+
+Fail-closed (LIV-67): create **and** send/followup always pin grok-4.6 xhigh `fast=false`. `CURSOR_CLOUD_MODEL` / `CURSOR_CLOUD_EFFORT` are ignored. REST list/runs omit model, so an omitted send uses dashboard Auto (Jay saw Opus 5). Never Bot CloudAgent (omitted model = Auto). GCS #41 send-pin is not required once this is on main.

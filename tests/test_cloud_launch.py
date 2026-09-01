@@ -204,6 +204,54 @@ def test_launch_posts_parameterized_repo(tmp_path: Path) -> None:
     assert body["name"] == "gcs-eh-test"
 
 
+def test_launch_ignores_cursor_cloud_model_override(tmp_path: Path) -> None:
+    """CURSOR_CLOUD_MODEL must not leak Opus/Auto onto Extra High create (LIV-67)."""
+    with MockCursorAPI(create_http=201) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", "gcs-eh-pin", "Implement the assigned outcome. Open a PR."],
+            _script_env(
+                tmp_path,
+                api.base,
+                CURSOR_API_KEY=FAKE_KEY,
+                CURSOR_CLOUD_MODEL="claude-opus-4.5-thinking",
+                CURSOR_CLOUD_EFFORT="low",
+            ),
+        )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    body = api.posts[0]["body"]
+    assert body["model"]["id"] == "grok-4.6"
+    params = {(p["id"], p["value"]) for p in body["model"]["params"]}
+    assert ("effort", "xhigh") in params
+    assert ("fast", "false") in params
+    assert "claude" not in json.dumps(body).lower()
+
+
+def test_followup_rest_pins_grok_46_xhigh(tmp_path: Path) -> None:
+    """REST /v1/agents/{id}/runs must pin grok-4.6 xhigh (omitted model = dashboard Auto)."""
+    followup = REPO / "scripts" / "cloud" / "followup.sh"
+    with MockCursorAPI(followup_http=201) as api:
+        proc = _run(
+            followup,
+            ["bc-mock", "Continue the assigned outcome."],
+            _script_env(
+                tmp_path,
+                api.base,
+                CURSOR_API_KEY=FAKE_KEY,
+                CURSOR_CLOUD_MODEL="claude-opus-4.5-thinking",
+            ),
+        )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "CLOUD_FOLLOWUP_OK" in proc.stdout
+    posts = [p for p in api.posts if p["path"].endswith("/runs")]
+    assert posts, api.posts
+    body = posts[0]["body"]
+    assert body["model"]["id"] == "grok-4.6"
+    params = {(p["id"], p["value"]) for p in body["model"]["params"]}
+    assert ("effort", "xhigh") in params
+    assert ("fast", "false") in params
+
+
 def test_launch_fail_closed_without_cloud_repo(tmp_path: Path) -> None:
     with MockCursorAPI() as api:
         env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
