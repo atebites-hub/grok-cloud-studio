@@ -67,8 +67,11 @@ class MockCursorAPI:
     create_body: dict[str, Any] | None = None
     list_items: list[dict[str, Any]] = field(default_factory=list)
     run_statuses: list[str] = field(default_factory=lambda: ["FINISHED"])
+    run_status_by_id: dict[str, str] = field(default_factory=dict)
     followup_http: int = 201
     posts: list[dict[str, Any]] = field(default_factory=list)
+    gets: list[str] = field(default_factory=list)
+    run_not_found_ids: set[str] = field(default_factory=set)
     auth_users: list[str] = field(default_factory=list)
     _run_i: int = 0
     _httpd: ThreadingHTTPServer | None = None
@@ -100,38 +103,59 @@ class MockCursorAPI:
             def do_GET(self) -> None:
                 api.auth_users.append(_basic_user(self.headers.get("Authorization")))
                 parsed = urlparse(self.path)
+                api.gets.append(parsed.path)
                 parts = [p for p in parsed.path.split("/") if p]
                 if parts == ["v1", "agents"]:
-                    self._send(200, {"items": api.list_items})
+                    # Real GET /v1/agents omits repos; details live on GET /v1/agents/{id}.
+                    items = []
+                    for raw in api.list_items:
+                        item = {k: v for k, v in raw.items() if k not in ("repos", "runGit")}
+                        items.append(item)
+                    self._send(200, {"items": items})
                     return
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
-                    self._send(
-                        200,
-                        {
-                            "id": agent_id,
-                            "name": "mock-agent",
-                            "status": "ACTIVE",
-                            "url": f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": "run-mock",
-                        },
+                    listed = next(
+                        (row for row in api.list_items if str(row.get("id") or "") == agent_id),
+                        None,
                     )
+                    agent: dict[str, Any] = {
+                        "id": agent_id,
+                        "name": (listed or {}).get("name") or "mock-agent",
+                        "status": (listed or {}).get("status") or "ACTIVE",
+                        "url": (listed or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
+                        "latestRunId": (listed or {}).get("latestRunId") or "run-mock",
+                    }
+                    if listed is not None and listed.get("repos") is not None:
+                        agent["repos"] = listed["repos"]
+                    self._send(200, agent)
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
-                    seq = api.run_statuses or ["RUNNING"]
-                    if api._run_i < len(seq):
-                        status = seq[api._run_i]
-                        api._run_i += 1
+                    run_id = parts[4]
+                    if run_id in api.run_not_found_ids:
+                        self._send(404, {"error": "not_found"})
+                        return
+                    if run_id in api.run_status_by_id:
+                        status = api.run_status_by_id[run_id]
                     else:
-                        status = seq[-1]
-                    self._send(
-                        200,
-                        {
-                            "id": parts[4],
-                            "agentId": parts[2],
-                            "status": status,
-                        },
+                        seq = api.run_statuses or ["RUNNING"]
+                        if api._run_i < len(seq):
+                            status = seq[api._run_i]
+                            api._run_i += 1
+                        else:
+                            status = seq[-1]
+                    run: dict[str, Any] = {
+                        "id": run_id,
+                        "agentId": parts[2],
+                        "status": status,
+                    }
+                    listed = next(
+                        (row for row in api.list_items if str(row.get("id") or "") == parts[2]),
+                        None,
                     )
+                    if listed is not None and listed.get("runGit") is not None:
+                        run["git"] = listed["runGit"]
+                    self._send(200, run)
                     return
                 self._send(404, {"error": "not_found"})
 

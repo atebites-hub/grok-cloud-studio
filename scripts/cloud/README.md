@@ -21,6 +21,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
+| `capacity-count.sh [--limit N] [--repo org/name]` | `CLOUD_CAPACITY` running floor from `runStatus=RUNNING`; leftover ACTIVE+FINISHED is not capacity |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
@@ -104,6 +105,22 @@ scripts/cloud/result-cloud-agent.sh bc-…
 # 4) Follow-up if needed (agent idle)
 scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check."
 ```
+
+## Capacity floor (LIV-67)
+
+Cloud agents stay `ACTIVE` until archive. Execution state lives on the latest
+run. Capacity beats count live workers with `scripts/cloud/capacity-count.sh`:
+
+```bash
+scripts/cloud/capacity-count.sh
+scripts/cloud/capacity-count.sh --repo org/name
+```
+
+Each line is `CLOUD_CAPACITY repo=org/name running=N floor=8 leftover_active=N must_launch=0|1 deficit=N` from `runStatus=RUNNING` on the bound git remote (`GET /v1/agents/{id}` `repos[0].url`, fallback run `git.branches[].repoUrl`). Leftover `ACTIVE`+`FINISHED` is not the floor. `CREATING` is not `RUNNING`. Floor is `GCS_CLOUD_MIN_RUNNING` (default 8).
+
+`--repo` accepts `org/name`, `https://github.com/org/name`, a `.git` suffix, or `git@github.com:org/name.git`. Unbound agents are dropped. Default repo is `GCS_CLOUD_REPO`.
+
+This script does not remint GCS #78 / #73 / #82 list running filters. Never Bot CloudAgent.
 
 ## Terminal run statuses
 

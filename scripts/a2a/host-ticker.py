@@ -42,7 +42,9 @@ def _tick_text(seat: str, token: str) -> str:
         f"ACP_PING STATUS/CONTINUE seat={seat} token={token}. "
         "Keep-alive turn: do work, do not idle. Quote token in STATUS. "
         "Tools are allowed (taskboard ticket move, send.sh, "
-        "scripts/launch-cloud-extra-high.sh). RESULT-only is a bug."
+        "scripts/cloud/capacity-count.sh, scripts/launch-cloud-extra-high.sh). "
+        "Count runStatus=RUNNING, not leftover ACTIVE+FINISHED. "
+        "RESULT-only is a bug."
     )
 
 
