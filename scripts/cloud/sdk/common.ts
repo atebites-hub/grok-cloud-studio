@@ -20,14 +20,24 @@ function envFirst(...names: string[]): string {
   return "";
 }
 
+/** Extra High create/send pin. Not overridable by environment. */
 export function extraHighModel(): ModelSelection {
   return {
-    id: process.env.CURSOR_CLOUD_MODEL || "grok-4.6",
+    id: "grok-4.6",
     params: [
-      { id: "effort", value: process.env.CURSOR_CLOUD_EFFORT || "xhigh" },
+      { id: "effort", value: "xhigh" },
       { id: "fast", value: "false" },
     ],
   };
+}
+
+type PinnedSender = {
+  send: (prompt: string, options?: { model: ModelSelection }) => Promise<Run>;
+};
+
+/** First run and follow-up must pass extraHighModel(); unpinned send lets Auto pick. */
+export async function sendPinned(agent: PinnedSender, prompt: string): Promise<Run> {
+  return agent.send(prompt, { model: extraHighModel() });
 }
 
 /** Target git repo for Extra High creates. Fail closed if unset. */

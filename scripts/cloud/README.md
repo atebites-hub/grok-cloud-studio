@@ -33,15 +33,18 @@ Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|res
 
 ## Launch contract
 
-Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
+Hard-wired Extra High create **and first send** (SDK `Agent.create` + `sendPinned` / REST `POST /v1/agents`):
 
-- `model.id = grok-4.6`
+- `model.id = grok-4.6` (not `CURSOR_CLOUD_MODEL` / `CURSOR_CLOUD_EFFORT`)
 - `model.params`: `effort=xhigh`, `fast=false`
+- SDK first run calls `sendPinned` → `agent.send(prompt, { model: extraHighModel() })`
 - `repos[0].url` from **`GCS_CLOUD_REPO` or `CLOUD_REPO_URL`** (required; fail closed)
 - `repos[0].startingRef` from `GCS_CLOUD_REF` / `CLOUD_REPO_REF` / `CURSOR_CLOUD_REF` (default `main`)
 - `autoCreatePR = true`
 
 `CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, or missing auth prints `CLOUD_LAUNCH_ERR` and exits non-zero.
+
+Never launch a Grok Bot CloudAgent. Studio Linear is Living Sky (`LIV`), never Black Swan.
 
 **v1 metadata:** do not send `Agent.create({ cloud: { metadata } })` by default. API v1 returns `feature_unavailable: "API v1 agent metadata is not enabled."` Metadata is gated behind `CLOUD_SDK_METADATA=1` (default off; key `gcs`). Retryable/unavailable SDK create failures exit **75** so `_common.sh` still REST-falls-back.
 

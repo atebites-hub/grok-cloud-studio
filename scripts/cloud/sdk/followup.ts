@@ -1,5 +1,12 @@
 import { Agent } from "@cursor/sdk";
-import { die, extraHighModel, loadApiKey, mapRunStatus, safeError } from "./common.ts";
+import {
+  die,
+  extraHighModel,
+  loadApiKey,
+  mapRunStatus,
+  safeError,
+  sendPinned,
+} from "./common.ts";
 
 async function main(): Promise<void> {
   const agentId = process.argv[2] || "";
@@ -11,7 +18,7 @@ async function main(): Promise<void> {
   let agent: Awaited<ReturnType<typeof Agent.resume>> | undefined;
   try {
     agent = await Agent.resume(agentId, { apiKey, model: extraHighModel() });
-    const run = await agent.send(prompt, { model: extraHighModel() });
+    const run = await sendPinned(agent, prompt);
     process.stdout.write(
       `CLOUD_FOLLOWUP_OK id=${agentId} run=${run.id} runStatus=${mapRunStatus(run.status)}\n`,
     );

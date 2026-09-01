@@ -10,6 +10,7 @@ import {
   loadApiKey,
   safeError,
   sdkCreateFailExitCode,
+  sendPinned,
 } from "./common.ts";
 
 function spawnWaiter(agentId: string, runId: string, name: string): void {
@@ -52,7 +53,7 @@ async function main(): Promise<void> {
       // 75 → REST fallback. Do not fail closed on v1 metadata / unavailable.
       process.exit(sdkCreateFailExitCode(err));
     }
-    const run = await agent.send(prompt);
+    const run = await sendPinned(agent, prompt);
     const url = agentUrl(agent.agentId);
     process.stdout.write(
       `CLOUD_LAUNCH_OK id=${agent.agentId} run=${run.id} url=${url} name=${name}\n`,

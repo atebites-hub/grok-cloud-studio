@@ -19,3 +19,14 @@ scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
+
+Create always sends those fields (SDK `Agent.create` and REST `POST /v1/agents`).
+There is no `CURSOR_CLOUD_MODEL` / `CURSOR_CLOUD_EFFORT` override. SDK first
+`send` passes the same pin (`sendPinned`).
+
+Never Grok Bot CloudAgent. Bot seats (`orchestrator` / `donald`) stay
+`skipSeats` / `send.sh`. Directors spawn Extra High via
+`scripts/launch-cloud-extra-high.sh`.
+
+Studio Linear is Living Sky (`linear.app/livingsky`, team Livingsky / `LIV`).
+NEVER Black Swan.
