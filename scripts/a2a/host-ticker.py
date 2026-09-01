@@ -5,9 +5,8 @@ The clock is this host process, not `/loop` inside an idle grok agent serve
 session and not watchdog injecting keep-alives. Each tick grows
 inbox.jsonl. Mind harvests that line as a mailbox turn; leftover GROW wake
 still owns ACP overlay seats. The ping is a work turn (not RESULT-only
-hang-up). Not a central LAUNCH assigner and not a LAUNCH kind. Tools are
-allowed. Default interval is GCS_TICKER_SEC (600). Local studio only.
-Stdlib only.
+hang-up). RESULT-only / PONG is a bug. Not a central LAUNCH assigner and not a LAUNCH kind. Tools are allowed. Default
+interval is GCS_TICKER_SEC (600). Local studio only. Stdlib only.
 """
 from __future__ import annotations
 
@@ -28,7 +27,7 @@ INTERVAL_SEC = float(os.environ.get("GCS_TICKER_SEC", "600"))
 _LIB_DIR = Path(__file__).resolve().parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
-from lib import append_inbox_record, known_seat  # noqa: E402
+from lib import append_inbox_record, host_tick_text, known_seat  # noqa: E402
 from mind_bot_like import default_tick_seats  # noqa: E402
 
 
@@ -37,12 +36,7 @@ def _now_ts() -> float:
 
 
 def _tick_text(seat: str, token: str) -> str:
-    return (
-        f"ACP_PING STATUS/CONTINUE seat={seat} token={token}. "
-        "Keep-alive turn: do work, do not idle. Quote token in STATUS. "
-        "Tools are allowed (taskboard ticket move, send.sh, "
-        "scripts/launch-cloud-extra-high.sh). RESULT-only / PONG is a bug."
-    )
+    return host_tick_text(seat, token)
 
 
 def tick_once(seats: Iterable[str] | None = None, now: float | None = None) -> int:
@@ -74,6 +68,8 @@ def tick_once(seats: Iterable[str] | None = None, now: float | None = None) -> i
             )
             if proc.returncode == 0:
                 written += 1
+                if proc.stdout.strip():
+                    print(proc.stdout.rstrip(), flush=True)
                 print(f"TICKER_ENQUEUE seat={seat}", flush=True)
                 continue
         ts = int(now if now is not None else _now_ts())
@@ -125,7 +121,7 @@ def run_forever(seats: Iterable[str] | None = None) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="GROW host ticker (inbox keep-alives)")
+    parser = argparse.ArgumentParser(description="GROW host ticker (ACP_PING STATUS/CONTINUE work turns)")
     parser.add_argument("--once", action="store_true", help="Enqueue one tick then exit")
     parser.add_argument(
         "--seats",

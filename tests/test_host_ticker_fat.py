@@ -172,7 +172,8 @@ def test_fat_host_ticker_once_enqueues_work_turns_not_pong_or_launch(
     )
     blob = proc.stdout + proc.stderr
     assert proc.returncode == 0, blob
-    assert "TICKER_ENQUEUE" in proc.stdout or "HOST_CLOCK_ENQUEUE" in blob, blob
+    assert "HOST_CLOCK_ENQUEUE" in blob, blob
+    assert "TICKER_ENQUEUE" in proc.stdout, blob
     assert "BOT_BRIDGE" not in blob
     _assert_no_bot_bridge(state)
     for seat in ("floor", "ops"):
@@ -218,7 +219,8 @@ def test_fat_ticker_fallback_tick_text_when_clock_script_missing(
     assert n == 1
     recs = _inbox_records(state / "floor" / "inbox.jsonl")
     text = _assert_work_turn(recs[0], seat="floor")
-    assert "tick-floor-1700000000" in text or recs[0].get("taskId")
+    assert recs[0].get("taskId") == "tick-floor-1700000000"
+    assert "tick-floor-1700000000" in text
     fallback = ticker._tick_text("floor", "tick-floor-1")
     rec = {
         "kind": "message",
@@ -234,17 +236,21 @@ def test_fat_ticker_does_not_start_bot_bridge_or_clone_liv85() -> None:
     ticker_src = TICKER_PY.read_text(encoding="utf-8")
     clock_src = CLOCK_SH.read_text(encoding="utf-8")
     bus_src = BUS_SH.read_text(encoding="utf-8")
+    lib_src = (REPO / "scripts" / "a2a" / "lib.py").read_text(encoding="utf-8")
+    assert "def host_tick_text" in lib_src
+    assert BUG_PHRASE in lib_src
+    assert "ACP_PING STATUS/CONTINUE" in lib_src
     for blob, label in ((ticker_src, "host-ticker.py"), (clock_src, "host-clock-ticker.sh")):
         assert "ACP_PING STATUS/CONTINUE" in blob, label
         assert "Tools are allowed" in blob, label
-        assert BUG_PHRASE in blob, label
+        assert "host_tick_text" in blob, label
         assert "bot-bridge" not in blob, label
         assert "acp_inject" not in blob, label
         assert "TASK_STATE_COMPLETED" not in blob, label
         assert "mail.txt" not in blob, label
         assert "LAUNCH ONLY" not in blob, label
         assert "Do not use tools" not in blob, label
-        assert "Bot CloudAgent" not in blob or "never" in blob.lower()
+        assert "Bot CloudAgent" not in blob
     assert "not a LAUNCH kind" in ticker_src or "not a LAUNCH" in ticker_src
     ticker_fn = bus_src.split("start_host_ticker() {", 1)[1].split("stop_host_ticker()", 1)[0]
     assert "TICKER_PY" in ticker_fn
@@ -307,7 +313,9 @@ def test_fat_extra_high_stays_grok_46_xhigh_fast_false_never_bot() -> None:
     skip = {str(s) for s in registry.get("skipSeats") or []}
     assert "orchestrator" in skip
     ticker_src = TICKER_PY.read_text(encoding="utf-8")
-    assert "launch-cloud-extra-high.sh" in ticker_src
+    lib_src = (REPO / "scripts" / "a2a" / "lib.py").read_text(encoding="utf-8")
+    assert "launch-cloud-extra-high.sh" in lib_src
+    assert "host_tick_text" in ticker_src
     assert "cursor-grok" not in ticker_src
     assert "Bot CloudAgent" not in ticker_src
     hermes = REPO / "vendor" / "hermes-agent"

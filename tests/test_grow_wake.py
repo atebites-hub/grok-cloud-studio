@@ -107,7 +107,7 @@ def _assert_keepalive_clock_text(text: str) -> None:
     assert "do not launch" not in low
     assert "quoting token then RESULT" not in text
     assert "do not idle" in low
-    assert "result-only" in low
+    assert "result-only / pong is a bug" in low
     assert "tools are allowed" in low
     assert "ticket move" in low
     assert "send.sh" in low
