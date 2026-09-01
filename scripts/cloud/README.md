@@ -24,7 +24,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
-| `result-cloud-agent.sh <bc-id>` | Result/context JSON |
+| `result-cloud-agent.sh <bc-id>` | Result/context JSON (`repoUrl` = bound `repos[0].url`) |
 | `webhook-harness.sh serve \| simulate` | Signed webhook receiver / local POST |
 
 Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|result|wait-notify> …`
@@ -40,6 +40,11 @@ Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 - `repos[0].url` from **`GCS_CLOUD_REPO` or `CLOUD_REPO_URL`** (required; fail closed)
 - `repos[0].startingRef` from `GCS_CLOUD_REF` / `CLOUD_REPO_REF` / `CURSOR_CLOUD_REF` (default `main`)
 - `autoCreatePR = true`
+
+Collect (`result-cloud-agent.sh` / `collect.ts`) echoes that bound `repos[0].url`
+as `repoUrl` so Directors can see **game vs studio** targeting (Palemon vs
+`grok-cloud-studio`). Palemon Linear is **Living Sky** (`LIV`), not Black Swan.
+Never launch a Grok Bot CloudAgent; Extra High is the grunt.
 
 `CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, or missing auth prints `CLOUD_LAUNCH_ERR` and exits non-zero.
 

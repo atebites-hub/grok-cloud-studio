@@ -5,4 +5,4 @@ alwaysApply: false
 
 # Cursor Cloud Extra High
 
-Use MCP `cloud_launch`, `cloud_status`, and `cloud_result` (or `scripts/launch-cloud-extra-high.sh`). Set `GCS_CLOUD_REPO` or `CLOUD_REPO_URL` before create. Do not print API keys. After `CLOUD_LAUNCH_OK`, a waiter A2A-pings the owning seat; do not block the Director turn on watch.
+Use MCP `cloud_launch`, `cloud_status`, and `cloud_result` (or `scripts/launch-cloud-extra-high.sh`). Set `GCS_CLOUD_REPO` or `CLOUD_REPO_URL` before create. Collect `cloud_result` includes bound `repos[0].url` (`repoUrl`) so you can tell Palemon vs grok-cloud-studio targeting. Palemon Linear is Living Sky (LIV), not Black Swan. Never launch a Grok Bot CloudAgent. Do not print API keys. After `CLOUD_LAUNCH_OK`, a waiter A2A-pings the owning seat; do not block the Director turn on watch.

@@ -83,7 +83,7 @@ def cloud_tools() -> list[dict[str, Any]]:
         },
         {
             "name": "cloud_result",
-            "description": "Result JSON for a Cursor Cloud agent bc-id (prUrl, runStatus, summary).",
+            "description": "Result JSON for a Cursor Cloud agent bc-id (repoUrl / repos[0].url, prUrl, runStatus, summary).",
             "inputSchema": {
                 "type": "object",
                 "properties": {"id": {"type": "string", "description": "bc-id"}},

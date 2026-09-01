@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Print result/context JSON for a Cursor Cloud agent.
 # Canonical: @cursor/sdk. REST curl = fallback (CURSOR_API_BASE / CLOUD_FORCE_REST).
+# JSON includes bound repos[0].url as repoUrl (game vs studio targeting).
 # Usage: result-cloud-agent.sh <bc-id>
 set -euo pipefail
 
@@ -48,49 +49,4 @@ if [[ -n "$LATEST" ]]; then
   fi
 fi
 
-python3 -c '
-import json, sys
-
-def unwrap(data, key):
-    if isinstance(data, dict) and key in data and "id" not in data:
-        inner = data[key]
-        if isinstance(inner, dict):
-            return inner
-    return data
-
-with open(sys.argv[1], encoding="utf-8") as fh:
-    agent = unwrap(json.load(fh), "agent")
-with open(sys.argv[2], encoding="utf-8") as fh:
-    run = unwrap(json.load(fh), "run")
-
-branches, pr = [], None
-for b in (run.get("git") or {}).get("branches") or []:
-    if b.get("branch"):
-        branches.append(b["branch"])
-    if b.get("prUrl") and not pr:
-        pr = b["prUrl"]
-err = run.get("error")
-if isinstance(err, str):
-    err = {"message": err}
-elif not isinstance(err, dict):
-    err = None
-elif "message" not in err:
-    err = {"message": json.dumps(err)}
-status = run.get("status") or None
-out = {
-    "agentId": agent.get("id") or "",
-    "name": agent.get("name") or "",
-    "url": agent.get("url") or "",
-    "runId": run.get("id") or agent.get("latestRunId") or None,
-    "status": status,
-    "agentStatus": agent.get("status") or None,
-    "runStatus": status,
-    "prUrl": pr,
-    "branches": branches,
-    "branch": branches[0] if branches else None,
-    "summary": None,
-    "result": (run.get("result") or "").strip() or None,
-    "error": err,
-}
-print(json.dumps(out, indent=2))
-' "$AGENT_FILE" "$RUN_FILE"
+python3 "${HERE}/result_payload.py" "$AGENT_FILE" "$RUN_FILE"
