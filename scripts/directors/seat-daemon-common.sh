@@ -180,7 +180,8 @@ _write_seat_taskboard_mcp_config() {
   # Merge stdio MCP into GROK_HOME/config.toml. Equivalent to:
   #   GROK_HOME=$gh grok mcp add taskboard -- "$bin" --db "$db" mcp
   # Cursor workspace MCP JSON is not the serve config and is not inherited.
-  # Idempotent: never append a second [compat.cursor] / [mcp_servers.taskboard].
+  # Idempotent: never append a second [compat.cursor] / [mcp_servers.taskboard]
+  # / [mcp_servers.linear] table. Linear comes from scripts/directors/linear_env.py.
   local dest="$1" command="$2" db="$3"
   python3 "$ROOT/scripts/directors/seat_grok_mcp.py" "$dest" "$command" "$db"
 }
@@ -188,7 +189,9 @@ _write_seat_taskboard_mcp_config() {
 install_seat_grok_mcp() {
   # Register stdio MCP in this seat's isolated GROK_HOME/config.toml:
   #   <absolute taskboard> --db $GCS_TASKBOARD_DB mcp
-  # User-scope ~/.grok/config.toml is not inherited. Do not remint serve.
+  # plus Grok-catalog Linear HTTP MCP (https://mcp.linear.app/mcp, Bearer
+  # ${LINEAR_API_KEY}). User-scope ~/.grok/config.toml is not inherited.
+  # Do not remint serve. Do not copy .cursor/mcp.json.
   local seat="${1:-}"
   local sd gh db bin cfg
   sd="$(seat_state_dir "${seat:-floor}")"
@@ -292,6 +295,12 @@ install_seat_taskboard_cli() {
   done
 }
 
+load_linear_api_key() {
+  # Export LINEAR_API_KEY from env or a secret file. Never echo the value.
+  # shellcheck source=../cloud/load-linear-env.sh
+  source "$ROOT/scripts/cloud/load-linear-env.sh"
+}
+
 export_seat_serve_env() {
   local seat="$1"
   local sd
@@ -304,6 +313,7 @@ export_seat_serve_env() {
   export GROK_MEMORY="${GROK_MEMORY:-1}"
   export GROK_HOME="${GROK_HOME:-$sd/grok-home}"
   mkdir -p "$GROK_HOME"
+  load_linear_api_key
   install_seat_identity "$seat"
   export PATH="${GROK_HOME}/bin:${HOME}/.grok/bin:${PATH:-}"
 }

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Register tcarac/taskboard stdio MCP into each seat GROK_HOME/config.toml.
+# Register tcarac/taskboard stdio MCP and Grok-catalog Linear HTTP MCP
+# into each seat GROK_HOME/config.toml.
 # PATH refresh only: does not start or remint a live serve.
 #
 # Usage: install-grok-mcp.sh [seat ...]
@@ -20,7 +21,7 @@ fi
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   echo "Usage: $(basename "$0") [seat ...]" >&2
-  echo "Register taskboard stdio MCP (absolute --db) into seat GROK_HOME/config.toml." >&2
+  echo "Register taskboard stdio MCP (absolute --db) and Linear HTTP MCP into seat GROK_HOME/config.toml." >&2
   echo "Does not remint a live serve." >&2
   exit 0
 fi

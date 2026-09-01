@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Merge taskboard stdio MCP into an isolated GROK_HOME/config.toml.
+"""Merge taskboard + Linear MCP into an isolated GROK_HOME/config.toml.
 
 Idempotent: a second write (or a grok rewrite that dropped the marker
 comments) must not append a duplicate `[compat.cursor]` /
-`[mcp_servers.taskboard]` table. Duplicate tables fail grok's TOML parse.
+`[mcp_servers.taskboard]` / `[mcp_servers.linear]` table. Duplicate tables
+fail grok's TOML parse.
 
-Stdlib only.
+Linear is the Grok catalog remote MCP (`grok mcp add --transport http linear`),
+not a copy of Cursor `.cursor/mcp.json`. Stdlib only.
 """
 from __future__ import annotations
 
@@ -27,7 +29,8 @@ _MARKED_BLOCK = re.compile(
 _MARK_LINE = re.compile(
     r"(?m)^" + re.escape(MARK_START) + r"(?:-end)?[ \t]*\n?"
 )
-_OWNED_TABLES = ("compat.cursor", "mcp_servers.taskboard")
+_OWNED_TABLES = ("compat.cursor", "mcp_servers.taskboard", "mcp_servers.linear")
+LINEAR_MCP_URL = "https://mcp.linear.app/mcp"
 
 
 def q(value: str) -> str:
@@ -35,6 +38,11 @@ def q(value: str) -> str:
 
 
 def mcp_block(command: str, db: str) -> str:
+    # Grok catalog (GROK_HOME/config.toml), not a copy of .cursor/mcp.json.
+    # Linear remote MCP is equivalent to:
+    #   grok mcp add --transport http linear https://mcp.linear.app/mcp \
+    #     --header "Authorization: Bearer ${LINEAR_API_KEY}"
+    auth = "Bearer ${LINEAR_API_KEY}"
     return (
         f"{MARK_START}\n"
         "[compat.cursor]\n"
@@ -43,6 +51,10 @@ def mcp_block(command: str, db: str) -> str:
         "[mcp_servers.taskboard]\n"
         f"command = {q(command)}\n"
         f"args = [{q('--db')}, {q(db)}, {q('mcp')}]\n"
+        "\n"
+        "[mcp_servers.linear]\n"
+        f"url = {q(LINEAR_MCP_URL)}\n"
+        f"headers = {{ Authorization = {q(auth)} }}\n"
         f"{MARK_END}\n"
     )
 
@@ -65,7 +77,7 @@ def _owned_header(header: str) -> bool:
 
 
 def strip_owned_toml_tables(text: str) -> str:
-    """Drop `[compat.cursor]` and `[mcp_servers.taskboard]` even without markers."""
+    """Drop owned `[compat.cursor]`, taskboard, and Linear tables even without markers."""
     out: list[str] = []
     dropping = False
     for line in text.splitlines(keepends=True):

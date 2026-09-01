@@ -70,6 +70,7 @@ class MockCursorAPI:
     followup_http: int = 201
     posts: list[dict[str, Any]] = field(default_factory=list)
     auth_users: list[str] = field(default_factory=list)
+    run_status_by_run_id: dict[str, str] = field(default_factory=dict)
     _run_i: int = 0
     _httpd: ThreadingHTTPServer | None = None
     _thread: threading.Thread | None = None
@@ -106,6 +107,13 @@ class MockCursorAPI:
                     return
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
+                    for item in api.list_items:
+                        if str(item.get("id") or "") == agent_id:
+                            payload = dict(item)
+                            payload.setdefault("status", "ACTIVE")
+                            payload.setdefault("url", f"https://cursor.com/agents/{agent_id}")
+                            self._send(200, payload)
+                            return
                     self._send(
                         200,
                         {
@@ -118,16 +126,20 @@ class MockCursorAPI:
                     )
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
-                    seq = api.run_statuses or ["RUNNING"]
-                    if api._run_i < len(seq):
-                        status = seq[api._run_i]
-                        api._run_i += 1
+                    run_id = parts[4]
+                    if run_id in api.run_status_by_run_id:
+                        status = api.run_status_by_run_id[run_id]
                     else:
-                        status = seq[-1]
+                        seq = api.run_statuses or ["RUNNING"]
+                        if api._run_i < len(seq):
+                            status = seq[api._run_i]
+                            api._run_i += 1
+                        else:
+                            status = seq[-1]
                     self._send(
                         200,
                         {
-                            "id": parts[4],
+                            "id": run_id,
                             "agentId": parts[2],
                             "status": status,
                         },
