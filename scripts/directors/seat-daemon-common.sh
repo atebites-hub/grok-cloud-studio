@@ -292,6 +292,35 @@ install_seat_taskboard_cli() {
   done
 }
 
+install_seat_cloud_launch_cli() {
+  # Put cloud_launch on grok/Cursor PATH so minds invoke Extra High themselves
+  # (scripts/launch-cloud-extra-high.sh). Runtime GCS_ROOT wins so tests can
+  # overlay a fake launcher. Does not remint serve. Never prints keys.
+  local seat="${1:-}"
+  local sd gh wrap_dir dest root_q
+  sd="$(seat_state_dir "${seat:-floor}")"
+  gh="${GROK_HOME:-$sd/grok-home}"
+  mkdir -p "$gh/bin" "${HOME:-$gh}/.grok/bin"
+  root_q="$(printf '%q' "$ROOT")"
+  for wrap_dir in "$gh/bin" "${HOME:-$gh}/.grok/bin"; do
+    dest="$wrap_dir/cloud_launch"
+    cat >"$dest" <<EOF
+#!/bin/bash
+# gcs-seat-cloud-launch-wrapper
+set -euo pipefail
+ROOT="\${GCS_ROOT:-$root_q}"
+LAUNCH="\$ROOT/scripts/launch-cloud-extra-high.sh"
+if [[ ! -f "\$LAUNCH" ]]; then
+  echo "CLOUD_LAUNCH_ERR missing \$LAUNCH" >&2
+  exit 127
+fi
+exec /bin/bash "\$LAUNCH" "\$@"
+EOF
+    chmod +x "$dest"
+  done
+  echo "SEAT_CLOUD_LAUNCH_OK seat=${seat:-?} wrap=$gh/bin/cloud_launch" >&2
+}
+
 export_seat_serve_env() {
   local seat="$1"
   local sd
@@ -317,6 +346,7 @@ install_seat_identity() {
   mkdir -p "$sd/grok-home"
   install_seat_grok_auth "$seat"
   install_seat_taskboard_cli "$seat"
+  install_seat_cloud_launch_cli "$seat"
   install_seat_grok_mcp "$seat"
   if [[ -f "$src/SOUL.md" ]]; then
     cp "$src/SOUL.md" "$sd/SOUL.md"
@@ -425,7 +455,8 @@ Named identity is SOUL.md + MEMORY.md + GROK_MEMORY=1 on this serve process
 Host clock is host-ticker.py / host-clock-ticker.sh ACP_PING STATUS/CONTINUE inbox lines (tools allowed), not /loop and not watchdog ACP-inject.
 If this serve dies, start-seat-daemon.sh / ensure_seat_serve restarts it.
 After each session/prompt: do work (taskboard ticket move, send.sh, your own
-scripts/launch-cloud-extra-high.sh). Tools are allowed. Do not idle.
+scripts/launch-cloud-extra-high.sh / cloud_launch). LIV-41: under 8 RUNNING
+Extra High per repo, a turn without a spawn is FAIL. Tools are allowed. Do not idle.
 RESULT is optional duplex, not a hang-up; RESULT-only / PONG is a bug.
 Stay in this serve for the next inbox ping. Do not exit the serve process.
 Export awareness: GCS_DIRECTOR_SEAT=${seat}

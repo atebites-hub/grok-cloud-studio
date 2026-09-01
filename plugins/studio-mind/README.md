@@ -3,6 +3,10 @@
 Grok Agent SDK / MCP tools for opted-in seat mind: `ticket`, `a2a_send`,
 `cloud_launch`.
 
+LIV-41: minds themselves call `cloud_launch` (this plugin) or the PATH
+launcher. A director turn without a spawn when RUNNING < 8 is FAIL.
+Do not reuse `--name gcs-liv41-mind-must-launch`. Never Bot CloudAgent.
+
 `seat-mind-loop.sh` installs this directory into the seat `GROK_HOME` with:
 
 ```bash

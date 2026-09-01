@@ -175,3 +175,23 @@ specialists only via `scripts/launch-cloud-extra-high.sh`.
 | audio | `audio` (first-class) |
 | narrative | `narrative` (first-class) |
 
+## LIV-41 directors-spawn (FAIL closed)
+
+Minds **themselves** call `cloud_launch` or `scripts/launch-cloud-extra-high.sh`.
+Do not have Donald DIY Extra High. Python mailbox does not fill the floor.
+
+If latest-run `runStatus=RUNNING` for `GCS_CLOUD_REPO` is under **8**
+(`GCS_CLOUD_MIN_RUNNING`), a spawn-required director turn (ACP_PING /
+LAUNCH / TASK_ASSIGN / playability) that does not actually invoke the
+launcher is **FAIL** (`MIND_FAIL reason=no-spawn`) and does not advance
+inbox offset. Demonstrate, don't theatre: prose or `ls`/`cat`/`rg` of the
+launcher is not a spawn.
+
+Do **not** reuse `--name gcs-liv41-mind-must-launch` (FINISHED). Never Bot
+CloudAgent. Model **grok-4.6** `xhigh` `fast=false`. Studio Linear is
+**Living Sky** (`LIV`), never Black Swan.
+
+Seat PATH: `install_seat_cloud_launch_cli` puts `cloud_launch` on
+`GROK_HOME/bin` (execs the same script). Cursor CLI still uses the PATH
+launcher — GROK_HOME plugin does not transfer.
+

@@ -38,8 +38,15 @@ from pathlib import Path
 from typing import Any, Callable
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
-if str(_LIB_DIR) not in sys.path:
-    sys.path.insert(0, str(_LIB_DIR))
+_DIRECTORS_DIR = Path(__file__).resolve().parent
+for _extra in (_LIB_DIR, _DIRECTORS_DIR):
+    if str(_extra) not in sys.path:
+        sys.path.insert(0, str(_extra))
+from director_turn_spawn import (  # noqa: E402
+    judge_director_turn,
+    running_count as spawn_running_count,
+    wrap_prompt_if_required,
+)
 from lib import canonical_seat, skip_seats  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
@@ -855,7 +862,12 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """One inbox line → one agent turn. Offset advances only on runner exit 0."""
+    """One inbox line → one agent turn.
+
+    Offset advances only on runner exit 0. A spawn-required director turn
+    under the RUNNING floor that does not invoke launch-cloud-extra-high.sh
+    or cloud_launch is FAIL (reason=no-spawn) and does not consume mail.
+    """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
         print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)
@@ -875,7 +887,9 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
         task_id = str(rec.get("taskId") or "")
         context_id = str(rec.get("contextId") or "")
         text = _extract_text(rec.get("parts"))
-        prompt = text or json.dumps(rec, ensure_ascii=False)
+        original = text or json.dumps(rec, ensure_ascii=False)
+        running = spawn_running_count()
+        prompt = wrap_prompt_if_required(original, running)
         try:
             raw = run(prompt, seat=seat)
         except Exception as e:
@@ -898,6 +912,24 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
                 "reason": "runner-fail",
                 "task_id": task_id,
                 "returncode": returncode,
+            }
+        verdict = judge_director_turn(
+            mail=original,
+            assistant=assistant_text,
+            running_count=running,
+        )
+        if verdict.get("fail"):
+            reason = str(verdict.get("reason") or "no-spawn")
+            print(
+                f"MIND_FAIL seat={seat} task={task_id} reason={reason} "
+                f"running={running}",
+                file=sys.stderr,
+            )
+            return {
+                "consumed": 0,
+                "reason": reason,
+                "task_id": task_id,
+                "running": running,
             }
 
         backend = ""

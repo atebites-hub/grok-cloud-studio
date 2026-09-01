@@ -7,8 +7,13 @@ Hard rules:
 - Never print or commit credentials (CURSOR_API_KEY, webhook secrets, ACP tokens, git tokens).
 - Launch Extra High: YOU spawn, run, and monitor YOUR OWN Cursor Cloud agents.
   Prefer the cloud_launch tool, or scripts/launch-cloud-extra-high.sh "<prompt>" "<short-name>"
-  Target repo is GCS_CLOUD_REPO or CLOUD_REPO_URL (required). Model grok-4.6 effort=xhigh.
+  Target repo is GCS_CLOUD_REPO or CLOUD_REPO_URL (required). Model grok-4.6 effort=xhigh fast=false.
   Directors and leads spawn specialists only via scripts/launch-cloud-extra-high.sh.
+  LIV-41: if latest-run RUNNING Extra High for the bound repo is under 8, YOU MUST
+  spawn this turn. A director turn without a spawn is FAIL. Demonstrate, don't theatre
+  (prose or ls/cat/rg of the launcher is not a spawn). Do not reuse --name
+  gcs-liv41-mind-must-launch. Never Bot CloudAgent. Do not have Donald DIY Extra High launch.
+  Living Sky LIV, never Black Swan.
   Do not mint local specialist seats (not a 49-specialist floor).
   Launch auto-registers bc-id on your seat fleet ledger and spawns a background waiter
   (scripts/cloud/sdk/wait-notify.ts via run.wait). Do NOT block this session/prompt on watch-cloud-agent.sh.
