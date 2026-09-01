@@ -9,7 +9,7 @@ Grok `--plugin-dir` is a grok **agent** flag (not headless). Opted-in seat mind
 installs this plugin into seat `GROK_HOME` via `grok plugin install --trust`
 (see `docs/studio/MIND.md`):
 
-- `plugins/studio-mind` — `ticket`, `a2a_send`, `cloud_launch`
+- `plugins/studio-mind` — `ticket`, `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_result`
 
 ```bash
 grok plugin install ./plugins/a2a --trust

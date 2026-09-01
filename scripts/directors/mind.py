@@ -40,7 +40,8 @@ from typing import Any, Callable
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
-from lib import canonical_seat, skip_seats  # noqa: E402
+from duplex import extract_caller  # noqa: E402
+from lib import canonical_seat, load_registry, normalize_seat, skip_seats  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
@@ -61,6 +62,21 @@ MIND_FAIL_STDERR_CHARS = 240
 CURSOR_MIND_MODEL = "cursor-grok-4.6-xhigh"
 GROK_MIND_MODEL = "grok-4.6"
 GROK_MIND_REASONING_EFFORT = "xhigh"  # extra-high
+MAIL_MAX_CHARS = 16000
+_INJECTION_REPLACEMENT = "[filtered]"
+_INJECTION_PATTERNS = (
+    re.compile(r"<\|im_(start|end)\|>", re.IGNORECASE),
+    re.compile(r"<\|(system|user|assistant|end|endoftext)\|>", re.IGNORECASE),
+    re.compile(r"\[/?(?:INST|SYS|SYSTEM)\]", re.IGNORECASE),
+    re.compile(r"(?m)^\s*(system|assistant|developer)\s*:\s*", re.IGNORECASE),
+    re.compile(
+        r"ignore (?:all|any|the) (?:previous|prior|above) instructions",
+        re.IGNORECASE,
+    ),
+    re.compile(r"disregard (?:all|any|the) (?:previous|prior|above)", re.IGNORECASE),
+    re.compile(r"you are now (?:a|an|in) ", re.IGNORECASE),
+    re.compile(r"</?(?:system|assistant|tool)[^>]*>", re.IGNORECASE),
+)
 
 
 @dataclass(frozen=True)
@@ -111,6 +127,18 @@ def taskboard_db() -> Path:
     if raw:
         return Path(raw)
     return STATE_DIR / "taskboard" / "taskboard.db"
+
+
+def heartbeat_file(seat: str) -> Path:
+    return mind_dir(seat) / "heartbeat"
+
+
+def touch_heartbeat(seat: str) -> None:
+    """Stay-up liveness stamp. Written on every process_once, including empty."""
+    try:
+        heartbeat_file(seat).write_text(_now() + "\n", encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _write_pid(seat: str) -> None:
@@ -231,6 +259,49 @@ def yaml_agent_file(path: str | Path | None) -> str | None:
 def _session_already_in_use(stderr: str, stdout: str = "") -> bool:
     blob = f"{stderr}\n{stdout}"
     return bool(_SESSION_IN_USE_RE.search(blob))
+
+
+def filter_inbound_mail(text: str) -> str:
+    """Defang prompt-injection markers in inbound mailbox text.
+
+    Neutralise rather than reject so a legitimate task that mentions these
+    tokens still arrives, with the markers replaced. Not a second agent loop.
+    """
+    if not text:
+        return text
+    cleaned = text
+    for pat in _INJECTION_PATTERNS:
+        cleaned = pat.sub(_INJECTION_REPLACEMENT, cleaned)
+    return cleaned
+
+
+def format_mail_turn(rec: dict[str, Any], *, seat: str = "") -> str:
+    """One inbox record → one prompt. Mail is a turn.
+
+    Server-side envelope (sender + task/context) so the runner never has to
+    reconstruct attribution. Body is injection-filtered, redacted, and capped.
+    """
+    body = _extract_text(rec.get("parts"))
+    if not body:
+        body = json.dumps(rec, ensure_ascii=False)
+    body = redact(filter_inbound_mail(body))
+    if len(body) > MAIL_MAX_CHARS:
+        body = body[:MAIL_MAX_CHARS]
+    sender = extract_caller(rec) or "unknown"
+    task_id = str(rec.get("taskId") or "").strip()
+    context_id = str(rec.get("contextId") or "").strip()
+    header = f"Message from {sender}:"
+    extras: list[str] = []
+    if task_id:
+        extras.append(f"task={task_id}")
+    if context_id:
+        extras.append(f"context={context_id}")
+    dest = str(seat or "").strip()
+    if dest:
+        extras.append(f"seat={dest}")
+    if extras:
+        header = f"{header} ({'; '.join(extras)})"
+    return f"{header}\n{body}"
 
 
 def _extract_text(parts: Any) -> str:
@@ -364,8 +435,27 @@ def plugin_a2a_send(arguments: dict[str, Any]) -> str:
     return _run_cmd(cmd, timeout=60)
 
 
+def plugin_a2a_list_seats(arguments: dict[str, Any]) -> str:
+    """List A2A seats from docs/a2a/registry.json (skipSeats excluded)."""
+    _ = arguments
+    try:
+        skipped = skip_seats(ROOT)
+        raw = load_registry(ROOT).get("seats") or {}
+        seats = [
+            normalize_seat(str(name))
+            for name in raw
+            if normalize_seat(str(name)) not in skipped
+        ]
+    except Exception as e:
+        return f"PLUGIN_ERR a2a_list_seats: {e}"
+    return json.dumps({"seats": seats, "skipSeats": sorted(skipped)}, indent=2)
+
+
 def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
-    """scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT."""
+    """Cursor Cloud grunt: scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT.
+
+    Model grok-4.6, effort xhigh, fast=false. Directors stay Grok Build minds.
+    """
     script = ROOT / "scripts" / "launch-cloud-extra-high.sh"
     if not script.is_file():
         return "PLUGIN_ERR cloud_launch: missing scripts/launch-cloud-extra-high.sh"
@@ -378,6 +468,28 @@ def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
         cmd.extend(["--name", name])
     cmd.append(prompt)
     return _run_cmd(cmd, timeout=180)
+
+
+def plugin_cloud_status(arguments: dict[str, Any]) -> str:
+    """scripts/cloud/status-cloud-agent.sh <bc-id>."""
+    script = ROOT / "scripts" / "cloud" / "status-cloud-agent.sh"
+    if not script.is_file():
+        return "PLUGIN_ERR cloud_status: missing scripts/cloud/status-cloud-agent.sh"
+    agent_id = str(arguments.get("id") or arguments.get("agent_id") or "").strip()
+    if not agent_id:
+        return "PLUGIN_ERR cloud_status: id is required"
+    return _run_cmd(["bash", str(script), agent_id], timeout=60)
+
+
+def plugin_cloud_result(arguments: dict[str, Any]) -> str:
+    """scripts/cloud/result-cloud-agent.sh <bc-id>."""
+    script = ROOT / "scripts" / "cloud" / "result-cloud-agent.sh"
+    if not script.is_file():
+        return "PLUGIN_ERR cloud_result: missing scripts/cloud/result-cloud-agent.sh"
+    agent_id = str(arguments.get("id") or arguments.get("agent_id") or "").strip()
+    if not agent_id:
+        return "PLUGIN_ERR cloud_result: id is required"
+    return _run_cmd(["bash", str(script), agent_id], timeout=60)
 
 
 TICKET_SCHEMA: dict[str, Any] = {
@@ -396,6 +508,12 @@ TICKET_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+A2A_LIST_SEATS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": False,
+}
+
 A2A_SEND_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -411,16 +529,31 @@ CLOUD_LAUNCH_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "prompt": {"type": "string"},
-        "name": {"type": "string", "description": "Short Extra High agent name"},
+        "name": {
+            "type": "string",
+            "description": "Short Cursor Cloud agent name (grok-4.6 xhigh, fast=false)",
+        },
     },
     "required": ["prompt"],
     "additionalProperties": False,
 }
 
+CLOUD_ID_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string", "description": "Cursor Cloud agent bc-id"},
+    },
+    "required": ["id"],
+    "additionalProperties": False,
+}
+
 PLUGINS: dict[str, Plugin] = {
     "ticket": Plugin(schema=TICKET_SCHEMA, call=plugin_ticket),
+    "a2a_list_seats": Plugin(schema=A2A_LIST_SEATS_SCHEMA, call=plugin_a2a_list_seats),
     "a2a_send": Plugin(schema=A2A_SEND_SCHEMA, call=plugin_a2a_send),
     "cloud_launch": Plugin(schema=CLOUD_LAUNCH_SCHEMA, call=plugin_cloud_launch),
+    "cloud_status": Plugin(schema=CLOUD_ID_SCHEMA, call=plugin_cloud_status),
+    "cloud_result": Plugin(schema=CLOUD_ID_SCHEMA, call=plugin_cloud_result),
 }
 
 
@@ -863,6 +996,7 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
 
     mind_dir(seat)
     grok_home_dir(seat)
+    touch_heartbeat(seat)
     records = _read_new_records(seat)
     if not records:
         return {"consumed": 0, "reason": "empty", "offset": _read_offset(seat)}
@@ -874,8 +1008,9 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             continue
         task_id = str(rec.get("taskId") or "")
         context_id = str(rec.get("contextId") or "")
-        text = _extract_text(rec.get("parts"))
-        prompt = text or json.dumps(rec, ensure_ascii=False)
+        prompt = format_mail_turn(rec, seat=seat)
+        mail_path = mind_dir(seat) / "mail.txt"
+        mail_path.write_text(prompt, encoding="utf-8")
         try:
             raw = run(prompt, seat=seat)
         except Exception as e:
