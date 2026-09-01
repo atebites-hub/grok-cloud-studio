@@ -1,0 +1,39 @@
+# Unique beat1740 ship-gate. Do not use .github/workflows/ship-gate.yml.
+name: ship-gate-beat1740
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ship-gate-beat1740:
+    name: pytest -q and secret_scan (beat1740)
+    runs-on: ubuntu-latest
+    env:
+      GCS_BOT_BIND_OPTIONAL: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bootstrap .venv
+        run: bash ./install.sh
+
+      - name: pytest
+        run: .venv/bin/pytest -q
+
+      - name: secret scan
+        run: python3 scripts/secret_scan.py
