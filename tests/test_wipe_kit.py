@@ -163,6 +163,7 @@ def test_studio_env_example_matches_live_knobs() -> None:
     # AK stays gone: omit or set 0. Never a bridge that reconnects Agent Kanban.
     if "PALEMON_AK_BRIDGE" in text:
         assert "PALEMON_AK_BRIDGE=0" in text
+    assert "GCS_BOT_BRIDGE=0" in text
 
 
 def test_dot_env_example_documents_eight_seat_mind_and_timeout_600() -> None:

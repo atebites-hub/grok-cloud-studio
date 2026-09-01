@@ -1,7 +1,8 @@
 # A2A bus
 
 ```bash
-scripts/a2a/start-studio-bus.sh                 # hub + leftover dispatch + bot-bridge + fleet-shepherd
+scripts/a2a/start-studio-bus.sh                 # hub + leftover dispatch + shepherd
+                                                # bot-bridge only if GCS_BOT_BRIDGE=1
 scripts/a2a/start-studio-bus.sh start --daemons # ACP serve + GROW wake loops + host ticker (opt-in)
 scripts/a2a/send.sh ops "ping: hello"
 scripts/a2a/start-studio-bus.sh status
@@ -28,7 +29,7 @@ xAI grok-build does not accept external PRs, so `deliver_wake()` cannot live ins
 4. Named identity: `docs/studio/directors/souls/<seat>/{SOUL.md,MEMORY.md}` plus `GROK_MEMORY=1` on serve.
 5. Host ticker (`scripts/a2a/host-ticker.py`, interval `GCS_TICKER_SEC` default 600s) enqueues `ACP_PING STATUS/CONTINUE` **work turns** (tools allowed). Not PONG. Not a 45s central assigner. Not a LAUNCH kind.
 
-Dispatch **does not own GROW inboxes** (`DISPATCH_SKIP reason=wake-owns-inbox`). A live `wake.pid` also skips leftover inject. Do **not** advance `dispatch.offset` on those skips (wake consumes `wake.offset`). Mind seats (`GCS_MIND_SEATS` plus a live `mind/pid`) skip leftover inject (`DISPATCH_SKIP reason=mind-owns-inbox`). Dispatch re-reads `mind_seats()` on each poll. `start-studio-bus.sh start` recycles leftover dispatch only when `.a2a-state/dispatch.mind-seats` differs from the current env / `studio.env` set; a match keeps `STUDIO_BUS_DISPATCH_ALREADY`. Recycle does not kill hub, bot-bridge, fleet-shepherd, seat minds, host ticker, or `grok agent serve`.
+Dispatch **does not own GROW inboxes** (`DISPATCH_SKIP reason=wake-owns-inbox`). A live `wake.pid` also skips leftover inject. Do **not** advance `dispatch.offset` on those skips (wake consumes `wake.offset`). Mind seats (`GCS_MIND_SEATS` plus a live `mind/pid`) skip leftover inject (`DISPATCH_SKIP reason=mind-owns-inbox`). Dispatch re-reads `mind_seats()` on each poll. `start-studio-bus.sh start` recycles leftover dispatch only when `.a2a-state/dispatch.mind-seats` differs from the current env / `studio.env` set; a match keeps `STUDIO_BUS_DISPATCH_ALREADY`. Recycle does not kill hub, leftover bot-bridge, fleet-shepherd, seat minds, host ticker, or `grok agent serve`. `start` / `recover.sh` do not spawn bot-bridge unless `GCS_BOT_BRIDGE=1`.
 
 Non-GROW seats may still use leftover `acp_inject.py` (no `--pin-session`).
 
@@ -62,7 +63,7 @@ export GCS_BOT_SEAT=orchestrator   # optional; default
 
 `./doctor.sh` **FAIL**s if any bot seat `agentId` is empty or `REPLACE_WITH_YOUR_GROK_BOT_AGENT_ID`, unless `GCS_BOT_BIND_OPTIONAL=1` (CI clone checks). Local bind state is gitignored `.a2a-state/bot-bind.json`.
 
-`start-studio-bus.sh` starts `scripts/a2a/bot-bridge.py`, which polls Bot inboxes and writes `.a2a-state/<seat>/bot-wake.jsonl` + latest `bot-wake.txt` (offset: `bot-bridge.offset`). Logs `BOT_BRIDGE_WAKE seat=… task=…` (never secrets). Optional `BOT_BRIDGE_HOOK` for a local wake command.
+`start-studio-bus.sh` starts `scripts/a2a/bot-bridge.py` **only when `GCS_BOT_BRIDGE=1`**. Default off: Bot seats stay standby. A live leftover `bot-bridge.pid` is left running (recover / start do not remint it). The bridge polls Bot inboxes and writes `.a2a-state/<seat>/bot-wake.jsonl` + latest `bot-wake.txt` (offset: `bot-bridge.offset`). Logs `BOT_BRIDGE_WAKE seat=… task=…` (never secrets). Optional `BOT_BRIDGE_HOOK` for a local wake command.
 
 Standing Bot routine (short prompt):
 
