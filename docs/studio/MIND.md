@@ -27,7 +27,7 @@ Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/of
 
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
-- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust` of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok usage is back.
+- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust` of grok-bot-like `plugins/studio-mind` (ticket), `plugins/a2a`, and `plugins/cursor-cloud`. Grok-home Higgsfield is grok-only, for when grok usage is back.
 - Cursor CLI catalog: repo `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no `GROK_HOME`). Higgsfield is Cursor catalog login when the runner is Cursor CLI (Art generate). Grok Bot Higgsfield is a different catalog.
 
 Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`.

@@ -279,8 +279,8 @@ install_mind_grok_plugins floor
         assert "MIND_PLUGIN_OK" in blob, blob
     loop = MIND_LOOP.read_text(encoding="utf-8")
     common = SEAT_COMMON.read_text(encoding="utf-8")
-    assert "install_mind_grok_plugins" in loop or "install_mind_grok_plugins" in common
-    assert "install_mind_grok_plugins" in loop
+    assert "install_mind_grok_plugins" in common
+    assert "install_studio_mind_plugin" in loop or "install_mind_grok_plugins" in loop
     assert "plugins/a2a" in common
     assert "plugins/cursor-cloud" in common
     assert "acp_inject" not in loop

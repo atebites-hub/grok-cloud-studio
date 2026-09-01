@@ -43,7 +43,7 @@ echo $$ >"$PID_FILE"
   echo "mode=grok-build-mind"
 } >"$MIND_DIR/mode"
 
-install_mind_grok_plugins "$SEAT"
+install_studio_mind_plugin "$SEAT"
 
 echo "MIND_LOOP_START seat=$SEAT pid=$$ grok_home=${GROK_HOME} mode=grok-build-mind"
 
