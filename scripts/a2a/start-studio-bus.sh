@@ -14,9 +14,9 @@
 # Leftover ACP GROW is session/prompt inside serve, not this grok --resume path.
 # start recycles leftover dispatch only when .a2a-state/dispatch.mind-seats
 # differs from current GCS_MIND_SEATS (env / studio.env). Matching keeps
-# STUDIO_BUS_DISPATCH_ALREADY. Recycle does not kill hub, leftover
-# bot-bridge, fleet-shepherd, seat minds, host ticker, or grok agent serve.
-# start / recover.sh do not spawn bot-bridge unless GCS_BOT_BRIDGE=1.
+# STUDIO_BUS_DISPATCH_ALREADY. Recycle does not kill hub, fleet-shepherd,
+# seat minds, host ticker, or grok agent serve. Default-off start/recover
+# evict leftover bot-bridge (ALREADY only when GCS_BOT_BRIDGE=1).
 # Host ticker enqueues ACP_PING STATUS/CONTINUE keep-alives (work turns).
 # Agent Kanban / `ak` was removed. Board is tcarac/taskboard (ticket CLI + HTTP /mcp).
 # Host board after a wipe: scripts/studio/taskboard/start-taskboard.sh start
@@ -179,8 +179,8 @@ write_dispatch_mind_seats() {
 
 # Recycle leftover dispatch only when its persisted GCS_MIND_SEATS set differs
 # from current env / studio.env. Missing persist file is the empty set (pre-feature
-# leftovers). Do not touch hub, leftover bot-bridge, shepherd, minds, ticker,
-# or serve. Do not start bot-bridge unless GCS_BOT_BRIDGE=1.
+# leftovers). Do not touch hub, shepherd, minds, ticker, or serve.
+# Default-off start evicts leftover bot-bridge; spawn only if GCS_BOT_BRIDGE=1.
 recycle_dispatch_for_mind_seats() {
   local disp_pid="$1"
   local want have
