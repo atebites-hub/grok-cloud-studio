@@ -104,6 +104,8 @@ python3 scripts/secret_scan.py
 
 The secret scan fails closed on credentials, private-key blocks, and product lore that does not belong in this public control plane.
 
+GitHub Actions runs the same two commands on pull requests via `.github/workflows/gcs-github-ship-gate-workflows-beat1740.yml` (check `gcs-github-ship-gate-workflows-beat1740`). Empty GitHub checks are not ship-gate evidence.
+
 ## License
 
 MIT. See `LICENSE`.

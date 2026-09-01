@@ -1,0 +1,46 @@
+# Unique ship-gate check: gcs-github-ship-gate-workflows-beat1740
+# Empty GitHub checks are not evidence. This job actually runs:
+#   .venv/bin/pytest -q
+#   python3 scripts/secret_scan.py
+# Not a twin of ship-gate.yml / scripts/ci/ship-gate.sh.
+name: gcs-github-ship-gate-workflows-beat1740
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  gcs-github-ship-gate-workflows-beat1740:
+    name: gcs-github-ship-gate-workflows-beat1740
+    runs-on: ubuntu-latest
+    env:
+      GCS_BOT_BIND_OPTIONAL: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch vendor/taskboard tags
+        run: git -C vendor/taskboard fetch --tags --force
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bootstrap .venv
+        run: bash ./install.sh
+
+      - name: pytest -q
+        run: .venv/bin/pytest -q
+
+      - name: secret_scan
+        run: python3 scripts/secret_scan.py
