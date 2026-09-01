@@ -42,11 +42,16 @@ if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from lib import canonical_seat, skip_seats  # noqa: E402
 
+_DIRECTORS_DIR = Path(__file__).resolve().parent
+if str(_DIRECTORS_DIR) not in sys.path:
+    sys.path.insert(0, str(_DIRECTORS_DIR))
+from linear_env import load_linear_api_key  # noqa: E402
+
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 
 _SECRET_ASSIGN_RE = re.compile(
-    r"(?i)\b(CURSOR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
+    r"(?i)\b(CURSOR_API_KEY|LINEAR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
     r"server-key|ACP_SECRET|api[_-]?key)\s*[=:]\s*\S+"
 )
 _SESSION_IN_USE_RE = re.compile(
@@ -67,7 +72,7 @@ GROK_MIND_REASONING_EFFORT = "xhigh"  # extra-high
 class Plugin:
     """Fallback helper callable plus JSON schema. Not a second agent loop.
 
-    Grok sees tools via builtins, seat GROK_HOME taskboard MCP, and
+    Grok sees tools via builtins, seat GROK_HOME taskboard + Linear MCP, and
     `grok plugin install --trust` of `plugins/studio-mind` into that GROK_HOME.
     This dict stays for `call_plugin` / tests / the studio-mind MCP server.
     """
@@ -380,6 +385,21 @@ def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
     return _run_cmd(cmd, timeout=180)
 
 
+def plugin_cloud_running(arguments: dict[str, Any]) -> str:
+    """scripts/cloud/running.sh — RUNNING count for GCS_CLOUD_REPO. Prints runStatus."""
+    script = ROOT / "scripts" / "cloud" / "running.sh"
+    if not script.is_file():
+        return "PLUGIN_ERR cloud_running: missing scripts/cloud/running.sh"
+    cmd = ["bash", str(script)]
+    kind = str(arguments.get("work_kind") or arguments.get("kind") or "").strip()
+    if kind:
+        cmd.extend(["--work-kind", kind])
+    prompt = str(arguments.get("prompt") or "").strip()
+    if prompt:
+        cmd.extend(["--prompt", prompt])
+    return _run_cmd(cmd, timeout=120)
+
+
 TICKET_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -417,10 +437,26 @@ CLOUD_LAUNCH_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+CLOUD_RUNNING_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "work_kind": {
+            "type": "string",
+            "description": "playability, art, qa, ... Used for CLOUD_MUST_LAUNCH.",
+        },
+        "prompt": {
+            "type": "string",
+            "description": "Optional work prompt when work_kind is omitted",
+        },
+    },
+    "additionalProperties": False,
+}
+
 PLUGINS: dict[str, Plugin] = {
     "ticket": Plugin(schema=TICKET_SCHEMA, call=plugin_ticket),
     "a2a_send": Plugin(schema=A2A_SEND_SCHEMA, call=plugin_a2a_send),
     "cloud_launch": Plugin(schema=CLOUD_LAUNCH_SCHEMA, call=plugin_cloud_launch),
+    "cloud_running": Plugin(schema=CLOUD_RUNNING_SCHEMA, call=plugin_cloud_running),
 }
 
 
@@ -496,6 +532,9 @@ def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str,
     env["GCS_A2A_STATE"] = str(STATE_DIR)
     env["GROK_HOME"] = str(grok_home)
     env["GROK_MEMORY"] = "1"
+    linear_key = load_linear_api_key()
+    if linear_key:
+        env["LINEAR_API_KEY"] = linear_key
     timeout_raw = os.environ.get("GCS_MIND_TURN_TIMEOUT", "").strip()
     timeout: float | None = float(timeout_raw) if timeout_raw else None
 
@@ -706,6 +745,9 @@ def _cursor_subprocess_env() -> dict[str, str]:
     key = load_cursor_api_key()
     if key:
         env["CURSOR_API_KEY"] = key
+    linear_key = load_linear_api_key()
+    if linear_key:
+        env["LINEAR_API_KEY"] = linear_key
     return env
 
 

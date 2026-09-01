@@ -54,16 +54,25 @@ advances only on runner exit 0.
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
 - Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio
-  `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust`
+  `taskboard --db $GCS_TASKBOARD_DB mcp` plus Linear remote MCP at
+  `https://mcp.linear.app/mcp` with `Authorization: Bearer ${LINEAR_API_KEY}`)
+  plus `grok plugin install --trust`
   of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok
   usage is back.
 - Cursor CLI catalog: repo `.cursor/mcp.json` wrapping
   `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no
-  `GROK_HOME`). Higgsfield is Cursor catalog login when the runner is Cursor
+  `GROK_HOME`) **and Linear HTTP MCP only**. Do not copy the rest of the Grok
+  catalog. Higgsfield is Cursor catalog login when the runner is Cursor
   CLI (Art generate). Grok Bot Higgsfield is a different catalog.
 
+Cursor Cloud API agents cannot scrape `GROK_HOME`. Give them Linear via the
+cloud environment: snapshot env `LINEAR_API_KEY` from a secret file
+(`scripts/cloud/load-linear-env.sh`) or checkout `.cursor/mcp.json`
+(Linear + taskboard). Palemon Linear is **Living Sky**
+(`linear.app/livingsky`, team Livingsky / LIV). Never Black Swan Money.
+
 Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`,
-`scripts/launch-cloud-extra-high.sh`.
+`scripts/launch-cloud-extra-high.sh`, `scripts/cloud/running.sh`.
 
 No third Python tool loop. No ACP `session/prompt` GROW. No `deliver_wake`
 overlay.

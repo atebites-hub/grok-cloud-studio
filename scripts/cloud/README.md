@@ -21,6 +21,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
+| `running.sh [--work-kind playability\|art]` | RUNNING count for `GCS_CLOUD_REPO`; prints `runStatus`; `CLOUD_MUST_LAUNCH` |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
@@ -118,6 +119,7 @@ Poll interval: `CLOUD_WATCH_INTERVAL` (short-name default 10s). Optional deadlin
 
 - Do **not** print API keys.
 - Prefer cloud grunts over large local multi-file rewrites.
+- Playability/art floor: if work is in progress and `runStatus=RUNNING` count for the target repo is below `GCS_CLOUD_MIN_RUNNING` (default 8), **MUST** launch. Do not burn Grok turns instead of spawning. Do not treat `ACTIVE`+`FINISHED` leftovers as workers. Print `runStatus`. `scripts/cloud/running.sh`.
 - List/status/watch/follow-up/result operate on existing agents; create goes through `launch-cloud-extra-high.sh`.
 - Do not call the Cloud Agents REST API from Director seats except via these scripts.
 - Never force-push the target repo `main`.
