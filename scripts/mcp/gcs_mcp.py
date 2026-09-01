@@ -73,11 +73,22 @@ def cloud_tools() -> list[dict[str, Any]]:
         },
         {
             "name": "cloud_status",
-            "description": "Compact status for a Cursor Cloud agent bc-id.",
+            "description": (
+                "Compact runStatus per Cursor Cloud bc-id. Pass id and/or ids "
+                "(comma-separated or list) to batch; avoids serial get_agent_run."
+            ),
             "inputSchema": {
                 "type": "object",
-                "properties": {"id": {"type": "string", "description": "bc-id"}},
-                "required": ["id"],
+                "properties": {
+                    "id": {"type": "string", "description": "bc-id"},
+                    "ids": {
+                        "description": "Comma-separated bc-ids or a list of bc-ids.",
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "array", "items": {"type": "string"}},
+                        ],
+                    },
+                },
                 "additionalProperties": False,
             },
         },
@@ -146,10 +157,28 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         out = (proc.stdout or "") + (proc.stderr or "")
         return _text_result(out.strip() or f"rc={proc.returncode}", proc.returncode != 0)
     if name == "cloud_status":
-        agent_id = str(arguments.get("id") or "").strip()
-        if not agent_id:
-            return _text_result("id is required", True)
-        proc = _run(["bash", str(ROOT / "scripts" / "cloud" / "status-cloud-agent.sh"), agent_id])
+        raw_ids: list[str] = []
+        single = str(arguments.get("id") or "").strip()
+        if single:
+            raw_ids.extend(part.strip() for part in single.split(",") if part.strip())
+        extra = arguments.get("ids")
+        if isinstance(extra, str) and extra.strip():
+            raw_ids.extend(part.strip() for part in extra.split(",") if part.strip())
+        elif isinstance(extra, list):
+            for item in extra:
+                text = str(item or "").strip()
+                if text:
+                    raw_ids.extend(part.strip() for part in text.split(",") if part.strip())
+        seen: set[str] = set()
+        ids: list[str] = []
+        for agent_id in raw_ids:
+            if agent_id in seen:
+                continue
+            seen.add(agent_id)
+            ids.append(agent_id)
+        if not ids:
+            return _text_result("id or ids is required", True)
+        proc = _run(["bash", str(ROOT / "scripts" / "cloud" / "status-cloud-agent.sh"), *ids])
         out = (proc.stdout or "") + (proc.stderr or "")
         return _text_result(out.strip() or f"rc={proc.returncode}", proc.returncode != 0)
     if name == "cloud_result":

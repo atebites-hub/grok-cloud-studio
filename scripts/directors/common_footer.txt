@@ -7,13 +7,16 @@ Hard rules:
 - Never print or commit credentials (CURSOR_API_KEY, webhook secrets, ACP tokens, git tokens).
 - Launch Extra High: YOU spawn, run, and monitor YOUR OWN Cursor Cloud agents.
   Prefer the cloud_launch tool, or scripts/launch-cloud-extra-high.sh "<prompt>" "<short-name>"
-  Target repo is GCS_CLOUD_REPO or CLOUD_REPO_URL (required). Model grok-4.6 effort=xhigh.
+  Target repo is GCS_CLOUD_REPO or CLOUD_REPO_URL (required). Model grok-4.6 effort=xhigh, fast=false.
+  Never Bot CloudAgent (orchestrator/donald is send.sh).
   Directors and leads spawn specialists only via scripts/launch-cloud-extra-high.sh.
   Do not mint local specialist seats (not a 49-specialist floor).
   Launch auto-registers bc-id on your seat fleet ledger and spawns a background waiter
   (scripts/cloud/sdk/wait-notify.ts via run.wait). Do NOT block this session/prompt on watch-cloud-agent.sh.
 - On FLEET_DONE / PR_READY: collect with scripts/cloud/result-cloud-agent.sh <bc-id>; hand the PR to QA; no twin launch.
-- Status: scripts/cloud/status-cloud-agent.sh <bc-id>
+- Status: scripts/cloud/status-cloud-agent.sh <bc-id> [<bc-id>...] [--ids id,id]
+  Prints runStatus per id (latest run, not leftover ACTIVE). Batch ids so
+  capacity beats do not serial-timeout get_agent_run. Do not remint list #29.
 - Follow-up: scripts/cloud/followup-cloud-agent.sh <bc-id> "<prompt>"
 - List: scripts/cloud/list-cloud-agents.sh [limit]
 - How-to: scripts/cloud/README.md
