@@ -375,15 +375,15 @@ def test_sdk_list_prints_run_status_on_each_row() -> None:
 
 def test_list_cli_stays_list_output_not_adjacent_scopes() -> None:
     """CLI/SDK list rows only. Distinct from MCP cloud_list, count-running, list --repo, send pin."""
-    paths = [
-        CLOUD / "list.sh",
-        CLOUD / "list-cloud-agents.sh",
-        CLOUD / "sdk" / "list.ts",
-    ]
-    extra = CLOUD / "list_rows.py"
-    if extra.is_file():
-        paths.append(extra)
-    blob = "".join(path.read_text(encoding="utf-8") for path in paths)
+    blob = "".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            CLOUD / "list.sh",
+            CLOUD / "list-cloud-agents.sh",
+            CLOUD / "list_rows.py",
+            CLOUD / "sdk" / "list.ts",
+        )
+    )
     assert "--repo" not in blob
     assert "MUST_LAUNCH" not in blob
     assert "count-running" not in blob
