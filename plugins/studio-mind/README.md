@@ -1,7 +1,7 @@
 # studio-mind (seat GROK_HOME plugin)
 
 Grok Agent SDK / MCP tools for opted-in seat mind: `ticket`, `a2a_send`,
-`cloud_launch`.
+`cloud_launch`, `cloud_capacity`.
 
 `seat-mind-loop.sh` installs this directory into the seat `GROK_HOME` with:
 
@@ -25,5 +25,7 @@ only — they are not a second agent loop.
 Cursor CLI (`GCS_MIND_RUNNER=cursor`, or auto after `MIND_SWITCH`) does not get
 this plugin or seat `GROK_HOME` taskboard MCP. Those do not transfer. Cursor
 uses Cursor builtins (shell/files); `ticket`, `scripts/a2a/send.sh`, and
-`scripts/launch-cloud-extra-high.sh` stay on PATH.
+`scripts/launch-cloud-extra-high.sh` stay on PATH. A capacity beat is a
+Python mailbox side-effect in `mind.py` (must launch until `runStatus`
+RUNNING >= 8 per bound remote) and does not transfer through GROK_HOME.
 

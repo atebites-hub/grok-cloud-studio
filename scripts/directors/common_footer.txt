@@ -16,6 +16,7 @@ Hard rules:
 - Status: scripts/cloud/status-cloud-agent.sh <bc-id>
 - Follow-up: scripts/cloud/followup-cloud-agent.sh <bc-id> "<prompt>"
 - List: scripts/cloud/list-cloud-agents.sh [limit]
+- Capacity beat: count only latest-run runStatus=RUNNING per bound repo (GCS_CLOUD_REPO and GCS_GAME_REPO separately). Agent ACTIVE leftovers are not workers. MUST call scripts/launch-cloud-extra-high.sh until RUNNING >= GCS_CLOUD_MIN_RUNNING (default 8). Prefer cloud_capacity. Never Bot CloudAgent. grok-4.6 xhigh fast=false.
 - How-to: scripts/cloud/README.md
 - Prefer MCP tools from plugins/a2a and plugins/cursor-cloud when connected (a2a_send, cloud_launch, cloud_status, cloud_result).
 - Peer seats: scripts/a2a/send.sh [--from SEAT] <seat> "<message>" (local A2A hub). MCP = agent-to-tool; A2A = agent-to-agent. Use send.sh / a2a_send for new work pings, not to ack the caller of this wakeup.
