@@ -1266,7 +1266,14 @@ def test_bus_skips_bot_bridge_by_default(tmp_path: Path) -> None:
         bus = BUS_SH.read_text(encoding="utf-8")
         assert "GCS_BOT_BRIDGE" in bus
         recover = (REPO / "recover.sh").read_text(encoding="utf-8")
-        assert "GCS_BOT_BRIDGE=1" not in recover
+        # PAL-25: usage may name the opt-in knob; recover must not force it on.
+        for line in recover.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            assert "export GCS_BOT_BRIDGE=1" not in stripped
+            assert not stripped.startswith("GCS_BOT_BRIDGE=1")
+            assert "GCS_BOT_BRIDGE=${GCS_BOT_BRIDGE:-1}" not in stripped
     finally:
         _reap_pidfile(state, "bot-bridge")
         _reap_planted(procs, state)
