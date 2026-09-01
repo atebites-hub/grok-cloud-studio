@@ -12,7 +12,7 @@ Hard rules:
   Do not mint local specialist seats (not a 49-specialist floor).
   Launch auto-registers bc-id on your seat fleet ledger and spawns a background waiter
   (scripts/cloud/sdk/wait-notify.ts via run.wait). Do NOT block this session/prompt on watch-cloud-agent.sh.
-- On FLEET_DONE / PR_READY: collect with scripts/cloud/result-cloud-agent.sh <bc-id>; hand the PR to QA; no twin launch.
+- On FLEET_DONE / PR_READY: collect with scripts/cloud/result-cloud-agent.sh <bc-id>; the JSON includes bound repos[0].url as repoUrl so you can tell Palemon game vs grok-cloud-studio targeting. Palemon Linear is Living Sky (LIV), not Black Swan. Hand the PR to QA; no twin launch. Never launch a Grok Bot CloudAgent.
 - Status: scripts/cloud/status-cloud-agent.sh <bc-id>
 - Follow-up: scripts/cloud/followup-cloud-agent.sh <bc-id> "<prompt>"
 - List: scripts/cloud/list-cloud-agents.sh [limit]

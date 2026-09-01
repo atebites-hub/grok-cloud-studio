@@ -181,6 +181,60 @@ export function isoFromEpoch(value: number | undefined): string {
   }
 }
 
+export type BoundRepo = { url: string; startingRef?: string };
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+/** Cursor run git.branches[].repoUrl omits the scheme; agent repos[].url keeps https://. */
+export function normalizeRepoUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed.replace(/^\/+/, "")}`;
+}
+
+/** Bound Extra High repos from GET /v1/agents (full record, not the list row). */
+export function boundRepos(agent: unknown): BoundRepo[] {
+  const rec = asRecord(agent);
+  const raw = rec?.repos;
+  if (!Array.isArray(raw)) return [];
+  const out: BoundRepo[] = [];
+  for (const item of raw) {
+    const row = asRecord(item);
+    const url = typeof row?.url === "string" ? row.url.trim() : "";
+    if (!url) continue;
+    const startingRef =
+      typeof row.startingRef === "string" && row.startingRef.trim()
+        ? row.startingRef.trim()
+        : undefined;
+    out.push(startingRef ? { url, startingRef } : { url });
+  }
+  return out;
+}
+
+/**
+ * Directors need the bound git remote to tell game vs studio targeting.
+ * Prefer agent.repos[0].url; fall back to the latest run's git.branches[].repoUrl.
+ */
+export function boundRepoUrl(agent: unknown, run?: unknown): string | null {
+  const fromAgent = boundRepos(agent)[0]?.url;
+  if (fromAgent) return normalizeRepoUrl(fromAgent);
+  const git = asRecord(asRecord(run)?.git);
+  const branches = git?.branches;
+  if (!Array.isArray(branches)) return null;
+  for (const item of branches) {
+    const row = asRecord(item);
+    const repoUrl = typeof row?.repoUrl === "string" ? row.repoUrl.trim() : "";
+    if (repoUrl) return normalizeRepoUrl(repoUrl);
+  }
+  return null;
+}
+
 export function pickGit(run: Run | undefined): { prUrl: string; branch: string } {
   const branches = run?.git?.branches ?? [];
   const withPr = branches.find((b) => b.prUrl);

@@ -20,7 +20,7 @@ python3 plugins/a2a/server.py
 |---|---|
 | `cloud_launch` | `scripts/launch-cloud-extra-high.sh` |
 | `cloud_status` | `scripts/cloud/status-cloud-agent.sh` |
-| `cloud_result` | `scripts/cloud/result-cloud-agent.sh` |
+| `cloud_result` | `scripts/cloud/result-cloud-agent.sh` (includes bound `repos[0].url`) |
 
 ```bash
 grok plugin install ./plugins/cursor-cloud --trust

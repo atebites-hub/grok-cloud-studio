@@ -4,7 +4,7 @@ MCP tools wrapping the Extra High control plane:
 
 - `cloud_launch` — `scripts/launch-cloud-extra-high.sh`
 - `cloud_status` — `scripts/cloud/status-cloud-agent.sh`
-- `cloud_result` — `scripts/cloud/result-cloud-agent.sh`
+- `cloud_result` — `scripts/cloud/result-cloud-agent.sh` (JSON includes bound `repos[0].url` as `repoUrl`)
 
 Target git repo is **required** via `GCS_CLOUD_REPO` or `CLOUD_REPO_URL`. Auth is `CURSOR_API_KEY` (env or `~/.config/cursor/agent.env`). Tools never echo the key.
 

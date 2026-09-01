@@ -70,6 +70,8 @@ class MockCursorAPI:
     followup_http: int = 201
     posts: list[dict[str, Any]] = field(default_factory=list)
     auth_users: list[str] = field(default_factory=list)
+    agent_repos: list[dict[str, Any]] | None = None
+    run_git: dict[str, Any] | None = None
     _run_i: int = 0
     _httpd: ThreadingHTTPServer | None = None
     _thread: threading.Thread | None = None
@@ -106,16 +108,16 @@ class MockCursorAPI:
                     return
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
-                    self._send(
-                        200,
-                        {
-                            "id": agent_id,
-                            "name": "mock-agent",
-                            "status": "ACTIVE",
-                            "url": f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": "run-mock",
-                        },
-                    )
+                    agent: dict[str, Any] = {
+                        "id": agent_id,
+                        "name": "mock-agent",
+                        "status": "ACTIVE",
+                        "url": f"https://cursor.com/agents/{agent_id}",
+                        "latestRunId": "run-mock",
+                    }
+                    if api.agent_repos is not None:
+                        agent["repos"] = api.agent_repos
+                    self._send(200, agent)
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
                     seq = api.run_statuses or ["RUNNING"]
@@ -124,14 +126,14 @@ class MockCursorAPI:
                         api._run_i += 1
                     else:
                         status = seq[-1]
-                    self._send(
-                        200,
-                        {
-                            "id": parts[4],
-                            "agentId": parts[2],
-                            "status": status,
-                        },
-                    )
+                    run: dict[str, Any] = {
+                        "id": parts[4],
+                        "agentId": parts[2],
+                        "status": status,
+                    }
+                    if api.run_git is not None:
+                        run["git"] = api.run_git
+                    self._send(200, run)
                     return
                 self._send(404, {"error": "not_found"})
 

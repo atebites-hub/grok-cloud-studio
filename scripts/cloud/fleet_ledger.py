@@ -184,17 +184,18 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
     pr = payload.get("prUrl") or "none"
     name = payload.get("name") or ""
     url = payload.get("url") or f"https://cursor.com/agents/{bc_id}"
+    repo = payload.get("repoUrl") or "none"
     if run_status == "FINISHED":
         return (
             f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
-            f"runStatus=FINISHED pr={pr} url={url}. "
+            f"runStatus=FINISHED pr={pr} repo={repo} url={url}. "
             f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
             f"If pr is a URL: ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST; "
             f"do not launch a twin. RESULT with bc-id + pr."
         )
     return (
         f"FLEET_DONE: Extra High {bc_id} ({name}) "
-        f"runStatus={run_status} pr={pr} url={url}. "
+        f"runStatus={run_status} pr={pr} repo={repo} url={url}. "
         f"Inspect with scripts/cloud/result-cloud-agent.sh {bc_id}; "
         f"follow-up or close; do not ignore. RESULT."
     )

@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { Agent, type Run } from "@cursor/sdk";
 import { collectResult, type DirectorResult } from "./collect.ts";
 import {
+  boundRepoUrl,
+  boundRepos,
   die,
   loadApiKey,
   mapRunStatus,
@@ -123,6 +125,8 @@ async function restPoll(agentId: string, runId: string, apiKey: string): Promise
           summary: null,
           result: resultText,
           error: null,
+          repoUrl: boundRepoUrl(agentRaw, runRaw),
+          repos: boundRepos(agentRaw),
         };
       }
     }

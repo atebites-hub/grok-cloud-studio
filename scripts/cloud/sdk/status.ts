@@ -7,7 +7,7 @@ function compactLine(result: Awaited<ReturnType<typeof collectResult>>): void {
     `id=${result.agentId} status=${result.agentStatus || "unknown"} url=${result.url} latestRunId=${latest}\n`,
   );
   process.stdout.write(
-    `runStatus=${result.runStatus || "none"} prUrl=${result.prUrl || "none"} branches=${result.branch || "none"}\n`,
+    `runStatus=${result.runStatus || "none"} prUrl=${result.prUrl || "none"} repoUrl=${result.repoUrl || "none"} branches=${result.branch || "none"}\n`,
   );
   const snip = (result.result || "").replace(/\s+/g, " ").trim().slice(0, 180);
   process.stdout.write(`result=${snip || "none"}\n`);
