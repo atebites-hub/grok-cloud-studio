@@ -198,6 +198,7 @@ def test_hub_complete_ack_is_receipt_not_mind_turn(hub: dict) -> None:
     note = _receipt_note(task).lower()
     assert "receipt" in note
     assert "not mind-turn" in note or "not mind turn" in note
+    assert "mind/offset" in note or "mind seats" in note
     assert "exit 0" in note
     on_disk = json.loads((state / "floor" / "tasks.json").read_text(encoding="utf-8"))
     assert on_disk[task_id]["status"]["state"] == "TASK_STATE_COMPLETED"

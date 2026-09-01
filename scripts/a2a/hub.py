@@ -4,8 +4,8 @@
 Stdlib only. Serves Agent Cards, Send Message, Get/List/Cancel Task.
 This hub is the protocol ack bus: it appends per-seat inbox JSONL and
 returns TASK_STATE_COMPLETED + a receipt artifact. That COMPLETE is a
-receipt, not mind-turn done. Mail is consumed only after grok/cursor
-runner exit 0.
+receipt, not mind-turn done. Mind seats consume mail (mind/offset) only
+after grok/cursor runner exit 0.
 
 Auto-wake of Grok Build Director seats is handled separately by
 scripts/a2a/dispatch.py (standing inbox poller) and
@@ -279,8 +279,9 @@ class A2AHandler(BaseHTTPRequestHandler):
                                     "preview": receipt_text[:500],
                                     "note": (
                                         "Hub TASK_STATE_COMPLETED / A2A ACK is a "
-                                        "receipt, not mind-turn done. Mail is consumed "
-                                        "only after grok/cursor runner exit 0."
+                                        "receipt, not mind-turn done. Mind seats "
+                                        "advance mind/offset only after grok/cursor "
+                                        "runner exit 0."
                                     ),
                                 },
                             }
