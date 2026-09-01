@@ -5,4 +5,4 @@ alwaysApply: false
 
 # Cursor Cloud Extra High
 
-Use MCP `cloud_launch`, `cloud_status`, and `cloud_result` (or `scripts/launch-cloud-extra-high.sh`). Set `GCS_CLOUD_REPO` or `CLOUD_REPO_URL` before create. Do not print API keys. After `CLOUD_LAUNCH_OK`, a waiter A2A-pings the owning seat; do not block the Director turn on watch.
+Use MCP `cloud_launch`, `cloud_status`, and `cloud_result` (or `scripts/launch-cloud-extra-high.sh`). Set `GCS_CLOUD_REPO` or `CLOUD_REPO_URL` before create. LIV-59 `--name` REFUSE if a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Never Bot CloudAgent. Palemon Linear is Living Sky (`LIV`). Do not print API keys. After `CLOUD_LAUNCH_OK`, a waiter A2A-pings the owning seat; do not block the Director turn on watch.

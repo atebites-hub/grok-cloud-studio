@@ -18,7 +18,7 @@ python3 plugins/a2a/server.py
 
 | Tool | Action |
 |---|---|
-| `cloud_launch` | `scripts/launch-cloud-extra-high.sh` |
+| `cloud_launch` | `scripts/launch-cloud-extra-high.sh`. LIV-59 `--name` REFUSE if a live `runStatus=RUNNING` Extra High already has that name. Leftover `ACTIVE`+`FINISHED` does not block. |
 | `cloud_status` | `scripts/cloud/status-cloud-agent.sh` |
 | `cloud_result` | `scripts/cloud/result-cloud-agent.sh` |
 

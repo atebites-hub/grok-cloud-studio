@@ -59,13 +59,21 @@ def cloud_tools() -> list[dict[str, Any]]:
             "name": "cloud_launch",
             "description": (
                 "Launch a Cursor Cloud Extra High agent. Requires GCS_CLOUD_REPO or "
-                "CLOUD_REPO_URL. Never returns API keys."
+                "CLOUD_REPO_URL. LIV-59 --name REFUSE if a live runStatus=RUNNING agent already "
+                "has that name (no twin remint). Leftover ACTIVE+FINISHED does not block. "
+                "Never Bot CloudAgent. Never returns API keys."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "prompt": {"type": "string"},
-                    "name": {"type": "string", "description": "Short agent name"},
+                    "name": {
+                        "type": "string",
+                        "description": (
+                            "Short Extra High --name. LIV-59 REFUSE if a live runStatus=RUNNING "
+                            "agent already has that name (no twin remint)."
+                        ),
+                    },
                 },
                 "required": ["prompt"],
                 "additionalProperties": False,
