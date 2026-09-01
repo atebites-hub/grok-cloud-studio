@@ -379,6 +379,15 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "deliver_wake" in doc
     assert "fast=false" in doc
     assert "cursor cloud" in doc.lower()
+    assert "Bot CloudAgent" not in src
+    assert "Bot CloudAgent" not in doc
+    receipt_blob = (doc + "\n" + ARCH_DOC.read_text(encoding="utf-8")).lower()
+    assert "receipt" in receipt_blob
+    assert "not mind-turn" in receipt_blob or "not mind turn" in receipt_blob
+    assert "exit 0" in doc.lower()
+    arch = ARCH_DOC.read_text(encoding="utf-8")
+    assert "TASK_STATE_COMPLETED" in arch
+    assert "receipt" in arch.lower()
 
 
 def test_fake_grok_mints_then_resumes_same_uuid(
@@ -1598,4 +1607,36 @@ def test_cursor_runner_sources_agent_env_without_printing_key(
     assert key not in captured.err
     transcript = (state / "floor" / "mind" / "transcript.jsonl").read_text(encoding="utf-8")
     assert key not in transcript
+
+
+def test_none_runner_is_not_mail_consumed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A runner that did not run (None) must not advance offset after hub receipt."""
+
+    def silent(_prompt: str, **_kwargs: object):
+        return None
+
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="nonerunner", runner=silent)
+    task_id = "task-none-1"
+    _append_inbox(state, "floor", task_id, "must not fake success")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 0
+    assert result.get("reason") == "runner-fail"
+    assert _offset(state, "floor") == 0
+    assert _transcript_rows(state, "floor") == []
+
+
+def test_empty_harvest_does_not_invoke_cli_or_consume_mail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "grok.argv.json"
+    grok = _write_fake_grok(tmp_path, log)
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="emptycomplete", grok=grok)
+    result = mind.process_once("floor")
+    assert result["consumed"] == 0
+    assert result.get("reason") == "empty"
+    assert _argv_log(log) == []
+    assert not (state / "floor" / "mind" / "session").is_file()
+    assert _offset(state, "floor") == 0
 
