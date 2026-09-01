@@ -67,12 +67,12 @@ def _assert_extra_high_model(model: dict[str, Any]) -> None:
     assert ("fast", "true") not in params
 
 
-REGISTER_JS = """\\
+REGISTER_JS = """
 import { register } from "node:module";
 register(process.env.GCS_FAKE_SDK_LOADER, import.meta.url);
 """
 
-LOADER_JS = """\\
+LOADER_JS = """
 export async function resolve(specifier, context, nextResolve) {
   if (specifier === "@cursor/sdk") {
     return { shortCircuit: true, url: process.env.GCS_FAKE_SDK_URL };
@@ -81,7 +81,7 @@ export async function resolve(specifier, context, nextResolve) {
 }
 """
 
-FAKE_SDK_JS = """\\
+FAKE_SDK_JS = """
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const logPath = process.env.GCS_SDK_FIELD_LOG || "";
@@ -224,6 +224,27 @@ def test_sdk_launch_argv_is_prompt_and_name_not_model(tmp_path: Path) -> None:
     launch_sh = LAUNCH.read_text(encoding="utf-8")
     assert 'cloud_sdk_exec launch "$prompt" "$name"' in launch_sh
     assert "--model" not in launch_sh
+
+
+def test_sdk_intercept_js_parses_in_node(tmp_path: Path) -> None:
+    """MCP JSON must not leave a leading backslash in the fake SDK modules."""
+    register = tmp_path / "register.mjs"
+    loader = tmp_path / "loader.mjs"
+    fake_sdk = tmp_path / "fake-sdk.mjs"
+    register.write_text(REGISTER_JS, encoding="utf-8")
+    loader.write_text(LOADER_JS, encoding="utf-8")
+    fake_sdk.write_text(FAKE_SDK_JS, encoding="utf-8")
+    for path in (register, loader, fake_sdk):
+        text = path.read_text(encoding="utf-8").lstrip("\n")
+        assert not text.startswith("\\"), f"{path.name} starts with backslash; invalid JS"
+        assert text.startswith("import "), path.name
+        proc = subprocess.run(
+            ["node", "--check", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert proc.returncode == 0, f"{path.name}: {proc.stderr}"
 
 
 def test_sdk_first_send_pins_extra_high_model(tmp_path: Path) -> None:
