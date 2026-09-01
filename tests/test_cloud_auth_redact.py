@@ -112,8 +112,9 @@ def test_auth_and_common_never_echo_key_or_bot_cloudagent() -> None:
             assert "never" in line.lower(), line
     assert "set +x" in AUTH.read_text(encoding="utf-8")
     doctor = DOCTOR.read_text(encoding="utf-8")
-    assert "WARN CURSOR_API_KEY" in doctor
-    assert "bad \"CURSOR_API_KEY" not in doctor
+    # GCS #51 owns launch-plane FAIL-closed; this module does not remint that.
+    assert "WARN CURSOR_API_KEY" not in doctor
+    assert 'bad "CURSOR_API_KEY unset' in doctor
     launch = LAUNCH.read_text(encoding="utf-8")
     assert "grok-4.6" in launch
     assert "xhigh" in launch
@@ -289,5 +290,8 @@ def test_docs_cover_auth_redact_not_doctor_remint() -> None:
     assert "fast=false" in blob or "fast" in blob
     assert "Bot CloudAgent" in cloud
     doctor = DOCTOR.read_text(encoding="utf-8")
-    assert "WARN GCS_CLOUD_REPO" in doctor or "WARN GCS_CLOUD_REPO unset" in doctor
-    assert "WARN CURSOR_API_KEY" in doctor
+    # GCS #51 owns launch-plane FAIL-closed; this module does not remint that.
+    assert "WARN GCS_CLOUD_REPO" not in doctor
+    assert "WARN CURSOR_API_KEY" not in doctor
+    assert 'bad "GCS_CLOUD_REPO unset' in doctor
+    assert 'bad "CURSOR_API_KEY unset' in doctor
