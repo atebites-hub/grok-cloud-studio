@@ -41,7 +41,7 @@ Recover today's Palemon floor (first-class mind including CCGS audio/narrative l
 ```bash
 cp .env.example .env   # fill GCS_CLOUD_REPO + GCS_BOT_AGENT_ID; never commit .env
 
-# Local bus (hub + leftover dispatch + bot-bridge + orphan shepherd). ACP daemons are opt-in.
+# Local bus (hub + leftover dispatch + orphan shepherd). bot-bridge is opt-in (GCS_BOT_BRIDGE=1). ACP daemons are opt-in.
 scripts/a2a/start-studio-bus.sh start
 # scripts/a2a/start-studio-bus.sh start --daemons   # grok agent serve + GROW wake + host ticker
 # GCS_MIND_SEATS=floor,ops scripts/a2a/start-studio-bus.sh start   # Grok Build mind (see docs/studio/MIND.md)
@@ -65,6 +65,7 @@ See `.env.example`. Prefix is **`GCS_*`**. Important:
 - `GCS_BOT_AGENT_ID` — Grok Bot orchestrator id (binds into A2A on install)
 - `GCS_BOT_SEAT` — default `orchestrator` (`donald` still works; kept in `skipSeats` for back-compat)
 - `GCS_BOT_BIND_OPTIONAL=1` — doctor will not FAIL on placeholder agentId (CI clones only)
+- `GCS_BOT_BRIDGE=1` — start bot-bridge (default off; Bot seats stay standby)
 - `GCS_CLOUD_REF` — default `main`
 - `GCS_PROMPT_DIR` — director prompts dir; empty uses `prompts/` or `docs/studio/directors`
 - `GCS_SPAWN_WAITER=0` — disable the detached waiter (tests)

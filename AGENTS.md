@@ -11,6 +11,6 @@ Public control plane for Grok Build CLI Directors and Cursor Cloud Extra High gr
 - After `CLOUD_LAUNCH_OK`, do not block on watch; the waiter A2A-pings the owning seat.
 - MCP = tools (`plugins/a2a`, `plugins/cursor-cloud`). Seat taskboard stdio MCP lives in each isolated `GROK_HOME/config.toml` (`taskboard --db $GCS_TASKBOARD_DB mcp`), never Cursor `${workspaceFolder}`. A2A = seat-to-seat.
 - Board is tcarac/taskboard (ticket CLI + HTTP `/mcp`). Agent Kanban was removed.
-- Palemon studio wipe: `docs/studio/WIPE.md` (`studio.env.example` → `$GCS_A2A_STATE/studio.env`; board scripts under `scripts/studio/taskboard/`; `start-studio-bus.sh start` with **no** `--daemons`).
+- Palemon studio wipe: `docs/studio/WIPE.md` (`studio.env.example` → `$GCS_A2A_STATE/studio.env`; board scripts under `scripts/studio/taskboard/`; `start-studio-bus.sh start` with **no** `--daemons`). bot-bridge stays off unless `GCS_BOT_BRIDGE=1`.
 - Director prompts: `prompts/` or `docs/studio/directors/*_director_prompt.txt` (`GCS_PROMPT_DIR`). Remint must resolve either layout.
 - Ship gate: `.venv/bin/pytest -q` and `python3 scripts/secret_scan.py`.
