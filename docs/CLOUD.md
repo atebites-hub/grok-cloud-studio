@@ -59,7 +59,13 @@ scripts/cloud/count-running.sh --repo https://github.com/ORG/REPO
 
 Prints `CLOUD_RUNNING repo=org/name running=N` using latest-run
 **`runStatus=RUNNING`** per bound git remote. Leftover agent `status=ACTIVE`
-is membership, not capacity. `CREATING` is not `RUNNING`.
+is membership, not capacity. `CREATING` is not `RUNNING` on this counter.
+
+The LIV-41 playability floor in `directors_spawn.py` still treats
+`RUNNING` **and** `CREATING` as in-flight (`GCS_CLOUD_MIN_RUNNING`, default 8).
+This script does **not** remint that floor. Use `count-running.sh` for live
+`RUNNING` workers; do not treat its `CREATING`-excluded total as the spawn
+MUST_LAUNCH number.
 
 This is the per-repo RUNNING counter. It does not remint `list.sh --repo`
 (GCS #50) or list `runStatus` rows (GCS #29). Palemon Linear is Living Sky

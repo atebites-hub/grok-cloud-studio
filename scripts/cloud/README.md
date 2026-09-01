@@ -151,6 +151,9 @@ Each line is `CLOUD_RUNNING repo=org/name running=N` from
 `repos[0].url`, fallback run `git.branches[].repoUrl`). Leftover
 `ACTIVE`+`FINISHED` is not capacity. `CREATING` is not `RUNNING`.
 
+The LIV-41 playability floor (`directors_spawn.py`) still counts `CREATING`
+as in-flight. This counter does not remint that MUST_LAUNCH law.
+
 `--repo` accepts `org/name`, `https://github.com/org/name`, a `.git` suffix, or
 `git@github.com:org/name.git`. Unbound agents are dropped.
 

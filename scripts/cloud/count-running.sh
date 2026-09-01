@@ -15,11 +15,23 @@ repo=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --limit)
+      if [[ $# -lt 2 ]]; then
+        echo "error: --limit requires a positive integer" >&2
+        exit 1
+      fi
       limit="$2"
+      if [[ ! "$limit" =~ ^[0-9]+$ ]]; then
+        echo "error: --limit requires a positive integer" >&2
+        exit 1
+      fi
       shift 2
       ;;
     --limit=*)
       limit="${1#--limit=}"
+      if [[ ! "$limit" =~ ^[0-9]+$ ]]; then
+        echo "error: --limit requires a positive integer" >&2
+        exit 1
+      fi
       shift
       ;;
     --repo)

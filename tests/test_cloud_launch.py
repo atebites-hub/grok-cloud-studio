@@ -69,6 +69,7 @@ class MockCursorAPI:
     run_statuses: list[str] = field(default_factory=lambda: ["FINISHED"])
     run_status_by_id: dict[str, str] = field(default_factory=dict)
     run_not_found_ids: set[str] = field(default_factory=set)
+    agent_error_ids: set[str] = field(default_factory=set)
     followup_http: int = 201
     list_http: int = 200
     posts: list[dict[str, Any]] = field(default_factory=list)
@@ -123,6 +124,9 @@ class MockCursorAPI:
                     return
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
+                    if agent_id in api.agent_error_ids:
+                        self._send(500, {"error": "agent_probe_failed"})
+                        return
                     listed = next(
                         (
                             row

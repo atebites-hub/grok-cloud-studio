@@ -19,11 +19,13 @@ import re
 import sys
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 _SCHEME_RE = re.compile(r"^https?://", re.I)
 _GITHUB_HOST_RE = re.compile(r"^github\.com/", re.I)
 _GIT_SSH_PREFIX = "git@github.com:"
+_FETCH_WORKERS = 8
 
 
 def repo_key(value: str | None) -> str:
@@ -120,7 +122,8 @@ def _list_timeout() -> float:
     return min(raw, 15.0)
 
 
-def _api_get(path: str) -> dict[str, Any] | None:
+def _api_get(path: str) -> tuple[str, dict[str, Any]]:
+    """Return (kind, payload) where kind is ok, not_found, or error."""
     base = (os.environ.get("CURSOR_API_BASE") or "https://api.cursor.com").rstrip("/")
     key = os.environ.get("CURSOR_API_KEY") or ""
     url = f"{base}{path}"
@@ -132,31 +135,45 @@ def _api_get(path: str) -> dict[str, Any] | None:
     try:
         with urllib.request.urlopen(req, timeout=_list_timeout()) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as err:
+        if err.code == 404:
+            return "not_found", {}
+        return "error", {}
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, ValueError):
-        return None
+        return "error", {}
     if not isinstance(payload, dict):
-        return None
-    return payload
+        return "error", {}
+    return "ok", payload
 
 
-def fetch_agent(agent_id: str) -> dict[str, Any]:
-    payload = _api_get(f"/v1/agents/{agent_id}")
-    if payload is None:
-        return {}
+def fetch_agent(agent_id: str) -> tuple[str, dict[str, Any]]:
+    kind, payload = _api_get(f"/v1/agents/{agent_id}")
+    if kind != "ok":
+        return kind, {}
     agent = unwrap(payload, "agent")
-    return agent if isinstance(agent, dict) else {}
+    return "ok", agent if isinstance(agent, dict) else {}
 
 
-def fetch_run(agent_id: str, run_id: str) -> dict[str, Any]:
-    payload = _api_get(f"/v1/agents/{agent_id}/runs/{run_id}")
-    if payload is None:
-        return {}
+def fetch_run(agent_id: str, run_id: str) -> tuple[str, dict[str, Any]]:
+    kind, payload = _api_get(f"/v1/agents/{agent_id}/runs/{run_id}")
+    if kind != "ok":
+        return kind, {}
     run = unwrap(payload, "run")
-    return run if isinstance(run, dict) else {}
+    return "ok", run if isinstance(run, dict) else {}
 
 
-def bound_repo_key(agent: dict[str, Any], run: dict[str, Any]) -> str:
+def bound_repo_key(
+    agent: dict[str, Any],
+    run: dict[str, Any],
+    wanted: str = "",
+) -> str:
     urls = agent_repo_urls(agent, run)
+    wanted_key = repo_key(wanted)
+    if wanted_key:
+        for url in urls:
+            if repo_key(url) == wanted_key:
+                return wanted_key
+        return ""
     if not urls:
         return ""
     return repo_key(urls[0])
@@ -187,30 +204,94 @@ def format_counts(counts: dict[str, int], wanted: str = "") -> list[str]:
     return [format_count_line(repo, counts[repo]) for repo in sorted(counts)]
 
 
-def collect_from_list(items: list[Any], wanted: str = "") -> dict[str, int]:
-    rows: list[tuple[str, str]] = []
+def collect_from_list(items: list[Any], wanted: str = "") -> tuple[dict[str, int], list[str]]:
     wanted_key = repo_key(wanted)
+    parsed: list[tuple[dict[str, Any], str, str]] = []
     for raw in items:
         if not isinstance(raw, dict):
             continue
-        agent_id = str(raw.get("id") or "")
-        run_id = str(raw.get("latestRunId") or "")
-        agent: dict[str, Any] = dict(raw)
-        run: dict[str, Any] = {}
+        inner = unwrap(raw, "agent")
+        if not isinstance(inner, dict):
+            inner = raw
+        agent_id = str(inner.get("id") or raw.get("id") or "")
+        run_id = str(inner.get("latestRunId") or raw.get("latestRunId") or "")
+        parsed.append((dict(inner), agent_id, run_id))
+
+    details: dict[str, tuple[str, dict[str, Any]]] = {}
+    agent_ids = [agent_id for _agent, agent_id, _run_id in parsed if agent_id]
+    if agent_ids:
+        workers = min(_FETCH_WORKERS, len(agent_ids))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            pending = {pool.submit(fetch_agent, agent_id): agent_id for agent_id in agent_ids}
+            for fut in as_completed(pending):
+                agent_id = pending[fut]
+                try:
+                    details[agent_id] = fut.result()
+                except Exception:
+                    details[agent_id] = ("error", {})
+
+    errors: list[str] = []
+    run_jobs: list[tuple[int, str, str]] = []
+    agents: list[dict[str, Any]] = []
+    run_ids: list[str] = []
+    for idx, (raw_agent, agent_id, run_id) in enumerate(parsed):
+        agent = dict(raw_agent)
         if agent_id:
-            detail = fetch_agent(agent_id)
+            kind, detail = details.get(agent_id, ("error", {}))
+            if kind != "ok":
+                errors.append(agent_id)
+                agents.append(agent)
+                run_ids.append(run_id)
+                continue
             if detail:
-                agent = {**raw, **detail}
+                agent = {**raw_agent, **detail}
+                run_id = str(agent.get("latestRunId") or run_id)
+        agents.append(agent)
+        run_ids.append(run_id)
+        if wanted_key and agent_repo_urls(agent, None) and not matches_repo(agent, None, wanted_key):
+            continue
         if agent_id and run_id:
-            run = fetch_run(agent_id, run_id)
+            run_jobs.append((idx, agent_id, run_id))
+
+    runs: dict[int, tuple[str, dict[str, Any]]] = {}
+    if run_jobs:
+        workers = min(_FETCH_WORKERS, len(run_jobs))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            pending = {
+                pool.submit(fetch_run, agent_id, run_id): idx
+                for idx, agent_id, run_id in run_jobs
+            }
+            for fut in as_completed(pending):
+                idx = pending[fut]
+                try:
+                    runs[idx] = fut.result()
+                except Exception:
+                    runs[idx] = ("error", {})
+
+    rows: list[tuple[str, str]] = []
+    for idx, agent in enumerate(agents):
+        agent_id = str(agent.get("id") or parsed[idx][1] or "")
+        if agent_id and agent_id in set(errors):
+            continue
+        run: dict[str, Any] = {}
+        run_id = run_ids[idx] if idx < len(run_ids) else ""
+        if idx in runs:
+            kind, run_payload = runs[idx]
+            if kind == "error":
+                errors.append(agent_id or f"run-{idx}")
+                continue
+            if kind == "ok":
+                run = run_payload
+        elif wanted_key and agent_repo_urls(agent, None) and not matches_repo(agent, None, wanted_key):
+            continue
         if wanted_key and not matches_repo(agent, run, wanted_key):
             continue
-        key = bound_repo_key(agent, run)
+        key = bound_repo_key(agent, run, wanted_key)
         if not key:
             continue
         status = run_status(run) if run_id else "none"
         rows.append((key, status))
-    return count_running_by_repo(rows)
+    return count_running_by_repo(rows), errors
 
 
 def count_from_body(body_path: str, repo: str = "") -> int:
@@ -219,7 +300,10 @@ def count_from_body(body_path: str, repo: str = "") -> int:
     items = data.get("items") or []
     if not isinstance(items, list):
         items = []
-    counts = collect_from_list(items, repo)
+    counts, errors = collect_from_list(items, repo)
+    if errors:
+        sys.stderr.write("CLOUD_RUNNING_ERR\n")
+        return 1
     for line in format_counts(counts, repo):
         sys.stdout.write(line + "\n")
     return 0

@@ -101,6 +101,13 @@ def _running_line(stdout: str, slug: str) -> str:
     return rows[0]
 
 
+def _assert_running(line: str, n: int) -> None:
+    token = f"running={n}"
+    assert line.endswith(token) or f" {token}" in line, line
+    # Avoid "running=1" matching "running=10".
+    assert not any(f"running={other}" in line for other in range(0, 20) if other != n)
+
+
 def test_repo_key_accepts_org_name_https_git_and_ssh() -> None:
     count_running = _load_count_running()
     key = count_running.repo_key
@@ -142,6 +149,13 @@ def test_count_running_by_repo_ignores_leftover_active() -> None:
     assert "" not in counts
 
 
+def test_bound_repo_key_uses_matching_wanted_not_first_url() -> None:
+    count_running = _load_count_running()
+    agent = {"repos": [{"url": OTHER_REPO}, {"url": STUDIO_REPO}]}
+    assert count_running.bound_repo_key(agent, {}, STUDIO_SLUG) == STUDIO_SLUG
+    assert count_running.bound_repo_key(agent, {}, OTHER_SLUG) == OTHER_SLUG
+
+
 def test_count_running_help_documents_per_repo_run_status() -> None:
     proc = subprocess.run(
         ["bash", str(COUNT_SH), "--help"],
@@ -172,10 +186,8 @@ def test_count_running_per_bound_repo_uses_run_status_not_active(tmp_path: Path)
     assert proc.returncode == 0, blob
     studio = _running_line(proc.stdout, STUDIO_SLUG)
     other = _running_line(proc.stdout, OTHER_SLUG)
-    assert "running=1" in studio
-    assert "running=3" not in studio
-    assert "running=2" not in studio
-    assert "running=1" in other
+    _assert_running(studio, 1)
+    _assert_running(other, 1)
     assert "MUST_LAUNCH" not in blob
     assert any(path.endswith("/v1/agents/bc-studio-live") for path in api.gets), api.gets
     assert any(path.endswith("/runs/run-studio-live") for path in api.gets), api.gets
@@ -191,9 +203,10 @@ def test_count_running_repo_org_name_keeps_one_bound_remote(tmp_path: Path) -> N
     blob = proc.stdout + proc.stderr
     assert proc.returncode == 0, blob
     studio = _running_line(proc.stdout, STUDIO_SLUG)
-    assert "running=1" in studio
+    _assert_running(studio, 1)
     assert OTHER_SLUG not in proc.stdout
     assert "bc-other-live" not in proc.stdout
+    assert not any(path.endswith("/runs/run-other-live") for path in api.gets), api.gets
     assert FAKE_KEY not in blob
 
 
@@ -207,7 +220,7 @@ def test_count_running_repo_https_url_and_git_suffix_match_org_name(tmp_path: Pa
     assert via_git.returncode == 0, via_git.stdout + via_git.stderr
     for proc in (via_url, via_git):
         studio = _running_line(proc.stdout, STUDIO_SLUG)
-        assert "running=1" in studio
+        _assert_running(studio, 1)
         assert OTHER_SLUG not in proc.stdout
 
 
@@ -217,7 +230,7 @@ def test_count_running_repo_equals_form(tmp_path: Path) -> None:
         env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
         proc = _run(COUNT_SH, [f"--repo={STUDIO_SLUG}"], env)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "running=1" in _running_line(proc.stdout, STUDIO_SLUG)
+    _assert_running(_running_line(proc.stdout, STUDIO_SLUG), 1)
     assert OTHER_SLUG not in proc.stdout
 
 
@@ -240,8 +253,7 @@ def test_count_running_leftover_active_finished_is_zero(tmp_path: Path) -> None:
         proc = _run(COUNT_SH, ["--repo", STUDIO_SLUG], env)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     studio = _running_line(proc.stdout, STUDIO_SLUG)
-    assert "running=0" in studio
-    assert "running=1" not in studio
+    _assert_running(studio, 0)
     assert FAKE_KEY not in proc.stdout + proc.stderr
 
 
@@ -270,7 +282,7 @@ def test_count_running_excludes_unbound_agents(tmp_path: Path) -> None:
         env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
         proc = _run(COUNT_SH, ["--repo", STUDIO_SLUG], env)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "running=1" in _running_line(proc.stdout, STUDIO_SLUG)
+    _assert_running(_running_line(proc.stdout, STUDIO_SLUG), 1)
     assert "bc-unbound" not in proc.stdout
 
 
@@ -307,7 +319,7 @@ def test_count_running_falls_back_to_run_git_repo_url(tmp_path: Path) -> None:
         env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
         proc = _run(COUNT_SH, ["--repo", STUDIO_SLUG], env)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "running=1" in _running_line(proc.stdout, STUDIO_SLUG)
+    _assert_running(_running_line(proc.stdout, STUDIO_SLUG), 1)
     assert OTHER_SLUG not in proc.stdout
 
 
@@ -326,9 +338,57 @@ def test_count_running_missing_run_is_not_running(tmp_path: Path) -> None:
         env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
         proc = _run(COUNT_SH, ["--repo", STUDIO_SLUG], env)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "running=0" in _running_line(proc.stdout, STUDIO_SLUG)
+    _assert_running(_running_line(proc.stdout, STUDIO_SLUG), 0)
     assert any(path.endswith("/runs/run-missing") for path in api.gets), api.gets
     assert FAKE_KEY not in proc.stdout + proc.stderr
+
+
+def test_count_running_non_first_repo_url_counts_for_wanted(tmp_path: Path) -> None:
+    items = [
+        {
+            "id": "bc-multi",
+            "name": "multi-repo",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-multi",
+            "latestRunId": "run-multi",
+            "repos": [{"url": OTHER_REPO}, {"url": STUDIO_REPO}],
+        }
+    ]
+    with MockCursorAPI(
+        list_items=items,
+        run_status_by_id={"run-multi": "RUNNING"},
+    ) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        proc = _run(COUNT_SH, ["--repo", STUDIO_SLUG], env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    _assert_running(_running_line(proc.stdout, STUDIO_SLUG), 1)
+    assert OTHER_SLUG not in proc.stdout
+    assert FAKE_KEY not in proc.stdout + proc.stderr
+
+
+def test_count_running_agent_probe_failure_is_not_silent_zero(tmp_path: Path) -> None:
+    items = [
+        {
+            "id": "bc-studio-live",
+            "name": "studio-live",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-studio-live",
+            "latestRunId": "run-studio-live",
+            "repos": [{"url": STUDIO_REPO}],
+        }
+    ]
+    with MockCursorAPI(
+        list_items=items,
+        run_status_by_id={"run-studio-live": "RUNNING"},
+        agent_error_ids={"bc-studio-live"},
+    ) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        proc = _run(COUNT_SH, ["--repo", STUDIO_SLUG], env)
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode != 0, blob
+    assert "CLOUD_RUNNING_ERR" in blob
+    assert "running=0" not in proc.stdout
+    assert FAKE_KEY not in blob
 
 
 def test_count_running_does_not_remint_must_launch_or_list_repo() -> None:
