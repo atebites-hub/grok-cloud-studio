@@ -206,10 +206,13 @@ def ping_seat(seat: str, text: str) -> bool:
     return proc.returncode == 0
 
 
-def _already_notified_by_waiter(entry: dict[str, Any] | None) -> bool:
+def _already_notified(entry: dict[str, Any] | None) -> bool:
+    """True when a completion path already closed this ledger row."""
     if entry is None:
         return False
-    return entry.get("notified_by") == "waiter"
+    if entry.get("notified") is True:
+        return True
+    return entry.get("notified_by") in {"waiter", "webhook", "shepherd"}
 
 
 def notify_owner(
@@ -221,19 +224,23 @@ def notify_owner(
 ) -> dict[str, Any]:
     """A2A-ping the owning seat, then mark the ledger closed.
 
-    Idempotent: a second notify on a row already notified_by=waiter returns
-    that row and does not ping again (waiter+shepherd must not double-fire
-    FLEET_DONE). If the ping fails, the row stays open so fleet-shepherd
-    can retry.
+    Idempotent: a second notify on a row already closed by waiter, webhook,
+    or shepherd returns that row and does not ping again (waiter+shepherd
+    must not double-fire FLEET_DONE). After a successful ping, re-read the
+    ledger so a concurrent waiter complete is not overwritten. If the ping
+    fails, the row stays open so fleet-shepherd can retry.
     """
     hit = find_by_bc(bc_id)
     seat_name = seat or (hit[0] if hit else _seat_name())
-    if hit is not None and _already_notified_by_waiter(hit[1]):
+    if hit is not None and _already_notified(hit[1]):
         return hit[1]
     text = notify_text(bc_id, payload)
     ok = ping_seat(seat_name, text)
     if not ok:
         raise RuntimeError(f"A2A ping failed seat={seat_name} id={bc_id}")
+    hit = find_by_bc(bc_id)
+    if hit is not None and _already_notified(hit[1]):
+        return hit[1]
     return complete(bc_id, payload, notified_by=notified_by, seat=seat_name)
 
 

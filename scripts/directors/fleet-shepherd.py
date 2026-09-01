@@ -136,14 +136,27 @@ def _cycle() -> int:
             dirty = True
             if run_status not in TERMINAL:
                 continue
+            fresh = _reload_entry(seat_dir.name, bc_id)
+            if fresh is None or not is_orphan(fresh):
+                _log(
+                    f"NOTIFY_SKIP seat={seat_dir.name} id={bc_id} "
+                    f"already={None if fresh is None else fresh.get('notified_by')}"
+                )
+                continue
             seat = str(e.get("seat") or seat_dir.name)
             try:
-                notify_owner(bc_id, payload, notified_by="shepherd", seat=seat)
+                row = notify_owner(bc_id, payload, notified_by="shepherd", seat=seat)
             except RuntimeError as exc:
                 e["notify_fail_at"] = _now()
                 e["notify_fail"] = str(exc)
                 dirty = True
                 _log(f"NOTIFY_FAIL seat={seat} id={bc_id} {exc}")
+                continue
+            if row.get("notified_by") != "shepherd":
+                _log(
+                    f"NOTIFY_SKIP seat={seat} id={bc_id} "
+                    f"already={row.get('notified_by')}"
+                )
                 continue
             notified += 1
             _log(f"NOTIFY_OK seat={seat} id={bc_id} runStatus={run_status} via=shepherd")
