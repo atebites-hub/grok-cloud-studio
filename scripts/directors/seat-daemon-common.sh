@@ -190,7 +190,8 @@ _write_seat_taskboard_mcp_config() {
   # Merge stdio MCP into GROK_HOME/config.toml. Equivalent to:
   #   GROK_HOME=$gh grok mcp add taskboard -- "$bin" --db "$db" mcp
   # Cursor workspace MCP JSON is not the serve config and is not inherited.
-  # Idempotent: never append a second [compat.cursor] / [mcp_servers.taskboard].
+  # Idempotent: never append a second [compat.cursor] / [mcp_servers.taskboard]
+  # / [mcp_servers.linear].
   local dest="$1" command="$2" db="$3"
   python3 "$ROOT/scripts/directors/seat_grok_mcp.py" "$dest" "$command" "$db"
 }

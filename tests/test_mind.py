@@ -293,6 +293,21 @@ def _prep_mind(
         monkeypatch.setenv("GCS_CURSOR_BIN", str(cursor))
     if runner is not None:
         monkeypatch.setattr(mind, "DEFAULT_RUNNER", runner)
+    orig_home = mind.grok_home_dir
+
+    def _grok_home_with_linear(seat: str) -> Path:
+        d = orig_home(seat)
+        cfg = d / "config.toml"
+        if not cfg.is_file():
+            cfg.write_text(
+                "[mcp_servers.linear]\n"
+                f'url = "{mind.LINEAR_MCP_URL}"\n'
+                'headers = { Authorization = "Bearer ${LINEAR_API_KEY}" }\n',
+                encoding="utf-8",
+            )
+        return d
+
+    monkeypatch.setattr(mind, "grok_home_dir", _grok_home_with_linear)
     return mind, state
 
 

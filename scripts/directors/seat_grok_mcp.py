@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
-"""Merge taskboard stdio MCP into an isolated GROK_HOME/config.toml.
+"""Merge taskboard stdio + Living Sky Linear HTTP into GROK_HOME/config.toml.
 
 Idempotent: a second write (or a grok rewrite that dropped the marker
 comments) must not append a duplicate `[compat.cursor]` /
-`[mcp_servers.taskboard]` table. Duplicate tables fail grok's TOML parse.
+`[mcp_servers.taskboard]` / `[mcp_servers.linear]` table. Duplicate tables
+fail grok's TOML parse.
+
+Linear stays in this Grok catalog (`url = "https://mcp.linear.app/mcp"`).
+Do not copy GROK_HOME into Cursor CLI. `${LINEAR_API_KEY}` expands at grok
+load time. Never print or commit the key.
 
 Stdlib only.
 """
@@ -28,7 +33,8 @@ _MARKED_BLOCK = re.compile(
 _MARK_LINE = re.compile(
     r"(?m)^" + re.escape(MARK_START) + r"(?:-end)?[ \t]*\n?"
 )
-_OWNED_TABLES = ("compat.cursor", "mcp_servers.taskboard")
+_OWNED_TABLES = ("compat.cursor", "mcp_servers.taskboard", "mcp_servers.linear")
+LINEAR_MCP_URL = "https://mcp.linear.app/mcp"
 
 
 def q(value: str) -> str:
@@ -44,6 +50,12 @@ def mcp_block(command: str, db: str) -> str:
         "[mcp_servers.taskboard]\n"
         f"command = {q(command)}\n"
         f"args = [{q('--db')}, {q(db)}, {q('mcp')}]\n"
+        "\n"
+        "[mcp_servers.linear]\n"
+        f"url = {q(LINEAR_MCP_URL)}\n"
+        "headers = { Authorization = "
+        + q("Bearer ${LINEAR_API_KEY}")
+        + " }\n"
         f"{MARK_END}\n"
     )
 
@@ -66,7 +78,7 @@ def _owned_header(header: str) -> bool:
 
 
 def strip_owned_toml_tables(text: str) -> str:
-    """Drop `[compat.cursor]` and `[mcp_servers.taskboard]` even without markers."""
+    """Drop owned Cursor/taskboard/Linear tables even without markers."""
     out: list[str] = []
     dropping = False
     for line in text.splitlines(keepends=True):
@@ -85,7 +97,7 @@ def _collapse_blank_lines(text: str) -> str:
 
 
 def merge_seat_taskboard_mcp(text: str, command: str, db: str) -> str:
-    """Return config.toml with exactly one marked taskboard MCP block."""
+    """Return config.toml with one marked taskboard + Linear HTTP MCP block."""
     text = _MARKED_BLOCK.sub("", text or "")
     text = _MARK_LINE.sub("", text)
     text = strip_owned_toml_tables(text)
