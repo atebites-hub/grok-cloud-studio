@@ -24,6 +24,9 @@ Restart only what health_check would mark down:
 Does not remint sessions, wipe studio.env / inboxes / pins, reconnect
 Agent Kanban, or launch Cursor Cloud.
 
+A leftover bot-bridge.pid whose process is dead is stale membership:
+remove the pidfile and do not start bot-bridge.
+
 Prints RECOVER_OK, then runs ./health_check.sh (same exit 0/1/2).
 
 GCS_RECOVER_DRY_RUN=1 prints the start commands without executing them.
@@ -87,6 +90,9 @@ fi
 if [[ "$need_mcp" -eq 1 ]]; then
   recover_start mcp-http "$ROOT/scripts/studio/taskboard/mcp-http.sh" start
 fi
+
+# After any bus start: a dead bot-bridge.pid is not liveness. Do not resurrect.
+gcs_sweep_stale_bot_bridge_pidfile
 
 echo "RECOVER_OK"
 bash "$ROOT/health_check.sh"

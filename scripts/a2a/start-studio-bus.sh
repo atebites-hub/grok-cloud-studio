@@ -542,6 +542,11 @@ case "$cmd" in
     bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
     if pid_alive "$bridge_pid"; then
       echo "STUDIO_BUS_BOT_BRIDGE_ALREADY pid=$bridge_pid"
+    elif [[ -f "$BOT_BRIDGE_PID_FILE" ]]; then
+      # Hive stale membership: a pidfile is not liveness. Do not resurrect.
+      echo "STUDIO_BUS_BOT_BRIDGE_STALE pid=${bridge_pid:-none} (pidfile is not liveness; not starting)"
+      rm -f "$BOT_BRIDGE_PID_FILE"
+      bridge_pid=""
     else
       rm -f "$BOT_BRIDGE_PID_FILE"
       if [[ -f "$BOT_BRIDGE_PY" ]]; then

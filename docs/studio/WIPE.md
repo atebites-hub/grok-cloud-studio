@@ -31,6 +31,14 @@ login, inboxes, or pins. `CLEANUP_WIPE_STATE=1 ./cleanup.sh` also stops
 daemons, then wipes inboxes, mind pins, and `taskboard.db` (warning printed).
 `studio.env` is kept. `recover.sh` never deletes `studio.env`.
 
+## Stale bot-bridge membership
+
+A leftover `bot-bridge.pid` is not a live daemon. If the process named in
+the pidfile is dead (Hive example: pid 374656 leftover), `recover.sh` and
+`doctor.sh` remove the pidfile and do **not** start bot-bridge. Existence of
+a pidfile is not liveness. Distinct from default-off spawn when the pidfile
+is missing.
+
 ## Recovered-studio layout (live box)
 
 Do **not** hard-require these absolute paths in scripts. They are the layout

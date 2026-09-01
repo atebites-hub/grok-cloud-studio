@@ -147,7 +147,13 @@ fi
 
 # Isolated GROK_HOME does not inherit ~/.grok/config.toml. Cursor
 # ${workspaceFolder} never expands under grok serve — WARN, do not FAIL.
+export GCS_ROOT="${GCS_ROOT:-$ROOT}"
 STATE="${GCS_A2A_STATE:-$ROOT/.a2a-state}"
+# shellcheck source=scripts/studio/health-lib.sh
+source "$ROOT/scripts/studio/health-lib.sh"
+# Hive stale membership: pidfile existence is not a live daemon. Do not start.
+gcs_sweep_stale_bot_bridge_pidfile
+
 _gcs_warn_workspace_folder_mcp() {
   local f="$1"
   [[ -f "$f" ]] || return 0
