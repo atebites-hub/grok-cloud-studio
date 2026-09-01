@@ -47,6 +47,8 @@ Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 
 Prompt sources (exactly one): argv text, stdin `-`, or `--prompt-file PATH` (readable file; empty/whitespace is `CLOUD_LAUNCH_ERR`). Mixing `--prompt-file` with argv text or stdin `-` is `CLOUD_LAUNCH_ERR`.
 
+Per-invocation `GCS_CLOUD_REPO` / `CLOUD_REPO_URL` wins over a process-global `CURSOR_CLOUD_REPO` and over any `GCS_CLOUD_REPO` in `~/.config/cursor/agent.env` (auth loads **only** the API key from that file; it does not `source` the file). The launcher does not `export` the resolved repo, so the next launch sees the original process environment (studio vs Palemon). Specialists are Cursor Cloud Extra High, not a Grok Bot grunt.
+
 Directors-spawn law (LIV-41): if **playability** work is in progress and
 RUNNING Extra High count for `GCS_CLOUD_REPO` is below 8, cloud mind MUST
 `scripts/launch-cloud-extra-high.sh`. Do not reuse
@@ -55,6 +57,7 @@ RUNNING Extra High count for `GCS_CLOUD_REPO` is below 8, cloud mind MUST
 `CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, missing auth, or a live `--name` twin (`runStatus=RUNNING`) prints `CLOUD_LAUNCH_ERR` and exits non-zero. Leftover `ACTIVE`+`FINISHED` with the same name does not block. Name-matched Extra High whose latest runStatus cannot be read is fail-closed (no create). Palemon Linear is Living Sky (`LIV`). Never Bot CloudAgent.
 
 If Cursor Cloud returns `Failed to verify existence of branch|commit` while `git ls-remote` resolved the ref, create prints `FOLLOWUP_FIRST` and exits 1 (no REST retry). Fill capacity with `followup-cloud-agent.sh` on an existing Extra High. See `docs/CLOUD.md`.
+
 
 **v1 metadata:** do not send `Agent.create({ cloud: { metadata } })` by default. API v1 returns `feature_unavailable: "API v1 agent metadata is not enabled."` Metadata is gated behind `CLOUD_SDK_METADATA=1` (default off; key `gcs`). Retryable/unavailable SDK create failures exit **75** so `_common.sh` still REST-falls-back.
 

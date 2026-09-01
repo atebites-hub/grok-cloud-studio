@@ -5,8 +5,10 @@
 # --name REFUSE if a live runStatus=RUNNING agent already has that name (no twin remint).
 # Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent.
 # Palemon Linear is Living Sky (LIV). Does not remint GCS #49 followup-refuse.
+# Per-invocation GCS_CLOUD_REPO wins over process-global CURSOR_CLOUD_REPO and over
+# GCS_CLOUD_REPO in agent.env; this launch does not export the resolved repo.
 # Prints CLOUD_LAUNCH_OK only on HTTP 200/201 (REST) or SDK create success.
-# Otherwise CLOUD_LAUNCH_ERR. Never prints API keys.
+# Otherwise CLOUD_LAUNCH_ERR. Never prints API keys. Specialists are Cursor Cloud Extra High.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,6 +28,7 @@ Creates a Cursor Cloud Extra High agent (SDK-first):
   startingRef from GCS_CLOUD_REF (default main)
   autoCreatePR=true
   --name donald|orchestrator|grok-bot|bot is refused (never Bot CloudAgent)
+  Per-invocation GCS_CLOUD_REPO wins (studio vs Palemon); not exported.
 
 Prompt is exactly one of: command-line text, stdin `-`, or --prompt-file PATH.
 
@@ -169,10 +172,19 @@ fi
 
 CLOUD_REPO="$(python3 "${SCRIPT_DIR}/a2a/lib.py" cloud-repo)" || fail_launch "error: GCS_CLOUD_REPO or CLOUD_REPO_URL is required"
 CLOUD_REF="$(python3 "${SCRIPT_DIR}/a2a/lib.py" cloud-ref)"
-export GCS_CLOUD_REPO="$CLOUD_REPO"
-export GCS_CLOUD_REF="$CLOUD_REF"
-export CURSOR_CLOUD_REPO="${CURSOR_CLOUD_REPO:-$CLOUD_REPO}"
-export CURSOR_CLOUD_REF="${CURSOR_CLOUD_REF:-$CLOUD_REF}"
+
+# Bind this invocation only. Do not `export` into a sourced parent (that would
+# leak Palemon into the next studio launch, or the process-global default into
+# this one). Always overwrite CURSOR_CLOUD_REPO so a platform/global default
+# cannot leak into SDK create.
+cloud_with_repo() {
+  GCS_CLOUD_REPO="$CLOUD_REPO" \
+  GCS_CLOUD_REF="$CLOUD_REF" \
+  CURSOR_CLOUD_REPO="$CLOUD_REPO" \
+  CURSOR_CLOUD_REF="$CLOUD_REF" \
+  GCS_RESOLVED_SHA="${GCS_RESOLVED_SHA:-}" \
+    "$@"
+}
 
 # GitHub may have the ref while Cursor Cloud still cannot verify it.
 # Skip live git ls-remote under CURSOR_API_BASE (pytest mock).
@@ -180,7 +192,6 @@ if [[ -z "${CURSOR_API_BASE:-}" ]]; then
   RESOLVE_OUT="$(python3 "${SCRIPT_DIR}/cloud/resolve_starting_ref.py" "$CLOUD_REPO" "$CLOUD_REF" 2>/dev/null || true)"
   if [[ "$RESOLVE_OUT" == CLOUD_REF_OK* ]]; then
     GCS_RESOLVED_SHA="$(printf '%s\n' "$RESOLVE_OUT" | sed -n 's/.*sha=\([^ ]*\).*/\1/p')"
-    export GCS_RESOLVED_SHA
   fi
 fi
 
@@ -188,7 +199,7 @@ if [[ -n "$name" ]]; then
   refuse_live_name_twin "$name"
 fi
 
-if cloud_sdk_exec launch "$prompt" "$name"; then
+if cloud_with_repo cloud_sdk_exec launch "$prompt" "$name"; then
   exit "$CLOUD_SDK_RC"
 fi
 
@@ -196,7 +207,10 @@ payload="$(mktemp "${TMPDIR:-/tmp}/cloud-launch.XXXXXX")"
 cleanup() { rm -f "$payload"; }
 trap cleanup EXIT
 
-CLOUD_PROMPT_TEXT="$prompt" CLOUD_AGENT_NAME="$name" GCS_CLOUD_REPO="$CLOUD_REPO" GCS_CLOUD_REF="$CLOUD_REF" python3 -c '
+CLOUD_PROMPT_TEXT="$prompt" CLOUD_AGENT_NAME="$name" \
+GCS_CLOUD_REPO="$CLOUD_REPO" GCS_CLOUD_REF="$CLOUD_REF" \
+CURSOR_CLOUD_REPO="$CLOUD_REPO" CURSOR_CLOUD_REF="$CLOUD_REF" \
+python3 -c '
 import json, os
 prompt = os.environ.get("CLOUD_PROMPT_TEXT") or ""
 name = os.environ.get("CLOUD_AGENT_NAME") or ""
