@@ -2,7 +2,7 @@
 
 MCP tools wrapping the Extra High control plane:
 
-- `cloud_launch` — `scripts/launch-cloud-extra-high.sh`
+- `cloud_launch` — `scripts/launch-cloud-extra-high.sh`. `--name` REFUSE if a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Never Bot CloudAgent.
 - `cloud_status` — `scripts/cloud/status-cloud-agent.sh`
 - `cloud_result` — `scripts/cloud/result-cloud-agent.sh`
 
