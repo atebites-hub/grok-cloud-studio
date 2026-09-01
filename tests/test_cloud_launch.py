@@ -112,7 +112,12 @@ class MockCursorAPI:
                         return
                     items = []
                     for raw in api.list_items:
-                        item = {k: v for k, v in raw.items() if k != "detailLatestRunId"}
+                        # Real GET /v1/agents omits repos; details live on GET /v1/agents/{id}.
+                        item = {
+                            k: v
+                            for k, v in raw.items()
+                            if k not in ("detailLatestRunId", "repos", "runGit")
+                        }
                         items.append(item)
                     self._send(200, {"items": items})
                     return
@@ -136,16 +141,16 @@ class MockCursorAPI:
                         latest = listed.get("detailLatestRunId") or ""
                     else:
                         latest = ""
-                    self._send(
-                        200,
-                        {
-                            "id": agent_id,
-                            "name": (listed or {}).get("name") or "mock-agent",
-                            "status": (listed or {}).get("status") or "ACTIVE",
-                            "url": (listed or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": latest,
-                        },
-                    )
+                    agent: dict[str, Any] = {
+                        "id": agent_id,
+                        "name": (listed or {}).get("name") or "mock-agent",
+                        "status": (listed or {}).get("status") or "ACTIVE",
+                        "url": (listed or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
+                        "latestRunId": latest,
+                    }
+                    if listed is not None and listed.get("repos") is not None:
+                        agent["repos"] = listed["repos"]
+                    self._send(200, agent)
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
                     run_id = parts[4]
@@ -161,14 +166,22 @@ class MockCursorAPI:
                             api._run_i += 1
                         else:
                             status = seq[-1]
-                    self._send(
-                        200,
-                        {
-                            "id": run_id,
-                            "agentId": parts[2],
-                            "status": status,
-                        },
+                    run: dict[str, Any] = {
+                        "id": run_id,
+                        "agentId": parts[2],
+                        "status": status,
+                    }
+                    listed = next(
+                        (
+                            row
+                            for row in api.list_items
+                            if str(row.get("id") or row.get("agentId") or "") == parts[2]
+                        ),
+                        None,
                     )
+                    if listed is not None and listed.get("runGit") is not None:
+                        run["git"] = listed["runGit"]
+                    self._send(200, run)
                     return
                 self._send(404, {"error": "not_found"})
 
