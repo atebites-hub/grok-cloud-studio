@@ -37,6 +37,9 @@ fi
 if ! cloud_load_auth; then
   fail_followup "error: CURSOR_API_KEY is not set (export it or add it to ~/.config/cursor/agent.env)"
 fi
+if ! python3 "${HERE}/extra_high_pin.py"; then
+  fail_followup "error: Extra High model pin rejected (grok-4.6 xhigh fast=false only)"
+fi
 
 if cloud_sdk_exec followup "$agent_id" "$prompt"; then
   exit "$CLOUD_SDK_RC"
@@ -48,7 +51,16 @@ trap cleanup EXIT
 
 CLOUD_PROMPT_TEXT="$prompt" python3 -c '
 import json, os
-print(json.dumps({"prompt": {"text": os.environ.get("CLOUD_PROMPT_TEXT") or ""}}))
+print(json.dumps({
+    "prompt": {"text": os.environ.get("CLOUD_PROMPT_TEXT") or ""},
+    "model": {
+        "id": "grok-4.6",
+        "params": [
+            {"id": "effort", "value": "xhigh"},
+            {"id": "fast", "value": "false"},
+        ],
+    },
+}))
 ' >"$payload"
 
 if ! cloud_http_request POST "/v1/agents/${agent_id}/runs" \

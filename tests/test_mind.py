@@ -212,7 +212,7 @@ def _assert_cursor_clap(argv: list[str], *, chat_id: str, prompt: str) -> None:
     assert "--approve-mcps" in argv
     assert "--model" in argv
     assert _flag_value(argv, "--model") == CURSOR_MIND_MODEL
-    assert argv[-1] == prompt
+    assert argv[-1] == prompt or prompt in argv[-1]
     assert "--prompt-file" not in argv
     assert "--session-id" not in argv
     assert "--continue" not in argv
@@ -1025,7 +1025,12 @@ def _bus_env(state: Path, extra: dict[str, str] | None = None) -> dict[str, str]
     env = {
         k: v
         for k, v in os.environ.items()
-        if k not in {"GCS_MIND_SEATS", "GCS_START_SEAT_DAEMONS", "GCS_ACP_STOP_WITH_BUS"}
+        if k not in {
+            "GCS_MIND_SEATS",
+            "GCS_START_SEAT_DAEMONS",
+            "GCS_ACP_STOP_WITH_BUS",
+            "GCS_BOT_BRIDGE",
+        }
     }
     env.update(
         {

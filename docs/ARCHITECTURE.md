@@ -29,7 +29,7 @@ launch-cloud-extra-high.sh → @cursor/sdk Agent.create
                            → spawn-waiter.sh → wait-notify.ts (run.wait)
                            → A2A ping owning seat (FLEET_DONE / PR_READY)
 
-fleet-shepherd.py = orphan-only safety net (no live waiter_pid)
+fleet-shepherd.py = orphan-only safety net (no live waiter_pid; dead waiter_pid is evicted)
 webhook_receiver.py = optional signed completion path
 ```
 
@@ -44,7 +44,9 @@ Stdlib HTTP+JSON (`scripts/a2a/hub.py`):
 
 Default bind `127.0.0.1:8732`. Cards live in `docs/a2a/cards/`. Seats and ACP ports live in `docs/a2a/registry.json` (`scripts/a2a/lib.py` is the source of truth).
 
-`scripts/a2a/start-studio-bus.sh` starts hub + leftover dispatch + bot-bridge + fleet-shepherd. Pass `--daemons` (or `GCS_START_SEAT_DAEMONS=1`) to also start per-seat `grok agent serve` for seats in `GCS_ACP_SEATS` (default `floor,studio-ops` — not the full registry), GROW `seat-wake-loop.sh` / `wake-daemon.py`, and `host-ticker.py`. Set `GCS_MIND_SEATS` (example `floor,ops`) to start `seat-mind-loop.sh` / `mind.py` instead of ACP wake for those seats (`GCS_MIND_PLUS_ACP_WAKE=1` to run both). Mind does not kill existing serve. `start` recycles leftover dispatch only when `.a2a-state/dispatch.mind-seats` differs from the current env / `studio.env` set; a match keeps `STUDIO_BUS_DISPATCH_ALREADY`. Recycle does not kill hub, bot-bridge, fleet-shepherd, seat minds, host ticker, or serve. See `docs/studio/MIND.md`. Daemons are **opt-in** so a bus start does not surprise-spawn grok processes. Agent Kanban was removed; the board is tcarac/taskboard (`docs/studio/TASKBOARD.md`).
+`scripts/a2a/start-studio-bus.sh` starts hub + leftover dispatch + fleet-shepherd. **bot-bridge is opt-in** (`GCS_BOT_BRIDGE=1`); Bot seats stay standby otherwise. Pass `--daemons` (or `GCS_START_SEAT_DAEMONS=1`) to also start per-seat `grok agent serve` for seats in `GCS_ACP_SEATS` (default `floor,studio-ops` — not the full registry), GROW `seat-wake-loop.sh` / `wake-daemon.py`, and `host-ticker.py`. Set `GCS_MIND_SEATS` (example `floor,ops`) to start `seat-mind-loop.sh` / `mind.py` instead of ACP wake for those seats (`GCS_MIND_PLUS_ACP_WAKE=1` to run both). Mind does not kill existing serve. `start` recycles leftover dispatch only when `.a2a-state/dispatch.mind-seats` differs from the current env / `studio.env` set; a match keeps `STUDIO_BUS_DISPATCH_ALREADY`. Recycle does not kill hub, leftover bot-bridge, fleet-shepherd, seat minds, host ticker, or serve. See `docs/studio/MIND.md`. Daemons are **opt-in** so a bus start does not surprise-spawn grok processes. Agent Kanban was removed; the board is tcarac/taskboard (`docs/studio/TASKBOARD.md`).
+
+Director RESULT is duplex, not success: print `RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>`; `scripts/a2a/duplex.py` writes it onto the A2A task. RESULT-only / PONG is a bug. Never launch Bot CloudAgent. Hub `TASK_STATE_COMPLETED` is a protocol receipt, not that RESULT line.
 
 Grok Bot orchestrator seats (`docs/a2a/bot-agents.json`, default seat `orchestrator`) are listed in registry `skipSeats` and are **not** ACP inject targets. Bind with `GCS_BOT_AGENT_ID` + `scripts/a2a/bind-bot-agent.sh` (also run from `install.sh`). Standing Bot routines poll `.a2a-state/<seat>/bot-wake.txt` / `bot-wake.jsonl`.
 
@@ -62,9 +64,9 @@ See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / 
 |---|---|
 | Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`) |
 | Webhook | `GCS_WEBHOOK_SECRET` set and `webhook-harness.sh serve` |
-| Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook) |
+| Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook). Dead `waiter_pid` is evicted on `fleet.jsonl` before notify-once. |
 
-Do not double-notify a live waiter.
+Do not double-notify a live waiter. A leftover `waiter_pid` number is not liveness.
 
 ## Prompts
 

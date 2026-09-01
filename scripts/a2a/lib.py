@@ -278,7 +278,9 @@ def compose_extra(task_id: str | None, context: str | None, message: str | None)
         f"A2A_TASK_ID={task_id or 'none'}\n"
         f"A2A_CONTEXT={context or 'none'}\n"
         "Keep-alive / status turn: do work, do not idle. Tools are allowed. "
-        "RESULT is optional duplex — RESULT-only / PONG is a bug. Remain this seat. "
+        "RESULT is duplex, not success. If you print one, use exactly: "
+        "RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>. "
+        "RESULT-only / PONG is a bug. Remain this seat. "
         "Do not send.sh / a2a_send to ack the caller — duplex notifies.\n"
         f"MESSAGE:\n{message or ''}\n"
     )

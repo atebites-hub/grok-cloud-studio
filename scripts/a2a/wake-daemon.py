@@ -28,12 +28,14 @@ import importlib.util
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
@@ -47,7 +49,7 @@ PROMPT_FAIL_BACKOFF_SEC = float(os.environ.get("GCS_WAKE_PROMPT_FAIL_BACKOFF", "
 _LIB_DIR = Path(__file__).resolve().parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
-from lib import canonical_seat  # noqa: E402
+from lib import canonical_seat, seat_acp_port  # noqa: E402
 
 _DISPATCH: Any = None
 _DUPLEX: Any = None
@@ -254,12 +256,46 @@ def _read_serve_pid(seat: str) -> int:
         return 0
 
 
+def _acp_port_from_url(url: str) -> int:
+    parsed = urlparse((url or "").strip())
+    if parsed.port:
+        return int(parsed.port)
+    return 0
+
+
+def _tcp_listening(port: int) -> bool:
+    """True when something accepts TCP on 127.0.0.1:port (ACP websocket)."""
+    if port <= 0:
+        return False
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(0.2)
+    try:
+        return sock.connect_ex(("127.0.0.1", port)) == 0
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
 def serve_healthy(seat: str) -> bool:
+    """Alive serve pid plus a listening ACP port. Never treat a stale pid as up."""
     sd = _seat_dir(seat)
     pid = _read_serve_pid(seat)
     if pid <= 0 or not _pid_alive(pid):
         return False
-    return (sd / "acp.url").is_file() and (sd / "acp.secret").is_file()
+    if not ((sd / "acp.url").is_file() and (sd / "acp.secret").is_file()):
+        return False
+    try:
+        url = (sd / "acp.url").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    port = _acp_port_from_url(url)
+    if port <= 0:
+        try:
+            port = seat_acp_port(seat, ROOT)
+        except (KeyError, ValueError, TypeError):
+            return False
+    return _tcp_listening(port)
 
 
 def ensure_seat_serve(seat: str) -> int:
