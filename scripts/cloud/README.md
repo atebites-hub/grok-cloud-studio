@@ -20,7 +20,8 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK` |
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
-| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
+| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints `status=`, `runStatus=`, and `model=` |
+| `running-count.sh [--limit N]` | Count `runStatus=RUNNING` for `GCS_CLOUD_REPO`; `CLOUD_MUST_LAUNCH` if below 8 |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
@@ -41,7 +42,9 @@ Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 - `repos[0].startingRef` from `GCS_CLOUD_REF` / `CLOUD_REPO_REF` / `CURSOR_CLOUD_REF` (default `main`)
 - `autoCreatePR = true`
 
-`CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, or missing auth prints `CLOUD_LAUNCH_ERR` and exits non-zero.
+`CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, missing auth, or a create response whose exposed model is not `grok-4.6` / `cursor-grok-4.6-xhigh` prints `CLOUD_LAUNCH_ERR` and exits non-zero. Wrong-model creates are not waitered and are not workers.
+
+Set the Cursor dashboard Cloud Agent default to **grok-4.6 extra-high (xhigh)** so Auto cannot pick Sonnet or Gemini. Never launch a Grok Bot CloudAgent.
 
 **v1 metadata:** do not send `Agent.create({ cloud: { metadata } })` by default. API v1 returns `feature_unavailable: "API v1 agent metadata is not enabled."` Metadata is gated behind `CLOUD_SDK_METADATA=1` (default off; key `gcs`). Retryable/unavailable SDK create failures exit **75** so `_common.sh` still REST-falls-back.
 
@@ -111,6 +114,20 @@ scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check
 In-flight: `CREATING` · `RUNNING`
 
 `watch.sh` / `watch-cloud-agent.sh` poll the agent's latest run. `FINISHED` exits 0; the other three terminals exit non-zero.
+
+## List rows: agent status vs run status
+
+Cloud agents are durable membership. `GET /v1/agents` `status` stays `ACTIVE` until archive, even after the latest run is terminal. Directors who only look at `ACTIVE` treat leftover FINISHED grunts as spinning workers.
+
+`list.sh` / `list-cloud-agents.sh` print both on each row:
+
+- `status=` agent lifecycle (`ACTIVE` leftover vs `ARCHIVED`)
+- `runStatus=` latest run (`RUNNING` vs `FINISHED`, also `CREATING` / `ERROR` / `CANCELLED` / `EXPIRED` / `none`)
+- `model=` when the API exposes it on the latest run (`none` otherwise)
+
+REST resolves `latestRunId` via `GET /v1/agents/{id}/runs/{runId}`. SDK uses `Agent.listRuns`. A missing or failed run fetch prints `runStatus=none`.
+
+Live workers are `runStatus=RUNNING`. `scripts/cloud/running-count.sh` counts those for `GCS_CLOUD_REPO`. Cloud mind / directors `cloud_launch` until `>= GCS_CLOUD_MIN_RUNNING` (default **8**) RUNNING per active repo. Leftover `ACTIVE` is not capacity.
 
 Poll interval: `CLOUD_WATCH_INTERVAL` (short-name default 10s). Optional deadline: `CLOUD_WATCH_TIMEOUT_SEC` (0 = none on `watch.sh`). Long-name `watch-cloud-agent.sh` defaults timeout 1800s / poll 30s when those env vars are unset.
 

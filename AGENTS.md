@@ -2,7 +2,7 @@
 
 Public control plane for Grok Build CLI Directors and Cursor Cloud Extra High grunts.
 
-- Extra High target repo: set `GCS_CLOUD_REPO` or `CLOUD_REPO_URL` (required).
+- Extra High target repo: set `GCS_CLOUD_REPO` or `CLOUD_REPO_URL` (required). Never Grok Bot CloudAgent. Live workers are `runStatus=RUNNING` (not leftover `ACTIVE`). Staff until >=8 RUNNING per active repo; create model must be grok-4.6 xhigh.
 - Bind Grok Bot orchestrator: set `GCS_BOT_AGENT_ID` then `./install.sh` or `scripts/a2a/bind-bot-agent.sh`. Bot seats are not ACP inject targets.
 - Never print or commit credentials (`CURSOR_API_KEY`, webhook secrets, ACP tokens).
 - ACP daemons are opt-in: `scripts/a2a/start-studio-bus.sh start --daemons`. That starts one `grok agent serve` per GROW seat plus `seat-wake-loop.sh` / `wake-daemon.py` (inbox → `session/prompt` inside that serve pid; never `grok --resume`) and `host-ticker.py` keep-alives.

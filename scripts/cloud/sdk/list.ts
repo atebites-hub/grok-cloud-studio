@@ -1,5 +1,33 @@
-import { Agent } from "@cursor/sdk";
-import { agentUrl, die, isoFromEpoch, loadApiKey, mapAgentStatus, safeError } from "./common.ts";
+import { Agent, type Run } from "@cursor/sdk";
+import {
+  agentUrl,
+  die,
+  isoFromEpoch,
+  loadApiKey,
+  mapAgentStatus,
+  mapRunStatus,
+  modelIdFrom,
+  safeError,
+} from "./common.ts";
+
+async function latestRunMeta(
+  agentId: string,
+  apiKey: string,
+): Promise<{ runStatus: string; runId: string; model: string }> {
+  try {
+    const listed = await Agent.listRuns(agentId, { runtime: "cloud", apiKey, limit: 20 });
+    if (!listed.items.length) {
+      return { runStatus: "none", runId: "", model: "none" };
+    }
+    const run: Run | undefined = listed.items
+      .slice()
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))[0];
+    const model = modelIdFrom(run?.model) || "none";
+    return { runStatus: mapRunStatus(run?.status), runId: run?.id || "", model };
+  } catch {
+    return { runStatus: "none", runId: "", model: "none" };
+  }
+}
 
 async function main(): Promise<void> {
   const rawLimit = process.argv[2] || "20";
@@ -20,8 +48,16 @@ async function main(): Promise<void> {
       const name = agent.name || "";
       const url = agentUrl(id);
       const updated = isoFromEpoch(agent.lastModified);
+      const { runStatus, runId, model } = id
+        ? await latestRunMeta(id, apiKey)
+        : { runStatus: "none", runId: "", model: "none" };
+      const repo =
+        "repos" in agent && Array.isArray(agent.repos) && agent.repos[0]
+          ? String(agent.repos[0])
+          : "";
+      const repoTok = repo ? ` repo=${repo}` : "";
       process.stdout.write(
-        `id=${id} status=${status} name=${name} url=${url} updated=${updated}\n`,
+        `id=${id} status=${status} runStatus=${runStatus} model=${model} name=${name} url=${url} latestRunId=${runId} updated=${updated}${repoTok}\n`,
       );
     }
   } catch (err) {

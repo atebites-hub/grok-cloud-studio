@@ -67,8 +67,12 @@ class MockCursorAPI:
     create_body: dict[str, Any] | None = None
     list_items: list[dict[str, Any]] = field(default_factory=list)
     run_statuses: list[str] = field(default_factory=lambda: ["FINISHED"])
+    run_status_by_id: dict[str, str] = field(default_factory=dict)
+    run_model_by_id: dict[str, Any] = field(default_factory=dict)
     followup_http: int = 201
     posts: list[dict[str, Any]] = field(default_factory=list)
+    gets: list[str] = field(default_factory=list)
+    run_not_found_ids: set[str] = field(default_factory=set)
     auth_users: list[str] = field(default_factory=list)
     _run_i: int = 0
     _httpd: ThreadingHTTPServer | None = None
@@ -100,38 +104,51 @@ class MockCursorAPI:
             def do_GET(self) -> None:
                 api.auth_users.append(_basic_user(self.headers.get("Authorization")))
                 parsed = urlparse(self.path)
+                api.gets.append(parsed.path)
                 parts = [p for p in parsed.path.split("/") if p]
                 if parts == ["v1", "agents"]:
                     self._send(200, {"items": api.list_items})
                     return
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
-                    self._send(
-                        200,
-                        {
-                            "id": agent_id,
-                            "name": "mock-agent",
-                            "status": "ACTIVE",
-                            "url": f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": "run-mock",
-                        },
+                    listed = next(
+                        (item for item in api.list_items if str(item.get("id") or "") == agent_id),
+                        None,
                     )
+                    payload: dict[str, Any] = {
+                        "id": agent_id,
+                        "name": (listed or {}).get("name") or "mock-agent",
+                        "status": (listed or {}).get("status") or "ACTIVE",
+                        "url": (listed or {}).get("url")
+                        or f"https://cursor.com/agents/{agent_id}",
+                        "latestRunId": (listed or {}).get("latestRunId") or "run-mock",
+                    }
+                    if listed and listed.get("repos"):
+                        payload["repos"] = listed["repos"]
+                    self._send(200, payload)
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
-                    seq = api.run_statuses or ["RUNNING"]
-                    if api._run_i < len(seq):
-                        status = seq[api._run_i]
-                        api._run_i += 1
+                    run_id = parts[4]
+                    if run_id in api.run_not_found_ids:
+                        self._send(404, {"error": "not_found"})
+                        return
+                    if run_id in api.run_status_by_id:
+                        status = api.run_status_by_id[run_id]
                     else:
-                        status = seq[-1]
-                    self._send(
-                        200,
-                        {
-                            "id": parts[4],
-                            "agentId": parts[2],
-                            "status": status,
-                        },
-                    )
+                        seq = api.run_statuses or ["RUNNING"]
+                        if api._run_i < len(seq):
+                            status = seq[api._run_i]
+                            api._run_i += 1
+                        else:
+                            status = seq[-1]
+                    body: dict[str, Any] = {
+                        "id": run_id,
+                        "agentId": parts[2],
+                        "status": status,
+                    }
+                    if run_id in api.run_model_by_id:
+                        body["model"] = api.run_model_by_id[run_id]
+                    self._send(200, body)
                     return
                 self._send(404, {"error": "not_found"})
 
@@ -263,3 +280,113 @@ def test_sdk_launch_does_not_hardcode_private_repo() -> None:
     assert banned not in common
     assert "cloudRepo()" in common
     assert "GCS_CLOUD_REPO" in common
+
+
+def test_extra_high_model_is_hard_pinned_not_env_overridable() -> None:
+    common = (CLOUD / "sdk" / "common.ts").read_text(encoding="utf-8")
+    launch = (CLOUD / "sdk" / "launch.ts").read_text(encoding="utf-8")
+    assert "function extraHighModel" in common
+    assert 'id: "grok-4.6"' in common or "id: EXTRA_HIGH_MODEL_ID" in common
+    assert "CURSOR_CLOUD_MODEL" not in common
+    assert "CURSOR_CLOUD_EFFORT" not in common
+    assert "extraHighModel()" in launch
+    assert "isExtraHighModelId" in common or "createModelRejected" in common
+    assert "createModelRejected" in launch or "isExtraHighModelId" in launch
+
+
+def test_launch_fail_closed_when_create_returns_non_grok_model(tmp_path: Path) -> None:
+    wrong = {
+        "agent": {
+            "id": "bc-sonnet",
+            "name": "wrong-model",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-sonnet",
+            "latestRunId": "run-sonnet",
+            "model": {"id": "claude-4-sonnet"},
+        },
+        "run": {
+            "id": "run-sonnet",
+            "agentId": "bc-sonnet",
+            "status": "CREATING",
+            "model": {"id": "claude-4-sonnet"},
+        },
+        "model": {"id": "claude-4-sonnet"},
+    }
+    with MockCursorAPI(create_http=201, create_body=wrong) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", "should-reject", "Implement X. Open a PR."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    assert FAKE_KEY not in proc.stdout + proc.stderr
+    assert api.posts, "create still happens; fail-closed is on the response model"
+
+
+def test_launch_fail_closed_when_create_returns_auto_or_gemini(tmp_path: Path) -> None:
+    for model_id in ("auto", "auto-smart", "gemini-2.5-pro"):
+        body = {
+            "agent": {
+                "id": "bc-auto",
+                "name": "auto-pick",
+                "status": "ACTIVE",
+                "url": "https://cursor.com/agents/bc-auto",
+                "latestRunId": "run-auto",
+            },
+            "run": {"id": "run-auto", "agentId": "bc-auto", "status": "CREATING"},
+            "model": {"id": model_id},
+        }
+        with MockCursorAPI(create_http=201, create_body=body) as api:
+            proc = _run(
+                LAUNCH,
+                ["should-reject-auto"],
+                _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+            )
+        assert proc.returncode != 0, model_id
+        assert "CLOUD_LAUNCH_ERR" in proc.stdout, model_id
+        assert "CLOUD_LAUNCH_OK" not in proc.stdout, model_id
+
+
+def test_launch_ok_when_create_returns_grok_46_or_dashboard_alias(tmp_path: Path) -> None:
+    for model_id in ("grok-4.6", "cursor-grok-4.6-xhigh"):
+        body = {
+            "agent": {
+                "id": "bc-grok",
+                "name": "ok-model",
+                "status": "ACTIVE",
+                "url": "https://cursor.com/agents/bc-grok",
+                "latestRunId": "run-grok",
+                "model": {"id": model_id},
+            },
+            "run": {
+                "id": "run-grok",
+                "agentId": "bc-grok",
+                "status": "CREATING",
+                "model": {"id": model_id},
+            },
+        }
+        with MockCursorAPI(create_http=201, create_body=body) as api:
+            proc = _run(
+                LAUNCH,
+                ["--name", "ok-model", "Implement X. Open a PR."],
+                _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+            )
+        assert proc.returncode == 0, proc.stdout + proc.stderr + model_id
+        assert "CLOUD_LAUNCH_OK" in proc.stdout
+        assert "CLOUD_LAUNCH_ERR" not in proc.stdout
+
+
+def test_launch_ok_when_create_omits_model(tmp_path: Path) -> None:
+    """API v1 agent/run objects often omit model; request pin is still grok-4.6."""
+    with MockCursorAPI(create_http=201) as api:
+        proc = _run(
+            LAUNCH,
+            ["Implement the assigned outcome. Open a PR."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "CLOUD_LAUNCH_OK" in proc.stdout
+    body = api.posts[0]["body"]
+    assert body["model"]["id"] == "grok-4.6"

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # List Cursor Cloud agents (newest first). SDK-first; REST fallback.
 # Usage: list.sh [--limit N]   or   list.sh [N]
+# Each row prints agent status, latest-run runStatus, and model if the API
+# exposes it. Leftover ACTIVE + FINISHED is not a live worker.
 # Never prints API keys.
 set -euo pipefail
 
@@ -55,17 +57,6 @@ if ! cloud_http_is_2xx; then
   exit 1
 fi
 
-python3 -c '
-import json, sys
-with open(sys.argv[1], encoding="utf-8") as fh:
-    data = json.load(fh)
-items = data.get("items") or []
-for item in items:
-    print("\t".join([
-        str(item.get("id") or ""),
-        str(item.get("status") or ""),
-        str(item.get("name") or ""),
-        str(item.get("url") or ""),
-        str(item.get("latestRunId") or ""),
-    ]))
-' "$CLOUD_HTTP_BODY"
+# Agent.status stays ACTIVE after the latest run is terminal (stale membership).
+# Fetch each latest run so rows show runStatus (RUNNING vs FINISHED) and model=.
+python3 "${HERE}/list_rows.py" format-list "$CLOUD_HTTP_BODY"

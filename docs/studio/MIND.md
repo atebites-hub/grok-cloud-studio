@@ -34,7 +34,9 @@ Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/laun
 
 No third Python tool loop. No ACP `session/prompt` GROW. No `deliver_wake` overlay.
 
-The grunt is **Cursor Cloud** (not "Extra High" as the noun, not "Cursor Cloud API"). Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI: `--model grok-4.6 --reasoning-effort xhigh` (extra-high). Cursor fallback: `--model cursor-grok-4.6-xhigh` only. The PATH launcher stays `scripts/launch-cloud-extra-high.sh`.
+The grunt is **Cursor Cloud** (not "Extra High" as the noun, not "Cursor Cloud API"). Effort **grok-4.6 xhigh**, `fast=false`. Never Grok Bot CloudAgent. Grok mind CLI: `--model grok-4.6 --reasoning-effort xhigh` (extra-high). Cursor fallback: `--model cursor-grok-4.6-xhigh` only. The PATH launcher stays `scripts/launch-cloud-extra-high.sh`.
+
+Live workers are latest-run `runStatus=RUNNING`. Leftover agent `ACTIVE` + `runStatus=FINISHED` is not capacity. `scripts/cloud/list-cloud-agents.sh` prints `runStatus=` and `model=` when the API exposes it. Cloud mind / directors **must** `cloud_launch` until `>= GCS_CLOUD_MIN_RUNNING` (default 8) RUNNING per active `GCS_CLOUD_REPO` (`scripts/cloud/running-count.sh`). If create returns a model that is not grok-4.6, that agent is not a worker.
 
 ### State (disk only)
 

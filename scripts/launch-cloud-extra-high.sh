@@ -2,7 +2,9 @@
 # Launch a Cursor Cloud Extra High grunt (grok-4.6, effort=xhigh, fast=false)
 # against GCS_CLOUD_REPO / CLOUD_REPO_URL (required) from GCS_CLOUD_REF (default main)
 # with autoCreatePR. Canonical: @cursor/sdk (scripts/cloud/sdk/launch.ts). REST curl is fallback.
-# Prints CLOUD_LAUNCH_OK only on HTTP 200/201 (REST) or SDK create success.
+# Prints CLOUD_LAUNCH_OK only on HTTP 200/201 (REST) or SDK create success
+# with model grok-4.6 (or dashboard alias cursor-grok-4.6-xhigh).
+# Wrong-model create responses print CLOUD_LAUNCH_ERR and are not workers.
 # Otherwise CLOUD_LAUNCH_ERR. Never prints API keys.
 set -euo pipefail
 
@@ -27,7 +29,8 @@ SDK bootstrap fail, or CURSOR_API_BASE set): POST /v1/agents
 
 Auth: CURSOR_API_KEY, or ~/.config/cursor/agent.env (never printed).
 Prints CLOUD_LAUNCH_OK only on success; any other result is
-CLOUD_LAUNCH_ERR and a non-zero exit.
+CLOUD_LAUNCH_ERR and a non-zero exit. Create responses that expose a
+model other than grok-4.6 are CLOUD_LAUNCH_ERR (not counted as workers).
 EOF
 }
 
@@ -153,6 +156,10 @@ if ! cloud_http_is_create_ok; then
     cloud_redact_stream <"$CLOUD_HTTP_BODY" >&2 || true
   fi
   fail_launch "error: create rejected http=${CLOUD_HTTP_CODE}"
+fi
+
+if ! python3 "${SCRIPT_DIR}/cloud/extra_high_model.py" check "$CLOUD_HTTP_BODY"; then
+  fail_launch "error: create model is not grok-4.6"
 fi
 
 printf '%s\n' "CLOUD_LAUNCH_OK"

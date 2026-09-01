@@ -57,6 +57,12 @@ scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." 
 # CLOUD_LAUNCH_OK id=bc-…  — waiter pings the owning seat when the run finishes
 ```
 
+**Never launch a Grok Bot CloudAgent.** Specialists are Cursor Cloud Extra High only (`grok-4.6`, `effort=xhigh`, `fast=false`). If create returns another model, the launcher prints `CLOUD_LAUNCH_ERR` and does not count that agent as a worker.
+
+In the Cursor dashboard, set the Cloud Agent default model to **grok-4.6 extra-high (xhigh)** so Auto cannot pick Sonnet or Gemini.
+
+`scripts/cloud/list-cloud-agents.sh` prints `runStatus` (`RUNNING` vs `FINISHED`) and `model=` when the API exposes it. Leftover `ACTIVE` shells with `runStatus=FINISHED` are not live workers. Cloud mind / directors `cloud_launch` until at least **8 `RUNNING`** per active `GCS_CLOUD_REPO` (`scripts/cloud/running-count.sh`; `GCS_CLOUD_MIN_RUNNING` default 8).
+
 ## Environment
 
 See `.env.example`. Prefix is **`GCS_*`**. Important:

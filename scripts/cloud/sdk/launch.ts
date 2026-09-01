@@ -5,6 +5,7 @@ import { Agent } from "@cursor/sdk";
 import {
   agentUrl,
   cloudCreateOptions,
+  createModelRejected,
   die,
   extraHighModel,
   loadApiKey,
@@ -52,7 +53,24 @@ async function main(): Promise<void> {
       // 75 → REST fallback. Do not fail closed on v1 metadata / unavailable.
       process.exit(sdkCreateFailExitCode(err));
     }
+    if (!agent) {
+      process.stdout.write("CLOUD_LAUNCH_ERR\n");
+      console.error("create returned no agent");
+      process.exit(1);
+    }
+    const createdReject = createModelRejected(agent.model);
+    if (createdReject) {
+      process.stdout.write("CLOUD_LAUNCH_ERR\n");
+      console.error(`create model is ${createdReject}, want grok-4.6`);
+      process.exit(1);
+    }
     const run = await agent.send(prompt);
+    const runReject = createModelRejected(run.model);
+    if (runReject) {
+      process.stdout.write("CLOUD_LAUNCH_ERR\n");
+      console.error(`create model is ${runReject}, want grok-4.6`);
+      process.exit(1);
+    }
     const url = agentUrl(agent.agentId);
     process.stdout.write(
       `CLOUD_LAUNCH_OK id=${agent.agentId} run=${run.id} url=${url} name=${name}\n`,

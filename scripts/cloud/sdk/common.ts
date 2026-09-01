@@ -11,6 +11,8 @@ import type {
 
 export const DEFAULT_REF = "main";
 export const AGENT_URL_PREFIX = "https://cursor.com/agents";
+export const EXTRA_HIGH_MODEL_ID = "grok-4.6";
+const EXTRA_HIGH_MODEL_IDS = new Set(["grok-4.6", "cursor-grok-4.6-xhigh"]);
 
 function envFirst(...names: string[]): string {
   for (const name of names) {
@@ -22,12 +24,37 @@ function envFirst(...names: string[]): string {
 
 export function extraHighModel(): ModelSelection {
   return {
-    id: process.env.CURSOR_CLOUD_MODEL || "grok-4.6",
+    id: EXTRA_HIGH_MODEL_ID,
     params: [
-      { id: "effort", value: process.env.CURSOR_CLOUD_EFFORT || "xhigh" },
+      { id: "effort", value: "xhigh" },
       { id: "fast", value: "false" },
     ],
   };
+}
+
+export function modelIdFrom(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "object" && "id" in value) {
+    const id = (value as { id?: unknown }).id;
+    if (typeof id === "string") return id.trim();
+  }
+  return "";
+}
+
+export function isExtraHighModelId(id: string | undefined): boolean {
+  const text = (id || "").trim();
+  if (!text) return true;
+  return EXTRA_HIGH_MODEL_IDS.has(text);
+}
+
+/** Non-null when the API exposed a model that is not grok-4.6 Extra High. */
+export function createModelRejected(...models: unknown[]): string | null {
+  for (const model of models) {
+    const id = modelIdFrom(model);
+    if (id && !isExtraHighModelId(id)) return id;
+  }
+  return null;
 }
 
 /** Target git repo for Extra High creates. Fail closed if unset. */
