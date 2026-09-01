@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # List Cursor Cloud agents (newest first). SDK-first; REST fallback.
 # Usage: list.sh [--limit N]   or   list.sh [N]
+# Compact rows include latest-run runStatus= and prUrl= (parallel /runs/).
+# Agent status=ACTIVE is leftover membership, not capacity.
 # Never prints API keys.
 set -euo pipefail
 
@@ -22,6 +24,7 @@ while [[ $# -gt 0 ]]; do
     -h|--help)
       echo "Usage: scripts/cloud/list.sh [--limit N]"
       echo "       scripts/cloud/list-cloud-agents.sh [limit=20]"
+      echo "Compact rows: id= status= runStatus= prUrl= name= url= latestRunId="
       exit 0
       ;;
     *)
@@ -55,17 +58,5 @@ if ! cloud_http_is_2xx; then
   exit 1
 fi
 
-python3 -c '
-import json, sys
-with open(sys.argv[1], encoding="utf-8") as fh:
-    data = json.load(fh)
-items = data.get("items") or []
-for item in items:
-    print("\t".join([
-        str(item.get("id") or ""),
-        str(item.get("status") or ""),
-        str(item.get("name") or ""),
-        str(item.get("url") or ""),
-        str(item.get("latestRunId") or ""),
-    ]))
-' "$CLOUD_HTTP_BODY"
+# Latest-run runStatus + prUrl, fetched in parallel (not N serial status.sh).
+python3 "${HERE}/list_rows.py" "$CLOUD_HTTP_BODY"

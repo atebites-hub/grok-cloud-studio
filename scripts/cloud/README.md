@@ -20,7 +20,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK` |
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
-| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
+| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; compact rows include `runStatus=` and `prUrl=` (parallel latest-run fetch) |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
@@ -119,5 +119,6 @@ Poll interval: `CLOUD_WATCH_INTERVAL` (short-name default 10s). Optional deadlin
 - Do **not** print API keys.
 - Prefer cloud grunts over large local multi-file rewrites.
 - List/status/watch/follow-up/result operate on existing agents; create goes through `launch-cloud-extra-high.sh`.
+- `list-cloud-agents.sh` compact rows include `runStatus=` and `prUrl=` (parallel latest-run fetch). `status=ACTIVE` is leftover membership, not capacity. Never Bot CloudAgent.
 - Do not call the Cloud Agents REST API from Director seats except via these scripts.
 - Never force-push the target repo `main`.
