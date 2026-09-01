@@ -1,0 +1,42 @@
+{
+  "name": "Donald",
+  "description": "Studio orchestrator on Grok Bot — A2A-only. Hive stamps Living Sky Linear; this seat does not.",
+  "version": "1.0.0",
+  "protocolVersion": "1.0",
+  "provider": {
+    "organization": "Grok Cloud Studio",
+    "url": "https://github.com/atebites-hub/grok-cloud-studio"
+  },
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extendedAgentCard": false
+  },
+  "defaultInputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "orchestrate",
+      "name": "Orchestrate",
+      "description": "Assign tasks and deconflict Directors. Receive LINEAR_STAMP A2A receipts. Do not stamp Linear.",
+      "tags": [
+        "orchestration",
+        "bot",
+        "a2a"
+      ]
+    }
+  ],
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:8732/a2a/donald",
+      "protocolBinding": "HTTP+JSON",
+      "protocolVersion": "1.0"
+    }
+  ]
+}

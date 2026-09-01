@@ -13,6 +13,11 @@
       "endpoint": "http://127.0.0.1:8732/a2a/orchestrator",
       "wellKnown": "http://127.0.0.1:8732/a2a/orchestrator/.well-known/agent-card.json"
     },
+    "donald": {
+      "card": "docs/a2a/cards/donald.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/donald",
+      "wellKnown": "http://127.0.0.1:8732/a2a/donald/.well-known/agent-card.json"
+    },
     "floor": {
       "card": "docs/a2a/cards/floor.json",
       "endpoint": "http://127.0.0.1:8732/a2a/floor",

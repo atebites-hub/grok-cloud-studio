@@ -50,6 +50,7 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 | `offset` | Byte offset into that seat’s `inbox.jsonl` (advanced only on runner exit 0) |
 | `pid` | Live mind process |
 | `runner` | Persisted `grok` or `cursor` for `GCS_MIND_RUNNER=auto`. Missing file means grok. Forced env does not rewrite this file. |
+| `linear.jsonl` | Hive Living Sky Linear receipts after each successful turn (no secrets). |
 
 Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Process cwd is `$GCS_ROOT`. Cursor runner does **not** set `GROK_HOME`.
 
@@ -77,6 +78,7 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty. Do not remint because the runner switched.
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
 - Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after the effective runner exits 0.
+- After each successful mind turn, hive comments Living Sky Linear (`linear_hive.py`) and A2A-pings Donald. Do not stamp Linear from Grok Bot. See `docs/studio/LINEAR.md`.
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
 
 No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.

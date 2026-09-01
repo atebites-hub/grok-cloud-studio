@@ -182,6 +182,10 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
 python3 scripts/secret_scan.py
 ```
 
+Empty CI is not merge. GitHub Actions `.github/workflows/ci.yml` is the ship gate.
+
+Hive Linear: after each successful mind turn, `scripts/directors/linear_hive.py` comments Living Sky issues and A2A-pings Donald. Do not stamp Linear from Grok Bot. See `docs/studio/LINEAR.md`.
+
 `./doctor.sh` **WARN**s (does not FAIL) if `grok`, `agent`/`cursor-grok`, or
 `taskboard` is missing. It **FAIL**s if `scripts/studio/agent-kanban` reappears.
 

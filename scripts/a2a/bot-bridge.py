@@ -9,6 +9,9 @@ Bot agents (e.g. Donald) are not `grok agent serve` daemons — dispatch.py
 keeps them in SKIP_SEATS. This bridge is the attach path: standing Bot
 routines poll bot-wake / inbox on the shared box and act.
 
+Do not stamp Linear. Hive already comments Living Sky issues after each
+mind turn and A2A-pings Donald. LINEAR_STAMP receipts are not a Linear write.
+
 Never prints secrets. Local studio only. Stdlib only.
 """
 from __future__ import annotations

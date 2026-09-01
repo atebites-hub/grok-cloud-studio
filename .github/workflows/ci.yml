@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+# Empty CI is not merge. This workflow is the ship gate.
+jobs:
+  ship-gate:
+    runs-on: ubuntu-latest
+    env:
+      GCS_BOT_BIND_OPTIONAL: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+      - name: pytest -q
+        run: .venv/bin/pytest -q
+      - name: secret_scan
+        run: python3 scripts/secret_scan.py

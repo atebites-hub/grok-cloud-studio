@@ -19,6 +19,8 @@ CLI uses `-p` (print mode) and a positional prompt. `--agent-profile`,
 `--trust`, and `--plugin-dir` are grok agent flags, not grok headless.
 
 Stdlib only. Donald/orchestrator (skipSeats) are not mind seats.
+After a successful turn the hive stamps Living Sky Linear and A2A-pings
+Donald. Grok Bot does not stamp Linear.
 """
 from __future__ import annotations
 
@@ -38,15 +40,19 @@ from pathlib import Path
 from typing import Any, Callable
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
+_DIRECTORS_DIR = Path(__file__).resolve().parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
+if str(_DIRECTORS_DIR) not in sys.path:
+    sys.path.insert(0, str(_DIRECTORS_DIR))
 from lib import canonical_seat, skip_seats  # noqa: E402
+from linear_hive import after_mind_turn  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 
 _SECRET_ASSIGN_RE = re.compile(
-    r"(?i)\b(CURSOR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
+    r"(?i)\b(CURSOR_API_KEY|LINEAR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
     r"server-key|ACP_SECRET|api[_-]?key)\s*[=:]\s*\S+"
 )
 _SESSION_IN_USE_RE = re.compile(
@@ -927,6 +933,26 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             f"MIND_TURN seat={seat} task={task_id} offset={end_offset}",
             flush=True,
         )
+        try:
+            after_mind_turn(
+                {
+                    "seat": seat,
+                    "task_id": task_id,
+                    "context_id": context_id,
+                    "offset": end_offset,
+                    "prompt": prompt,
+                    "assistant_text": assistant_text,
+                    "backend": backend,
+                },
+                state_dir=STATE_DIR,
+                root=ROOT,
+            )
+        except Exception as e:
+            print(
+                f"LINEAR_FAIL seat={seat} task={task_id} reason=hook-fail "
+                f"err={stderr_log_snippet(str(e))}",
+                file=sys.stderr,
+            )
         return {
             "consumed": 1,
             "reason": "ok",

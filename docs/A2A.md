@@ -34,7 +34,7 @@ Non-GROW seats may still use leftover `acp_inject.py` (no `--pin-session`).
 
 ## Seat mind (Bot-equivalent)
 
-`GCS_MIND_SEATS` (default empty, example `floor,ops`) starts `scripts/directors/seat-mind-loop.sh` → `scripts/directors/mind.py`. Python is mailbox + pin + stay-up: inbox growth → one `grok --resume` (first turn `--session-id`) of a UUID in `$GCS_A2A_STATE/<seat>/mind/session` with `--prompt-file` (never bare `-p`) → persist `transcript.jsonl` / `offset` (offset only on grok exit 0). Grok is the agent for that turn. `seat-mind-loop.sh` installs `plugins/studio-mind` into seat `GROK_HOME` via `grok plugin install --trust` (`--plugin-dir` is a grok agent flag, not headless). No ACP WebSocket, no `session/prompt`, no leftover pin-session. Mind is the GROW path when opted in; ACP wake is skipped for those seats unless `GCS_MIND_PLUS_ACP_WAKE=1`. Do not kill existing serve. `skipSeats` (orchestrator, donald) are not mind seats. See `docs/studio/MIND.md`.
+`GCS_MIND_SEATS` (default empty, example `floor,ops`) starts `scripts/directors/seat-mind-loop.sh` → `scripts/directors/mind.py`. Python is mailbox + pin + stay-up: inbox growth → one `grok --resume` (first turn `--session-id`) of a UUID in `$GCS_A2A_STATE/<seat>/mind/session` with `--prompt-file` (never bare `-p`) → persist `transcript.jsonl` / `offset` (offset only on grok exit 0). After each successful mind turn the hive comments Living Sky Linear (`scripts/directors/linear_hive.py`) and A2A-pings Donald. Grok is the agent for that turn. `seat-mind-loop.sh` installs `plugins/studio-mind` into seat `GROK_HOME` via `grok plugin install --trust` (`--plugin-dir` is a grok agent flag, not headless). No ACP WebSocket, no `session/prompt`, no leftover pin-session. Mind is the GROW path when opted in; ACP wake is skipped for those seats unless `GCS_MIND_PLUS_ACP_WAKE=1`. Do not kill existing serve. `skipSeats` (orchestrator, donald) are not mind seats. See `docs/studio/MIND.md` and `docs/studio/LINEAR.md`.
 
 ## Leftover ACP / pin-session rules
 
@@ -72,7 +72,7 @@ When a new wake appears, read the task and act as orchestrator.
 Reply via `scripts/a2a/send.sh <seat> "…"`. This seat is NOT an ACP inject target.
 ```
 
-Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh donald` still works if you keep that seat name). Do not launch Bot CloudAgent for this path.
+Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh donald` still works if you keep that seat name). Do not launch Bot CloudAgent for this path. Do not stamp Linear from Grok Bot. Hive already comments Living Sky issues after each mind turn and A2A-pings Donald (`LINEAR_STAMP` / `LINEAR_SKIP` / `LINEAR_FAIL`). See `docs/studio/LINEAR.md`.
 
 ## CCGS leads (mind seats)
 

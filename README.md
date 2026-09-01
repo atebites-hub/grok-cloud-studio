@@ -80,7 +80,9 @@ Poll `.a2a-state/orchestrator/bot-wake.txt` (latest) and
 `.a2a-state/orchestrator/bot-wake.jsonl` (append log). When a new wake
 appears, read the task text and act as the studio orchestrator. Reply
 with `scripts/a2a/send.sh <director-seat> "…"`. Do not use acp_inject
-or grok agent serve for this seat.
+or grok agent serve for this seat. Do not stamp Linear from Grok Bot;
+hive already comments Living Sky issues after each mind turn (`LINEAR_STAMP`
+A2A to Donald is a receipt).
 ```
 
 Bind later without reinstall: `GCS_BOT_AGENT_ID=… scripts/a2a/bind-bot-agent.sh`
@@ -101,7 +103,11 @@ Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_resu
 python3 scripts/secret_scan.py
 ```
 
+GitHub Actions (`.github/workflows/ci.yml`) runs that same ship gate. Empty CI is not merge.
+
 The secret scan fails closed on credentials, private-key blocks, and product lore that does not belong in this public control plane.
+
+Hive Linear: after each successful mind turn the Python hive comments Living Sky issues and A2A-pings Donald. Do not stamp Linear from Grok Bot. See `docs/studio/LINEAR.md`.
 
 ## License
 

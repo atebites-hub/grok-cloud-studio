@@ -20,7 +20,9 @@ still owns taskboard stdio MCP (`taskboard --db`).
 Not a Cursor `${workspaceFolder}` MCP. Not ACP `session/prompt`.
 
 Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers
-only — they are not a second agent loop.
+only — they are not a second agent loop. Linear is not a plugin: hive stamps
+Living Sky issues after each mind turn (`docs/studio/LINEAR.md`). Grok Bot
+does not stamp Linear.
 
 Cursor CLI (`GCS_MIND_RUNNER=cursor`, or auto after `MIND_SWITCH`) does not get
 this plugin or seat `GROK_HOME` taskboard MCP. Those do not transfer. Cursor
