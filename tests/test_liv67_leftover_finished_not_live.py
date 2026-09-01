@@ -159,6 +159,37 @@ def test_list_sh_output_does_not_count_finished_leftover_as_live(
     assert FAKE_KEY not in blob
 
 
+def test_list_sh_404_run_is_not_counted_live(tmp_path: Path) -> None:
+    """A leftover ACTIVE shell whose latest run GET 404s is not live."""
+    items = [
+        {
+            "id": "bc-stale-id",
+            "name": "ghost-run",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-stale-id",
+            "latestRunId": "run-missing",
+        },
+        leftover_and_live_items()[1],
+    ]
+    with MockCursorAPI(
+        list_items=items,
+        run_status_by_id={"run-live": "RUNNING"},
+        run_not_found_ids={"run-missing"},
+    ) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        listed = _run(LIST_SH, [], env)
+    assert listed.returncode == 0, listed.stdout + listed.stderr
+    stale = list_row(listed.stdout, "bc-stale-id")
+    fields = parse_list_row(stale)
+    assert fields.get("status") == "ACTIVE"
+    assert fields.get("runStatus") == "none"
+    live = live_ids_from_list_stdout(listed.stdout)
+    assert "bc-stale-id" not in live
+    assert live == frozenset({"bc-live"})
+    assert any(path.endswith("/runs/run-missing") for path in api.gets), api.gets
+    assert FAKE_KEY not in listed.stdout + listed.stderr
+
+
 def test_sdk_list_ts_prints_run_status_not_only_agent_active() -> None:
     """SDK list path must emit runStatus from latest run, not only ACTIVE."""
     src = LIST_TS.read_text(encoding="utf-8")
