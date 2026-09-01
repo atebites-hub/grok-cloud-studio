@@ -30,6 +30,17 @@ normalize_seat() {
   python3 "$LIB_PY" canonical "$1"
 }
 
+refuse_bot_acp_seat() {
+  # Bot skipSeats are Grok Bot orchestrators, never grok agent serve / ACP inject.
+  local seat="$1"
+  local tag="${2:-SEAT_DAEMON_SKIP}"
+  if python3 "$LIB_PY" skip-seats | grep -qx "$seat"; then
+    echo "$tag seat=$seat reason=bot-not-acp-target" >&2
+    return 2
+  fi
+  return 0
+}
+
 seat_prompt_stem() {
   echo "${1//-/_}"
 }

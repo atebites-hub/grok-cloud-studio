@@ -52,7 +52,7 @@ Default bind `127.0.0.1:8732`. Cards live in `docs/a2a/cards/`. Seats and ACP po
 
 Director RESULT is duplex, not success: print `RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>`; `scripts/a2a/duplex.py` writes it onto the A2A task. RESULT-only / PONG is a bug. Never launch Bot CloudAgent. Hub enqueue is `TASK_STATE_SUBMITTED` (queued until mind harvests); later `TASK_STATE_COMPLETED` is still a protocol receipt, not mind-turn done, not that RESULT line.
 
-Grok Bot orchestrator seats (`docs/a2a/bot-agents.json`, default seat `orchestrator`) are listed in registry `skipSeats` and are **not** ACP inject targets. Bind with `GCS_BOT_AGENT_ID` + `scripts/a2a/bind-bot-agent.sh` (also run from `install.sh`). Standing Bot routines poll `.a2a-state/<seat>/bot-wake.txt` / `bot-wake.jsonl`.
+Grok Bot orchestrator seats (`docs/a2a/bot-agents.json`, default seat `orchestrator`) are listed in registry `skipSeats` and are **not** ACP inject targets. Bind with `GCS_BOT_AGENT_ID` + `scripts/a2a/bind-bot-agent.sh` (also run from `install.sh`). Standing Bot routines poll `.a2a-state/<seat>/bot-wake.txt` / `bot-wake.jsonl`. Extra High `--name` matching a Bot skipSeat is refused (never Bot CloudAgent).
 
 ## ACP
 

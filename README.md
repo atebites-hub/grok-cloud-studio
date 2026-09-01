@@ -88,6 +88,8 @@ or grok agent serve for this seat.
 
 Bind later without reinstall: `GCS_BOT_AGENT_ID=… scripts/a2a/bind-bot-agent.sh`
 
+ACP serve, leftover inject, and Extra High `--name donald|orchestrator` are refused (never Bot CloudAgent). Extra High stays `grok-4.6` xhigh `fast=false`. Palemon Linear is Living Sky (`LIV`).
+
 ## MCP plugins
 
 ```bash

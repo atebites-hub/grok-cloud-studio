@@ -22,6 +22,7 @@ if [[ -z "$SEAT_RAW" || "$SEAT_RAW" == "-h" || "$SEAT_RAW" == "--help" ]]; then
 fi
 
 SEAT="$(normalize_seat "$SEAT_RAW")" || exit $?
+refuse_bot_acp_seat "$SEAT" "SEAT_DAEMON_SKIP" || exit $?
 PORT="$(seat_port "$SEAT")" || { echo "no port for seat=$SEAT" >&2; exit 1; }
 SD="$(seat_state_dir "$SEAT")"
 PID_FILE="$SD/daemon.pid"

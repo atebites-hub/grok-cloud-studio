@@ -31,6 +31,7 @@ if [[ -z "$SEAT_RAW" || "$SEAT_RAW" == "-h" || "$SEAT_RAW" == "--help" ]]; then
 fi
 
 SEAT="$(normalize_seat "$SEAT_RAW")" || exit $?
+refuse_bot_acp_seat "$SEAT" "ACP_PROMPT_SKIP" || exit $?
 SD="$(seat_state_dir "$SEAT")"
 INJECT="$SCRIPT_DIR/acp_inject.py"
 
