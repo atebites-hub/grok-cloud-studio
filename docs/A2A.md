@@ -3,7 +3,7 @@
 ```bash
 scripts/a2a/start-studio-bus.sh                 # hub + leftover dispatch + bot-bridge + fleet-shepherd
 scripts/a2a/start-studio-bus.sh start --daemons # ACP serve + GROW wake loops + host ticker (opt-in)
-scripts/a2a/send.sh ops "ping: hello"
+scripts/a2a/send.sh ops "ping: hello"           # TASK_STATE_SUBMITTED until mind finishes
 scripts/a2a/start-studio-bus.sh status
 ```
 

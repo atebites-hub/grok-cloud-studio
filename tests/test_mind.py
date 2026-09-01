@@ -398,6 +398,10 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "do not vendor" in doc.lower() or "not vendor" in doc.lower()
     assert "49" in doc
     assert "grok bot cloudagent" not in doc.lower()
+    assert "TASK_STATE_SUBMITTED" in doc
+    assert "TASK_STATE_COMPLETED" in doc
+    assert "already installed" in common.lower()
+    assert "MIND_PLUGIN_OK" in common
 
 
 def test_fake_grok_mints_then_resumes_same_uuid(
@@ -1763,6 +1767,17 @@ def test_harvest_does_not_vendor_hermes_or_copy_grok_home_mcp() -> None:
     assert "do not copy" in doc.lower() or "does not transfer" in doc.lower()
     assert "cursor-grok-4.6-xhigh" in src
     assert "fast=false" in plugin_readme.lower() or "xhigh" in plugin_readme.lower()
+    assert "GROK_MIND_MODEL" in src
+    assert "grok-4.6" in src
+    assert "--reasoning-effort" in src
+    assert "already installed" in (REPO / "scripts" / "directors" / "seat-daemon-common.sh").read_text(
+        encoding="utf-8"
+    ).lower()
+    assert "MIND_PLUGIN_OK" in (REPO / "scripts" / "directors" / "seat-daemon-common.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "TASK_STATE_SUBMITTED" in doc
+    assert "TASK_STATE_COMPLETED" in doc
     registry = json.loads((REPO / "docs" / "a2a" / "registry.json").read_text(encoding="utf-8"))
     assert len(registry.get("seats") or {}) < 20
 
