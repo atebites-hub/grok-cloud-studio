@@ -1,5 +1,9 @@
 # Architecture
 
+Hive narrative (Living Sky LIV-62 Linear document):
+[`docs/studio/HIVE.md`](studio/HIVE.md). Hermes v0.21 gap analysis (do not
+vendor, not a copy of Hermes): [`docs/studio/HERMES_GAP.md`](studio/HERMES_GAP.md).
+
 Grok Cloud Studio is a **local control plane**:
 
 1. **Directors** are Grok Build CLI seats (`floor`, `ops`/`studio-ops`, `cloud`,
