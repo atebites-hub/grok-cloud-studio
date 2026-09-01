@@ -2,11 +2,12 @@
 """Host process ticker: enqueue ACP_PING STATUS/CONTINUE onto seat inboxes.
 
 The clock is this host process, not `/loop` inside an idle grok agent serve
-session and not watchdog ACP-injecting keep-alives. Each tick grows
-inbox.jsonl. The seat wake loop then ACP session/prompts the live serve.
-The ping is a work turn (not RESULT-only hang-up). Not a central LAUNCH
-assigner and not a LAUNCH kind. Tools are allowed. Default interval is
-GCS_TICKER_SEC (600). Local studio only. Stdlib only.
+session and not watchdog injecting keep-alives. Each tick grows
+inbox.jsonl. Mind harvests that line as a mailbox turn; leftover GROW wake
+still owns ACP overlay seats. The ping is a work turn (not RESULT-only
+hang-up). Not a central LAUNCH assigner and not a LAUNCH kind. Tools are
+allowed. Default interval is GCS_TICKER_SEC (600). Local studio only.
+Stdlib only.
 """
 from __future__ import annotations
 
@@ -28,9 +29,8 @@ INTERVAL_SEC = float(os.environ.get("GCS_TICKER_SEC", "600"))
 _LIB_DIR = Path(__file__).resolve().parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
-from lib import canonical_seat, grow_seats  # noqa: E402
-
-GROW_SEATS = tuple(sorted(grow_seats(ROOT)))
+from lib import canonical_seat  # noqa: E402
+from mind_bot_like import default_tick_seats  # noqa: E402
 
 
 def _now_ts() -> float:
@@ -47,8 +47,12 @@ def _tick_text(seat: str, token: str) -> str:
 
 
 def tick_once(seats: Iterable[str] | None = None, now: float | None = None) -> int:
-    """Append one ACP_PING STATUS/CONTINUE inbox line per seat. Returns lines written."""
-    chosen = tuple(seats) if seats is not None else GROW_SEATS
+    """Append one ACP_PING STATUS/CONTINUE inbox line per seat. Returns lines written.
+
+    Default seats are leftover GROW plus opted-in mind seats (re-read each
+    call). Mailbox keep-alive, not ACP inject.
+    """
+    chosen = tuple(seats) if seats is not None else default_tick_seats(ROOT)
     env = os.environ.copy()
     env["GCS_ROOT"] = str(ROOT)
     env["GCS_A2A_STATE"] = str(STATE_DIR)
@@ -98,12 +102,12 @@ def _write_pid() -> None:
         pass
 
 
-def run_forever() -> int:
-    global GROW_SEATS
+def run_forever(seats: Iterable[str] | None = None) -> int:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     _write_pid()
+    listed = tuple(seats) if seats is not None else default_tick_seats(ROOT)
     print(
-        f"TICKER_READY state={STATE_DIR} interval={INTERVAL_SEC}s seats={','.join(GROW_SEATS)}",
+        f"TICKER_READY state={STATE_DIR} interval={INTERVAL_SEC}s seats={','.join(listed)}",
         flush=True,
     )
     stopping = False
@@ -116,7 +120,7 @@ def run_forever() -> int:
     signal.signal(signal.SIGINT, _handle)
     signal.signal(signal.SIGTERM, _handle)
     while not stopping:
-        tick_once()
+        tick_once(seats=seats)
         end = time.time() + INTERVAL_SEC
         while not stopping and time.time() < end:
             time.sleep(min(0.5, max(0.0, end - time.time())))
@@ -124,13 +128,12 @@ def run_forever() -> int:
 
 
 def main() -> int:
-    global GROW_SEATS
     parser = argparse.ArgumentParser(description="GROW host ticker (inbox keep-alives)")
     parser.add_argument("--once", action="store_true", help="Enqueue one tick then exit")
     parser.add_argument(
         "--seats",
         default="",
-        help="Comma-separated seat filter (default: GROW design seats)",
+        help="Comma-separated seat filter (default: GROW + GCS_MIND_SEATS)",
     )
     args = parser.parse_args()
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -140,9 +143,7 @@ def main() -> int:
     if args.once:
         tick_once(seats=seats)
         return 0
-    if seats is not None:
-        GROW_SEATS = seats
-    return run_forever()
+    return run_forever(seats=seats)
 
 
 if __name__ == "__main__":
