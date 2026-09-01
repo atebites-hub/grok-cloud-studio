@@ -279,7 +279,8 @@ def duplex_from_output(
         if not notified:
             notify_skipped = "send-fail"
     elif caller and caller != seat:
-        notify_skipped = "skipSeat"
+        key = str(caller).strip().lower().replace("_", "-")
+        notify_skipped = "skipSeat" if key in NOTIFY_FALLBACKS else "no-card"
     marker.write_text(
         json.dumps(
             {

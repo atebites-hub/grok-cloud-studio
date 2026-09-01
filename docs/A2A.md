@@ -78,7 +78,7 @@ Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh d
 
 `scripts/a2a/duplex.py` writes Director `RESULT` onto the working seat's A2A task and may ping the caller with `A2A_REPLY`. That ping must not 404.
 
-`donald` is a skipSeat with no shipped Agent Card (not an ACP inject target). Duplex maps `donald` → `floor-ops` (Palemon Donald-clone Director), then `orchestrator` (Bot card). If neither card exists, **skip notify** (`notify_skipped=skipSeat`) without failing the task reply (`ok` stays true; `director-result` is still stored). A failed `send.sh` is `notify_skipped=send-fail`, still not a failed task reply.
+`donald` is a skipSeat with no shipped Agent Card (not an ACP inject target). Duplex maps `donald` → `floor-ops` (Palemon Donald-clone Director), then `orchestrator` (Bot card). A fallback equal to the working seat is skipped (if `floor-ops` produced the RESULT, ping `orchestrator` instead of self). If neither card exists, **skip notify** (`notify_skipped=skipSeat`) without failing the task reply (`ok` stays true; `director-result` is still stored). A failed `send.sh` is `notify_skipped=send-fail`, still not a failed task reply. A caller with no Agent Card and no skipSeat fallback is `notify_skipped=no-card`.
 
 Hub `TASK_STATE_COMPLETED` / `send.sh` `A2A_SEND_OK` is a protocol **receipt** only — not Director RESULT and not proof the seat acted. This is not LIV-85 mail-is-turn. `donald` / `orchestrator` stay `skipSeats`.
 

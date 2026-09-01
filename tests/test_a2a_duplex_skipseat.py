@@ -211,11 +211,38 @@ def test_duplex_skips_notify_without_failing_when_no_card(
     )
     assert out.get("ok") is True
     assert out.get("notified") is False
-    assert out.get("notify_skipped")
+    assert out.get("notify_skipped") == "skipSeat"
     assert not notified
     tasks = json.loads((state / "cloud" / "tasks.json").read_text(encoding="utf-8"))
     assert RESULT_LINE in json.dumps(tasks)
     assert (state / "cloud" / "runs" / "task-skip-2.duplex").is_file()
+
+
+def test_unknown_caller_without_card_is_no_card_not_skipseat(tmp_path: Path) -> None:
+    duplex = _load(DUPLEX_PY, "gcs_duplex_skip_unknown")
+    empty = tmp_path / "empty"
+    (empty / "docs" / "a2a" / "cards").mkdir(parents=True)
+    state = tmp_path / "a2a-state"
+    notified: list[tuple[str, str]] = []
+
+    def fake_send(seat: str, text: str) -> bool:
+        notified.append((seat, text))
+        raise AssertionError(f"must not send to {seat}")
+
+    out = duplex.duplex_from_output(
+        state_dir=state,
+        seat="art",
+        record=_record("task-skip-unknown", "no-such-seat"),
+        output_text=RESULT_LINE,
+        send_fn=fake_send,
+        root=empty,
+    )
+    assert out.get("ok") is True
+    assert out.get("notified") is False
+    assert out.get("notify_skipped") == "no-card"
+    assert not notified
+    tasks = json.loads((state / "art" / "tasks.json").read_text(encoding="utf-8"))
+    assert RESULT_LINE in json.dumps(tasks)
 
 
 def test_duplex_send_fail_does_not_fail_task_reply(tmp_path: Path) -> None:
@@ -310,7 +337,11 @@ def test_hub_completed_is_receipt_not_director_result(hub: dict) -> None:
     assert rec["parts"][0]["text"] == "ping receipt only"
 
 
-def test_donald_orchestrator_remain_skip_seats_not_launchable() -> None:
+def test_donald_orchestrator_remain_skip_seats_not_launchable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GCS_ACP_SEATS", raising=False)
+    monkeypatch.delenv("GCS_SKIP_SEATS", raising=False)
     skipped = subprocess.check_output(
         ["python3", str(LIB_PY), "skip-seats"], cwd=str(REPO), text=True
     )
