@@ -550,26 +550,34 @@ case "$cmd" in
     fi
 
     bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
-    if pid_alive "$bridge_pid"; then
-      echo "STUDIO_BUS_BOT_BRIDGE_ALREADY pid=$bridge_pid"
-    elif want_bot_bridge; then
-      rm -f "$BOT_BRIDGE_PID_FILE"
-      if [[ -f "$BOT_BRIDGE_PY" ]]; then
-        nohup python3 "$BOT_BRIDGE_PY" >>"$BOT_BRIDGE_LOG" 2>&1 &
-        echo $! >"$BOT_BRIDGE_PID_FILE"
-        bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
-        sleep 0.2
-        if ! pid_alive "$bridge_pid"; then
-          echo "STUDIO_BUS_FAIL bot-bridge did not stay up; see $BOT_BRIDGE_LOG" >&2
-        else
-          echo "STUDIO_BUS_BOT_BRIDGE_START pid=$bridge_pid log=$BOT_BRIDGE_LOG"
-        fi
+    if want_bot_bridge; then
+      if pid_alive "$bridge_pid"; then
+        echo "STUDIO_BUS_BOT_BRIDGE_ALREADY pid=$bridge_pid"
       else
-        echo "STUDIO_BUS_BOT_BRIDGE_SKIP missing $BOT_BRIDGE_PY"
-        bridge_pid=""
+        rm -f "$BOT_BRIDGE_PID_FILE"
+        if [[ -f "$BOT_BRIDGE_PY" ]]; then
+          nohup python3 "$BOT_BRIDGE_PY" >>"$BOT_BRIDGE_LOG" 2>&1 &
+          echo $! >"$BOT_BRIDGE_PID_FILE"
+          bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
+          sleep 0.2
+          if ! pid_alive "$bridge_pid"; then
+            echo "STUDIO_BUS_FAIL bot-bridge did not stay up; see $BOT_BRIDGE_LOG" >&2
+          else
+            echo "STUDIO_BUS_BOT_BRIDGE_START pid=$bridge_pid log=$BOT_BRIDGE_LOG"
+          fi
+        else
+          echo "STUDIO_BUS_BOT_BRIDGE_SKIP missing $BOT_BRIDGE_PY"
+          bridge_pid=""
+        fi
       fi
     else
-      rm -f "$BOT_BRIDGE_PID_FILE"
+      # Leftover live pid is not a default start. ALREADY-keep still
+      # requires kill-after-RECOVER. Evict, then standby skip.
+      if pid_alive "$bridge_pid"; then
+        stop_pid_file "$BOT_BRIDGE_PID_FILE" "BOT_BRIDGE"
+      else
+        rm -f "$BOT_BRIDGE_PID_FILE"
+      fi
       bridge_pid=""
       echo "STUDIO_BUS_BOT_BRIDGE_SKIP reason=standby (set GCS_BOT_BRIDGE=1 to start)"
     fi

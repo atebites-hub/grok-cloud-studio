@@ -1181,16 +1181,19 @@ def test_bus_recycles_dispatch_when_mind_seats_change_without_killing_minds(
         assert "STUDIO_BUS_DISPATCH_ALREADY" not in out
         assert "STUDIO_BUS_HUB_ALREADY" in out
         assert "STUDIO_BUS_SHEPHERD_ALREADY" in out
-        assert "STUDIO_BUS_BOT_BRIDGE_ALREADY" in out
+        # PAL-25 remaining: leftover bot-bridge.pid is not a default start.
+        assert "STUDIO_BUS_BOT_BRIDGE_ALREADY" not in out
+        assert "STUDIO_BUS_BOT_BRIDGE_START" not in out
+        assert "STUDIO_BUS_BOT_BRIDGE_SKIP" in out
+        assert "STUDIO_BUS_BOT_BRIDGE_STOP" in out
         assert "STUDIO_BUS_MIND_ALREADY seat=qa-a" in out
         assert "STUDIO_BUS_HUB_STOP" not in out
         assert "STUDIO_BUS_SHEPHERD_STOP" not in out
-        assert "STUDIO_BUS_BOT_BRIDGE_STOP" not in out
         assert "STUDIO_BUS_MIND_STOP" not in out
         assert "STUDIO_BUS_TICKER_STOP" not in out
         assert "stop-seat-daemon" not in out
         assert procs["hub"].poll() is None
-        assert procs["bot-bridge"].poll() is None
+        assert procs["bot-bridge"].poll() is not None
         assert procs["shepherd"].poll() is None
         assert procs["ticker"].poll() is None
         assert procs["mind:qa-a"].poll() is None
