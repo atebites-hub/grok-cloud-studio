@@ -40,3 +40,17 @@ grok plugin install . --trust
 ```
 
 See root `.cursor-plugin/plugin.json` and `mcp.json`.
+
+## Living Sky Linear stamp (mind CLI, not a third agent loop)
+
+Grok Build minds stamp Living Sky (`linear.app/livingsky`, `LIV-*`)
+themselves after a TASK completes. Do not have Donald DIY Linear.
+
+```bash
+python3 scripts/studio/linear/liv_stamp.py after-task \
+  --issue LIV-82 --task "$A2A_TASK_ID" --seat floor \
+  --evidence "CLOUD_LAUNCH_OK id=bc-…"
+```
+
+`LINEAR_API_KEY` is never printed. Linear MCP `save_comment` (when the
+catalog is configured) uses the same body. See `docs/studio/LINEAR.md`.
