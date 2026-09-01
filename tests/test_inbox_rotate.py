@@ -288,15 +288,19 @@ def test_mind_harvest_after_rotate_does_not_reread_consumed(
     _write_int(seat / "mind" / "offset", ends[0])
     result = mind.process_once("floor")
     assert result["consumed"] == 1
-    assert seen == ["second harvest"]
+    assert len(seen) == 1
+    assert "second harvest" in seen[0]
+    assert "MESSAGE:" in seen[0]
     assert "n" * 20 not in "".join(seen)
+    assert "consumed" not in seen[0]
     assert _inbox_tasks(seat) == [] or _inbox_tasks(seat) == ["keep-mind"]
     # Consumed prefix must be gone so a later harvest cannot reread it.
     tasks = _inbox_tasks(seat)
     assert "consumed" not in tasks
     again = mind.process_once("floor")
     assert again["consumed"] == 0
-    assert seen == ["second harvest"]
+    assert len(seen) == 1
+    assert "second harvest" in seen[0]
 
 
 def test_leftover_dispatch_after_rotate_does_not_reread_consumed(
