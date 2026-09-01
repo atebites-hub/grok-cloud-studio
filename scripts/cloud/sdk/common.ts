@@ -20,11 +20,24 @@ function envFirst(...names: string[]): string {
   return "";
 }
 
+/** Fail-closed Extra High pin (LIV-67 / LIV-69). REJECT any CURSOR_CLOUD_MODEL that is not exactly grok-4.6. Omitted send = dashboard Auto (Jay saw Opus 5). Never Bot CloudAgent. */
 export function extraHighModel(): ModelSelection {
+  const leaked = (process.env.CURSOR_CLOUD_MODEL || "").trim();
+  if (leaked && leaked !== "grok-4.6") {
+    throw new Error(
+      `CLOUD_BLOCKED: CURSOR_CLOUD_MODEL=${leaked} rejected; Extra High is grok-4.6 xhigh fast=false only`,
+    );
+  }
+  const effort = (process.env.CURSOR_CLOUD_EFFORT || "").trim();
+  if (effort && effort !== "xhigh") {
+    throw new Error(
+      `CLOUD_BLOCKED: CURSOR_CLOUD_EFFORT=${effort} rejected; Extra High effort is xhigh only`,
+    );
+  }
   return {
-    id: process.env.CURSOR_CLOUD_MODEL || "grok-4.6",
+    id: "grok-4.6",
     params: [
-      { id: "effort", value: process.env.CURSOR_CLOUD_EFFORT || "xhigh" },
+      { id: "effort", value: "xhigh" },
       { id: "fast", value: "false" },
     ],
   };

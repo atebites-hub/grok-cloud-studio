@@ -2,7 +2,7 @@
   "name": "grok-cloud-studio",
   "displayName": "Grok Cloud Studio",
   "version": "1.0.0",
-  "description": "A2A hub tools plus Cursor Cloud Extra High launch/status/result. Target repo via GCS_CLOUD_REPO.",
+  "description": "A2A hub tools plus Cursor Cloud Extra High launch/list/status/result. Target repo via GCS_CLOUD_REPO.",
   "author": {
     "name": "atebites-hub"
   },

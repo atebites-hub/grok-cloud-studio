@@ -180,47 +180,9 @@ _write_seat_taskboard_mcp_config() {
   # Merge stdio MCP into GROK_HOME/config.toml. Equivalent to:
   #   GROK_HOME=$gh grok mcp add taskboard -- "$bin" --db "$db" mcp
   # Cursor workspace MCP JSON is not the serve config and is not inherited.
+  # Idempotent: never append a second [compat.cursor] / [mcp_servers.taskboard].
   local dest="$1" command="$2" db="$3"
-  python3 - "$dest" "$command" "$db" <<'PY'
-import json
-import pathlib
-import re
-import sys
-
-dest = pathlib.Path(sys.argv[1])
-command, db = sys.argv[2], sys.argv[3]
-start = "# gcs-seat-taskboard-mcp"
-end = "# gcs-seat-taskboard-mcp-end"
-
-
-def q(s: str) -> str:
-    return json.dumps(s)
-
-
-block = (
-    f"{start}\n"
-    "[compat.cursor]\n"
-    "mcps = false\n"
-    "\n"
-    "[mcp_servers.taskboard]\n"
-    f"command = {q(command)}\n"
-    f"args = [{q('--db')}, {q(db)}, {q('mcp')}]\n"
-    f"{end}\n"
-)
-text = dest.read_text(encoding="utf-8") if dest.is_file() else ""
-text = re.sub(
-    re.escape(start) + r"\n.*?" + re.escape(end) + r"\n?",
-    "",
-    text,
-    flags=re.S,
-)
-text = text.rstrip()
-if text:
-    text += "\n\n"
-text += block
-dest.parent.mkdir(parents=True, exist_ok=True)
-dest.write_text(text, encoding="utf-8")
-PY
+  python3 "$ROOT/scripts/directors/seat_grok_mcp.py" "$dest" "$command" "$db"
 }
 
 install_seat_grok_mcp() {
@@ -255,13 +217,25 @@ install_seat_grok_mcp() {
   echo "SEAT_GROK_MCP_OK seat=${seat:-?} command=$bin db=$db dest=$cfg" >&2
 }
 
+_mind_plugin_already_installed() {
+  # grok plugin install: "Error: repo studio-mind-<id> already installed"
+  local blob="${1:-}"
+  local low
+  low="$(printf '%s' "$blob" | tr '[:upper:]' '[:lower:]')"
+  case "$low" in
+    *'already installed'*) return 0 ;;
+  esac
+  return 1
+}
+
 install_studio_mind_plugin() {
   # Install plugins/studio-mind into this seat GROK_HOME. grok headless cannot
   # take --plugin-dir (that is a grok agent flag). --trust belongs here, not
   # on grok --prompt-file. Failure is MCP-only: taskboard is already in
-  # GROK_HOME/config.toml. Never abort the mind loop.
+  # GROK_HOME/config.toml. Never abort the mind loop. Already-installed and
+  # idempotent reinstall are success (MIND_PLUGIN_OK), not install-fail.
   local seat="${1:-}"
-  local plugin gh grok_bin
+  local plugin gh grok_bin out rc=0
   plugin="$ROOT/plugins/studio-mind"
   gh="${GROK_HOME:-}"
   if [[ ! -d "$plugin" ]]; then
@@ -279,7 +253,11 @@ install_studio_mind_plugin() {
   fi
   mkdir -p "$gh"
   plugin="$(_gcs_abs_path "$plugin")"
-  if GROK_HOME="$gh" "$grok_bin" plugin install "$plugin" --trust; then
+  out="$(GROK_HOME="$gh" "$grok_bin" plugin install "$plugin" --trust 2>&1)" && rc=0 || rc=$?
+  if [[ -n "$out" ]]; then
+    printf '%s\n' "$out" >&2
+  fi
+  if [[ "$rc" -eq 0 ]] || _mind_plugin_already_installed "$out"; then
     echo "MIND_PLUGIN_OK seat=${seat:-?} plugin=studio-mind dest=$gh" >&2
   else
     echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=install-fail mcp-only" >&2
@@ -448,7 +426,7 @@ Host clock is host-ticker.py / host-clock-ticker.sh ACP_PING STATUS/CONTINUE inb
 If this serve dies, start-seat-daemon.sh / ensure_seat_serve restarts it.
 After each session/prompt: do work (taskboard ticket move, send.sh, your own
 scripts/launch-cloud-extra-high.sh). Tools are allowed. Do not idle.
-RESULT is optional duplex, not a hang-up; RESULT-only / PONG is a bug.
+RESULT is optional duplex, not a hang-up; RESULT is duplex, not success. RESULT-only / PONG is a bug.
 Stay in this serve for the next inbox ping. Do not exit the serve process.
 Export awareness: GCS_DIRECTOR_SEAT=${seat}
 PERSIST

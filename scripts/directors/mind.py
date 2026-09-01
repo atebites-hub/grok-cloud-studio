@@ -22,6 +22,7 @@ CLI uses `-p` (print mode) and a positional prompt. `--agent-profile`,
 `--trust`, and `--plugin-dir` are grok agent flags, not grok headless.
 
 Stdlib only. Donald/orchestrator (skipSeats) are not mind seats.
+RESULT is duplex, not success. RESULT-only / PONG is a bug. Never Bot CloudAgent.
 """
 from __future__ import annotations
 
@@ -45,6 +46,8 @@ if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from duplex import set_task_state  # noqa: E402
 from lib import canonical_seat, skip_seats  # noqa: E402
+from mind_bot_like import prepare_mail_turn  # noqa: E402
+import duplex as a2a_duplex  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
@@ -63,6 +66,11 @@ _USAGE_EXHAUSTED_RE = re.compile(
 )
 MIND_FAIL_STDERR_CHARS = 240
 CURSOR_MIND_MODEL = "cursor-grok-4.6-xhigh"
+GROK_MIND_MODEL = "grok-4.6"
+GROK_MIND_REASONING_EFFORT = "xhigh"  # extra-high
+RESULT_LINE_HINT = (
+    "RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>"
+)
 
 
 @dataclass(frozen=True)
@@ -235,6 +243,37 @@ def _session_already_in_use(stderr: str, stdout: str = "") -> bool:
     return bool(_SESSION_IN_USE_RE.search(blob))
 
 
+def wrap_mind_mail(task_id: str, context_id: str, text: str) -> str:
+    """Mailbox prompt: RESULT is duplex, not success. Never Bot CloudAgent."""
+    return (
+        f"A2A_TASK_ID={task_id or 'none'}\n"
+        f"A2A_CONTEXT={context_id or 'none'}\n"
+        "RESULT is duplex, not success. If you print one, use exactly:\n"
+        f"  {RESULT_LINE_HINT}\n"
+        "RESULT-only / PONG is a bug. Remain this seat. "
+        "Do not send.sh / a2a_send to ack the caller — duplex notifies. "
+        "A2A_REPLY is a duplex caller ping — never launch a Cursor Cloud agent "
+        "or Bot CloudAgent for it. Extra High is grok-4.6 xhigh fast=false.\n"
+        f"MESSAGE:\n{text}\n"
+    )
+
+
+def duplex_after_mind(
+    seat: str, record: dict[str, Any], output_text: str
+) -> dict[str, Any]:
+    """Write a Director RESULT onto the A2A task. Not turn success."""
+    try:
+        return a2a_duplex.duplex_from_output(
+            state_dir=STATE_DIR,
+            seat=seat,
+            record=record,
+            output_text=output_text,
+        )
+    except Exception as e:  # noqa: BLE001 — mailbox consume must continue
+        print(f"MIND_DUPLEX_ERR seat={seat} err={e}", file=sys.stderr)
+        return {"ok": False, "reason": "duplex-err"}
+
+
 def _extract_text(parts: Any) -> str:
     bits: list[str] = []
     if not isinstance(parts, list):
@@ -367,7 +406,11 @@ def plugin_a2a_send(arguments: dict[str, Any]) -> str:
 
 
 def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
-    """scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT."""
+    """scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT.
+
+    --name REFUSE if a live runStatus=RUNNING Extra High already has that name.
+    Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent.
+    """
     script = ROOT / "scripts" / "launch-cloud-extra-high.sh"
     if not script.is_file():
         return "PLUGIN_ERR cloud_launch: missing scripts/launch-cloud-extra-high.sh"
@@ -413,7 +456,13 @@ CLOUD_LAUNCH_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "prompt": {"type": "string"},
-        "name": {"type": "string", "description": "Short Extra High agent name"},
+        "name": {
+            "type": "string",
+            "description": (
+                "Short Extra High agent name. REFUSE if a live runStatus=RUNNING "
+                "agent already has that name (no twin remint)."
+            ),
+        },
     },
     "required": ["prompt"],
     "additionalProperties": False,
@@ -447,10 +496,12 @@ def grok_cli_argv(
     """Pinned-session grok CLI. First turn mints; later turns resume that UUID.
 
     Headless law (never bare `-p`; never grok-agent `--agent-profile` /
-    `--trust` / `--plugin-dir`):
+    `--trust` / `--plugin-dir`). Pin grok-4.6 extra-high (`xhigh` is the CLI
+    extra-high alias). Cursor fallback stays `cursor-grok-4.6-xhigh`.
 
         grok --resume $UUID --prompt-file $mail --verbatim --output-format json \\
-            --always-approve --permission-mode bypassPermissions --max-turns 40
+            --always-approve --permission-mode bypassPermissions --max-turns 40 \\
+            --model grok-4.6 --reasoning-effort xhigh
 
     First turn uses `--session-id $UUID` instead of `--resume`.
     """
@@ -472,6 +523,10 @@ def grok_cli_argv(
             "bypassPermissions",
             "--max-turns",
             "40",
+            "--model",
+            GROK_MIND_MODEL,
+            "--reasoning-effort",
+            GROK_MIND_REASONING_EFFORT,
         ]
     )
     agent_path = yaml_agent_file(agent)
@@ -851,7 +906,12 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """One inbox line → one agent turn. Offset advances only on runner exit 0."""
+    """One inbox line → one agent turn. Offset advances only on runner exit 0.
+
+    Mailbox harvest writes mind/mail.txt + mind/turn.txt before the runner
+    (Bot-like disk turn). Empty harvest does not remint and does not invent
+    a turn file.
+    """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
         print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)
@@ -870,8 +930,8 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             continue
         task_id = str(rec.get("taskId") or "")
         context_id = str(rec.get("contextId") or "")
-        text = _extract_text(rec.get("parts"))
-        prompt = text or json.dumps(rec, ensure_ascii=False)
+        raw_text = prepare_mail_turn(STATE_DIR, seat, rec)
+        prompt = wrap_mind_mail(task_id, context_id, raw_text)
         try:
             raw = run(prompt, seat=seat)
         except Exception as e:
@@ -901,6 +961,13 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             backend = str(raw.get("backend") or "")
         if backend != "cursor":
             mark_session_minted(seat)
+        duplex_info = duplex_after_mind(seat, rec, assistant_text)
+        if duplex_info.get("ok") and not duplex_info.get("skipped"):
+            print(
+                f"MIND_DUPLEX seat={seat} task={duplex_info.get('taskId')} "
+                f"caller={duplex_info.get('caller') or 'none'}",
+                flush=True,
+            )
         _append_transcript(
             seat,
             {

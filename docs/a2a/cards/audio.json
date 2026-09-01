@@ -1,0 +1,42 @@
+{
+  "name": "Audio",
+  "description": "CCGS audio lead. Music, SFX, VO, mix. Spawns specialists only via scripts/launch-cloud-extra-high.sh.",
+  "version": "1.0.0",
+  "protocolVersion": "1.0",
+  "provider": {
+    "organization": "Grok Cloud Studio",
+    "url": "https://github.com/atebites-hub/grok-cloud-studio"
+  },
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extendedAgentCard": false
+  },
+  "defaultInputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "text/plain",
+    "application/json"
+  ],
+  "skills": [
+    {
+      "id": "audio",
+      "name": "Audio",
+      "description": "CCGS audio lead. Music, SFX, VO, mix. Spawns specialists only via scripts/launch-cloud-extra-high.sh.",
+      "tags": [
+        "audio",
+        "gcs",
+        "a2a"
+      ]
+    }
+  ],
+  "supportedInterfaces": [
+    {
+      "url": "http://127.0.0.1:8732/a2a/audio",
+      "protocolBinding": "HTTP+JSON",
+      "protocolVersion": "1.0"
+    }
+  ]
+}

@@ -18,7 +18,7 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 | Webhook harness | `scripts/cloud/webhook_receiver.py`, `webhook-harness.sh` |
 | Board | `docs/studio/TASKBOARD.md` (tcarac/taskboard ticket CLI + HTTP `/mcp`) |
 
-Example seats (edit `docs/a2a/registry.json`): `orchestrator` (Grok Bot, ACP-skipped), `floor`, `ops`, `cloud`, plus Palemon-floor first-class `floor-ops`, `studio-ops`, `art`, `content`, `systems`, `qa-a`, `qa-b`. Hub: `127.0.0.1:8732`. ACP ports: live Palemon values in the registry. Crash-safe default `GCS_ACP_SEATS=floor,studio-ops` — never auto-spawn the full registry as `grok agent serve`.
+Example seats (edit `docs/a2a/registry.json`): `orchestrator` (Grok Bot, ACP-skipped), `floor`, `ops`, `cloud`, plus Palemon-floor first-class `floor-ops`, `studio-ops`, `art`, `content`, `systems`, `qa-a`, `qa-b`, `audio`, `narrative`. Hub: `127.0.0.1:8732`. ACP ports: live Palemon values in the registry. Crash-safe default `GCS_ACP_SEATS=floor,studio-ops` — never auto-spawn the full registry as `grok agent serve`.
 
 ## Quick start
 
@@ -36,7 +36,7 @@ export GCS_BOT_AGENT_ID='your-grok-bot-agent-id'   # from Grok Bot settings
 
 Disaster recovery: `./setup.sh` (deploy) and `./cleanup.sh` (teardown). Live DR loop: `./health_check.sh` + `./recover.sh`. See **[docs/studio/WIPE.md](docs/studio/WIPE.md)**. Clone with `--recurse-submodules` (or `git submodule update --init --recursive`) so `vendor/taskboard` is the v0.6.0 source pin.
 
-Recover today's Palemon floor (8-seat mind, taskboard UI/MCP, no `--daemons`) from a clean machine. Copy `studio.env.example` to `$GCS_A2A_STATE/studio.env` (not committed). Host board: `scripts/studio/taskboard/`.
+Recover today's Palemon floor (first-class mind including CCGS audio/narrative leads, taskboard UI/MCP, no `--daemons`) from a clean machine. Copy `studio.env.example` to `$GCS_A2A_STATE/studio.env` (not committed). Host board: `scripts/studio/taskboard/`.
 
 ```bash
 cp .env.example .env   # fill GCS_CLOUD_REPO + GCS_BOT_AGENT_ID; never commit .env
@@ -101,6 +101,8 @@ Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_resu
 .venv/bin/pytest -q
 python3 scripts/secret_scan.py
 ```
+
+GitHub Actions (`.github/workflows/ship-gate.yml`) runs the same two commands on every pull request via `scripts/ci/ship-gate.sh`. The job fails unless pytest prints `N passed` with N≥1 and `secret_scan=clean`. It does not use leftover-green `--override-ini`, and it does not launch Bot CloudAgent.
 
 The secret scan fails closed on credentials, private-key blocks, and product lore that does not belong in this public control plane.
 

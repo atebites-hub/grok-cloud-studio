@@ -40,5 +40,11 @@ def test_cloud_repo_from_env(tmp_path: Path) -> None:
 def test_seat_ports() -> None:
     floor = subprocess.check_output(["python3", str(LIB), "port", "floor"], cwd=str(ROOT), text=True)
     ops = subprocess.check_output(["python3", str(LIB), "port", "ops"], cwd=str(ROOT), text=True)
+    audio = subprocess.check_output(["python3", str(LIB), "port", "audio"], cwd=str(ROOT), text=True)
+    narrative = subprocess.check_output(
+        ["python3", str(LIB), "port", "narrative"], cwd=str(ROOT), text=True
+    )
     assert floor.strip() == "8740"
     assert ops.strip() == "8741"
+    assert audio.strip() == "8754"
+    assert narrative.strip() == "8755"

@@ -24,7 +24,8 @@ to be up: probe live hub `/health`, taskboard `:3010`, mcp-http `:3011`, and
 each `GCS_MIND_SEATS` mind pid; restart only the down pieces via
 `start-studio-bus.sh start` (NO `--daemons`), `start-taskboard.sh start`, and
 `mcp-http.sh start`. Do not remint sessions. Do not wipe state. Do not launch
-Cursor Cloud. Tailscale missing is WARN, not FAIL.
+Cursor Cloud. bot-bridge stays off unless `GCS_BOT_BRIDGE=1`. Tailscale missing
+is WARN, not FAIL.
 
 Default cleanup does not delete `studio.env`, `.env`, grok login, Cursor
 login, inboxes, or pins. `CLEANUP_WIPE_STATE=1 ./cleanup.sh` also stops
@@ -54,13 +55,21 @@ advances only on runner exit 0.
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
 - Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio
-  `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust`
-  of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok
-  usage is back.
+  `taskboard --db $GCS_TASKBOARD_DB mcp` plus Linear HTTP
+  `https://mcp.linear.app/mcp`) plus `grok plugin install --trust`
+  of `plugins/studio-mind`. Studio Linear is Living Sky
+  (`linear.app/livingsky`, team Livingsky / `LIV`). NEVER Black Swan Money.
+  Grok-home Higgsfield is grok-only, for when grok usage is back.
 - Cursor CLI catalog: repo `.cursor/mcp.json` wrapping
   `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no
-  `GROK_HOME`). Higgsfield is Cursor catalog login when the runner is Cursor
-  CLI (Art generate). Grok Bot Higgsfield is a different catalog.
+  `GROK_HOME`) and Linear HTTP (`Bearer ${LINEAR_API_KEY}`). Linear +
+  taskboard only. Do not copy the whole Grok catalog. Higgsfield is Cursor
+  catalog login when the runner is Cursor CLI (Art generate). Grok Bot
+  Higgsfield is a different catalog.
+
+Cursor Cloud Extra High cannot scrape `GROK_HOME`. Snapshot env
+`LINEAR_API_KEY` from the cloud-env / dashboard Secrets so those agents
+see Linear via `.cursor/mcp.json`.
 
 Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`,
 `scripts/launch-cloud-extra-high.sh`.
@@ -69,7 +78,8 @@ No third Python tool loop. No ACP `session/prompt` GROW. No `deliver_wake`
 overlay.
 
 The grunt is **Cursor Cloud** (not "Extra High" as the noun, not "Cursor Cloud API").
-Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI:
+Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
+`--model grok-4.6 --reasoning-effort xhigh` (extra-high). Cursor fallback:
 `--model cursor-grok-4.6-xhigh` only. The PATH launcher stays
 `scripts/launch-cloud-extra-high.sh`. Full mind law: `docs/studio/MIND.md`.
 
@@ -122,6 +132,11 @@ Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI:
 5. Set `CURSOR_API_KEY` in the environment or `~/.config/cursor/agent.env`.
    Never print it. Never commit it.
 
+   Studio Linear is **Living Sky** (`https://linear.app/livingsky`, team
+   Livingsky / `LIV`). **NEVER Black Swan Money.** Cursor Cloud Extra High
+   agents cannot scrape `GROK_HOME`: put `LINEAR_API_KEY` in the cloud-env
+   snapshot or dashboard Secrets so `.cursor/mcp.json` Linear works.
+
 6. Board + MCP HTTP (tcarac/taskboard v0.6.0; do not compile; do not vendor a
    binary). Source pin is `vendor/taskboard`. `install-taskboard.sh` prefers a
    prebuilt in that checkout; brew tap or the matching v0.6.0 GitHub tarball
@@ -136,11 +151,13 @@ Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI:
    DB is `$GCS_A2A_STATE/taskboard/taskboard.db` (`PALEMON_A2A_STATE` alias
    accepted). Details: `scripts/studio/taskboard/README.md`.
    Cursor CLI sees the board via checkout `.cursor/mcp.json` (wrapper
-   `scripts/studio/taskboard/run-mcp.sh`). Do not copy `GROK_HOME` MCP.
+   `scripts/studio/taskboard/run-mcp.sh`) plus Linear HTTP. Linear +
+   taskboard only. Do not copy `GROK_HOME` MCP.
    Do not put MagicDNS hostnames or private GitHub URLs in that file.
 
-7. Mind seats come from `studio.env` (`GCS_MIND_SEATS` eight first-class
-   names). Start the bus **without** `--daemons`:
+7. Mind seats come from `studio.env` (`GCS_MIND_SEATS` first-class directors
+   plus CCGS leads `audio` and `narrative`; not 49 specialists). Start the bus
+   **without** `--daemons`:
 
    ```bash
    scripts/a2a/start-studio-bus.sh start
@@ -148,6 +165,7 @@ Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI:
 
    That is hub + leftover dispatch + shepherd + **mind loops**.
    **bot-bridge stays off** unless `GCS_BOT_BRIDGE=1` (Bot seats standby).
+   Bot is not a Cursor CloudAgent.
    It does **not** spawn `grok agent serve` per seat. Never auto-spawn a
    13-seat grok serve floor on a ~15GB box.
 
@@ -187,7 +205,14 @@ python3 scripts/secret_scan.py
 ## Seats (first-class)
 
 `floor` (8740), `floor-ops` (8753), `studio-ops` (8752), `art` (8746),
-`content` (8742), `systems` (8744), `qa-a` (8748), `qa-b` (8751).
+`content` (8742), `systems` (8744), `qa-a` (8748), `qa-b` (8751),
+`audio` (8754), `narrative` (8755).
 `skipSeats`: `orchestrator`, `donald`. Generic extract still ships `ops` and
 `cloud`. ACP/GROW cap stays crash-safe (`GCS_ACP_SEATS` default
 `floor,studio-ops` unless `studio.env` overlays the Palemon list).
+
+CCGS lead map (aliases in `scripts/a2a/lib.py`): producer=`floor-ops`,
+creative=`floor`, technical=`systems`, game-designer=`content`,
+lead-programmer=`systems` until split, art-director=`art`, qa-lead=`qa-a`,
+release-manager=`studio-ops`. Directors and leads spawn specialists only via
+`scripts/launch-cloud-extra-high.sh`. Do not add 49 specialists.

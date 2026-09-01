@@ -27,6 +27,19 @@ _SEAT_PROMPT_ALIASES = {
     "ops": "studio-ops",
 }
 
+# CCGS lead titles fold onto first-class GCS seats. Audio and narrative are
+# first-class (not aliases). Do not map the 49-specialist roster.
+CCGS_LEAD_ALIASES = {
+    "producer": "floor-ops",
+    "creative": "floor",
+    "technical": "systems",
+    "game-designer": "content",
+    "lead-programmer": "systems",
+    "art-director": "art",
+    "qa-lead": "qa-a",
+    "release-manager": "studio-ops",
+}
+
 
 def env_first(*names: str, default: str = "") -> str:
     for name in names:
@@ -89,6 +102,7 @@ def canonical_seat(seat: str, root: Path | None = None) -> str:
         "ops": "studio-ops",
         "floor-ops": "floor",
         "floor": "floor-ops",
+        **CCGS_LEAD_ALIASES,
     }
     alt = aliases.get(key)
     if alt and alt in entries:
@@ -116,8 +130,9 @@ def grow_seats(root: Path | None = None) -> frozenset[str]:
 def mind_seats(root: Path | None = None) -> frozenset[str]:
     """Opt-in Grok Build mind seats (GCS_MIND_SEATS, default empty).
 
-    Example: GCS_MIND_SEATS=floor,ops. Palemon-floor wipe uses the eight
-    first-class seats in studio.env.example. skipSeats (orchestrator, donald)
+    Example: GCS_MIND_SEATS=floor,ops. Palemon-floor wipe uses the
+    first-class seats in studio.env.example (directors, CCGS leads including
+    audio and narrative; not 49 specialists). skipSeats (orchestrator, donald)
     never join this set. Names missing from the registry are ignored.
     """
     raw = env_first("GCS_MIND_SEATS")
@@ -263,7 +278,9 @@ def compose_extra(task_id: str | None, context: str | None, message: str | None)
         f"A2A_TASK_ID={task_id or 'none'}\n"
         f"A2A_CONTEXT={context or 'none'}\n"
         "Keep-alive / status turn: do work, do not idle. Tools are allowed. "
-        "RESULT is optional duplex — RESULT-only / PONG is a bug. Remain this seat. "
+        "RESULT is duplex, not success. If you print one, use exactly: "
+        "RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>. "
+        "RESULT-only / PONG is a bug. Remain this seat. "
         "Do not send.sh / a2a_send to ack the caller — duplex notifies.\n"
         f"MESSAGE:\n{message or ''}\n"
     )

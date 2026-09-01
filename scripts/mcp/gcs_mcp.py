@@ -3,7 +3,7 @@
 
 Planes:
   --plane a2a     tools: a2a_list_seats, a2a_send
-  --plane cloud   tools: cloud_launch, cloud_status, cloud_result
+  --plane cloud   tools: cloud_launch, cloud_list, cloud_status, cloud_result
   --plane all     both (default)
 
 Framing: Content-Length (MCP) or NDJSON when GCS_MCP_NDJSON=1.
@@ -21,9 +21,13 @@ from typing import Any
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 _LIB_DIR = ROOT / "scripts" / "a2a"
+_CLOUD_DIR = ROOT / "scripts" / "cloud"
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
+if str(_CLOUD_DIR) not in sys.path:
+    sys.path.insert(0, str(_CLOUD_DIR))
 import lib  # noqa: E402
+import list_helper  # noqa: E402
 
 PROTOCOL = "2024-11-05"
 SERVER_NAME = "gcs-mcp"
@@ -59,15 +63,41 @@ def cloud_tools() -> list[dict[str, Any]]:
             "name": "cloud_launch",
             "description": (
                 "Launch a Cursor Cloud Extra High agent. Requires GCS_CLOUD_REPO or "
-                "CLOUD_REPO_URL. Never returns API keys."
+                "CLOUD_REPO_URL. --name REFUSE if a live runStatus=RUNNING agent already "
+                "has that name (no twin remint). Leftover ACTIVE+FINISHED does not block. "
+                "Never Grok Bot as the grunt runtime. Never returns API keys."
             ),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "prompt": {"type": "string"},
-                    "name": {"type": "string", "description": "Short agent name"},
+                    "name": {
+                        "type": "string",
+                        "description": (
+                            "Short Extra High --name. REFUSE if a live runStatus=RUNNING "
+                            "agent already has that name (no twin remint)."
+                        ),
+                    },
                 },
                 "required": ["prompt"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "cloud_list",
+            "description": (
+                "List Cursor Cloud Extra High agents (newest first). Each row prints "
+                "agent status and latest-run runStatus (RUNNING vs FINISHED). "
+                "ACTIVE+FINISHED leftovers are not live workers. Never returns API keys."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "string",
+                        "description": "Max agents (default 20)",
+                    },
+                },
                 "additionalProperties": False,
             },
         },
@@ -145,6 +175,17 @@ def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         proc = _run(cmd, timeout=180)
         out = (proc.stdout or "") + (proc.stderr or "")
         return _text_result(out.strip() or f"rc={proc.returncode}", proc.returncode != 0)
+    if name == "cloud_list":
+        raw_limit = arguments.get("limit")
+        if raw_limit is None or str(raw_limit).strip() == "":
+            limit = 20
+        else:
+            try:
+                limit = int(str(raw_limit).strip())
+            except ValueError:
+                return _text_result("limit must be an integer", True)
+        text, ok = list_helper.list_cloud_agents(limit=limit)
+        return _text_result(text, not ok)
     if name == "cloud_status":
         agent_id = str(arguments.get("id") or "").strip()
         if not agent_id:

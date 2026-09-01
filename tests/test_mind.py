@@ -102,6 +102,8 @@ def _argv_log(path: Path) -> list[dict]:
 
 _BANNED_GROK_FLAGS = ("-p", "--single", "--trust", "--agent-profile", "--plugin-dir")
 _LAW_SID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+GROK_MIND_MODEL = "grok-4.6"
+GROK_MIND_REASONING_EFFORT = "xhigh"  # CLI extra-high alias
 
 
 def _law_argv(
@@ -125,6 +127,10 @@ def _law_argv(
         "bypassPermissions",
         "--max-turns",
         "40",
+        "--model",
+        GROK_MIND_MODEL,
+        "--reasoning-effort",
+        GROK_MIND_REASONING_EFFORT,
     ]
 
 
@@ -206,7 +212,7 @@ def _assert_cursor_clap(argv: list[str], *, chat_id: str, prompt: str) -> None:
     assert "--approve-mcps" in argv
     assert "--model" in argv
     assert _flag_value(argv, "--model") == CURSOR_MIND_MODEL
-    assert argv[-1] == prompt
+    assert argv[-1] == prompt or prompt in argv[-1]
     assert "--prompt-file" not in argv
     assert "--session-id" not in argv
     assert "--continue" not in argv
@@ -347,6 +353,13 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "create-chat" in doc
     assert CURSOR_MIND_MODEL in src
     assert CURSOR_MIND_MODEL in doc
+    assert "--model" in src
+    assert GROK_MIND_MODEL in src
+    assert "--reasoning-effort" in src or "--effort" in src
+    assert GROK_MIND_REASONING_EFFORT in src or "extra-high" in src
+    assert GROK_MIND_MODEL in doc
+    assert "--reasoning-effort" in doc or "--effort" in doc
+    assert GROK_MIND_REASONING_EFFORT in doc or "extra-high" in doc
     assert "usage balance exhausted" in doc.lower()
     assert "GCS_MIND_RUNNER" in src
     assert "GCS_MIND_RUNNER" in doc
@@ -407,6 +420,10 @@ def test_fake_grok_mints_then_resumes_same_uuid(
         "bypassPermissions",
         "--max-turns",
         "40",
+        "--model",
+        GROK_MIND_MODEL,
+        "--reasoning-effort",
+        GROK_MIND_REASONING_EFFORT,
     ]
     assert rows[0]["GROK_MEMORY"] == "1"
     assert str(state / "floor" / "grok-home") in rows[0]["GROK_HOME"]
@@ -441,6 +458,10 @@ def test_fake_grok_mints_then_resumes_same_uuid(
         "bypassPermissions",
         "--max-turns",
         "40",
+        "--model",
+        GROK_MIND_MODEL,
+        "--reasoning-effort",
+        GROK_MIND_REASONING_EFFORT,
     ]
     assert "--prompt-file" in argv2
     empty = mind.process_once("floor")
@@ -677,6 +698,19 @@ def test_grok_cli_argv_first_and_later_turns() -> None:
     assert "/home/box" not in joined
     assert "--agent" not in first
     assert "--agent" not in later
+    assert "--model" in first and _flag_value(first, "--model") == GROK_MIND_MODEL
+    assert "--model" in later and _flag_value(later, "--model") == GROK_MIND_MODEL
+    effort_flag = "--reasoning-effort" if "--reasoning-effort" in first else "--effort"
+    assert _flag_value(first, effort_flag) in {GROK_MIND_REASONING_EFFORT, "extra-high", "max"}
+    assert _flag_value(later, effort_flag) in {GROK_MIND_REASONING_EFFORT, "extra-high", "max"}
+    cursor = mind.cursor_cli_argv(
+        chat_id=_CURSOR_CHAT_ID, prompt="keep cursor pin", binary="agent"
+    )
+    assert _flag_value(cursor, "--model") == CURSOR_MIND_MODEL
+    assert "--reasoning-effort" not in cursor
+    assert mind.GROK_MIND_MODEL == GROK_MIND_MODEL
+    assert mind.GROK_MIND_REASONING_EFFORT == GROK_MIND_REASONING_EFFORT
+    assert mind.CURSOR_MIND_MODEL == CURSOR_MIND_MODEL
 
 
 def test_grok_cli_argv_agent_only_for_yaml_frontmatter(tmp_path: Path) -> None:
@@ -822,6 +856,62 @@ install_studio_mind_plugin floor
     assert "plugin install" in loop or "install_studio_mind_plugin" in loop
 
 
+def test_studio_mind_plugin_already_installed_is_ok(tmp_path: Path) -> None:
+    """grok 'Error: repo studio-mind-... already installed' is MIND_PLUGIN_OK.
+
+    Seat start reinstalls studio-mind every loop. A non-zero grok exit with
+    that message is idempotent success, not reason=install-fail.
+    """
+    log = tmp_path / "plugin.argv"
+    stamp = tmp_path / "plugin.installed"
+    grok = _write_exec(
+        tmp_path / "fake-bin" / "grok",
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$@" >> "{log}"\n'
+        f'if [ -f "{stamp}" ]; then\n'
+        '  echo "Error: repo studio-mind-deadbeef already installed" >&2\n'
+        "  exit 1\n"
+        "fi\n"
+        f'touch "{stamp}"\n'
+        "exit 0\n",
+    )
+    env = {
+        "PATH": f"{grok.parent}:/usr/bin:/bin",
+        "HOME": str(tmp_path / "home"),
+        "GCS_ROOT": str(REPO),
+        "GCS_A2A_STATE": str(tmp_path / "a2a-state"),
+        "GROK_HOME": str(tmp_path / "grok-home"),
+        "TASKBOARD_BIN": str(
+            _write_exec(tmp_path / "host-bin" / "taskboard", "#!/bin/sh\nexit 0\n")
+        ),
+        "LC_ALL": "C",
+        "TERM": "dumb",
+    }
+    script = r"""
+set -euo pipefail
+source scripts/directors/seat-daemon-common.sh
+install_studio_mind_plugin floor
+install_studio_mind_plugin floor
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        cwd=str(REPO),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    assert blob.count("MIND_PLUGIN_OK") >= 2, blob
+    assert "reason=install-fail" not in blob, blob
+    assert "MIND_PLUGIN_SKIP" not in blob, blob
+    argv = log.read_text(encoding="utf-8")
+    assert argv.count("plugin") >= 2
+    assert "--trust" in argv
+    assert "studio-mind" in argv
+
+
 def test_a2a_send_and_cloud_launch_plugins_missing_binaries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -935,8 +1025,7 @@ def _bus_env(state: Path, extra: dict[str, str] | None = None) -> dict[str, str]
     env = {
         k: v
         for k, v in os.environ.items()
-        if k
-        not in {
+        if k not in {
             "GCS_MIND_SEATS",
             "GCS_START_SEAT_DAEMONS",
             "GCS_ACP_STOP_WITH_BUS",
