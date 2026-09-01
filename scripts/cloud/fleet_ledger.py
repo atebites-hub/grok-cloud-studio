@@ -12,7 +12,9 @@ FLEET_DONE HOLDs GitHub PRs with empty checks (MERGEABLE+empty CI is
 leftover-green theatre; required check is pytest -q and secret_scan) and
 until Extra High RESULT / MERGE_REQUEST pastes `.venv/bin/pytest -q`
 (`N passed`) and `secret_scan=clean`. Empty leftover-green GitHub checks
-are not a ship-gate.
+are not a ship-gate. REST `mergeable_state=dirty` is GraphQL
+`mergeable=CONFLICTING`: the ping includes `mergeable=CONFLICTING` and QA
+HOLD squash (Extra High rebase only; not MERGE_REQUEST-ready).
 
 Presence of waiter_pid is not liveness. A pid that names a dead process is
 evicted durably (waiter_pid null, waiter_tombstone) so a reused pid cannot
@@ -29,6 +31,8 @@ import json
 import os
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -42,6 +46,7 @@ if str(_LIB_DIR) not in sys.path:
 from lib import env_first, pid_alive, repo_root, state_root  # noqa: E402
 from pr_evidence import has_paste_evidence, paste_from_payload  # noqa: E402
 from ship_gate_evidence import (  # noqa: E402
+    parse_github_pull_url,
     payload_empty_checks,
     payload_ship_gate_ok,
     resolve_ship_gate,
@@ -50,6 +55,9 @@ from ship_gate_evidence import (  # noqa: E402
 
 TERMINAL = frozenset({"FINISHED", "ERROR", "CANCELLED", "EXPIRED"})
 MERGE_READY = "ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST"
+_MERGEABLE_TOKENS = frozenset({"CONFLICTING", "MERGEABLE", "UNKNOWN"})
+_CONFLICTING_STATES = frozenset({"dirty", "conflicting"})
+_MERGEABLE_STATES = frozenset({"clean", "unstable", "blocked", "behind", "has_hooks", "draft"})
 
 
 def normalize_run_status(value: object) -> str:
@@ -361,6 +369,96 @@ def _already_notified_by_waiter(entry: dict[str, Any] | None) -> bool:
     return entry.get("notified_by") == "waiter"
 
 
+def map_github_mergeable(body: dict[str, Any]) -> str | None:
+    """Map GitHub REST/GraphQL pull fields to MERGEABLE|CONFLICTING|UNKNOWN.
+
+    REST mergeable_state=dirty is GraphQL mergeable=CONFLICTING (PRs #301/#304).
+    """
+    raw = body.get("mergeable")
+    if isinstance(raw, str):
+        token = raw.strip().upper()
+        if token in _MERGEABLE_TOKENS:
+            return token
+    state = str(
+        body.get("mergeable_state") or body.get("mergeableState") or ""
+    ).strip().lower()
+    if state in _CONFLICTING_STATES:
+        return "CONFLICTING"
+    if raw is False:
+        return "CONFLICTING"
+    if state in _MERGEABLE_STATES or raw is True:
+        return "MERGEABLE"
+    return "UNKNOWN"
+
+
+def github_pr_mergeable(pr_url: object) -> str | None:
+    """GET GitHub pulls API. CONFLICTING/MERGEABLE/UNKNOWN, or None on lookup miss.
+
+    One-shot. Do not reuse Extra High get_agent_run 429 backoff (GCS #35).
+    Never prints GH_TOKEN / GITHUB_TOKEN.
+    """
+    parsed = parse_github_pull_url(pr_url)
+    if parsed is None:
+        return None
+    owner, repo, number = parsed
+    base = (os.environ.get("GITHUB_API_BASE") or "https://api.github.com").rstrip("/")
+    url = f"{base}/repos/{owner}/{repo}/pulls/{number}"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "grok-cloud-studio-waiter",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    token = (os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or "").strip()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            raw = resp.read().decode("utf-8")
+        body = json.loads(raw)
+    except (OSError, urllib.error.URLError, TimeoutError, json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    return map_github_mergeable(body)
+
+
+def payload_mergeable(payload: dict[str, Any]) -> str | None:
+    value = payload.get("mergeable")
+    if isinstance(value, str):
+        token = value.strip().upper()
+        if token in _MERGEABLE_TOKENS:
+            return token
+        lowered = token.lower()
+        if lowered in {"true", "1", "yes"}:
+            return "MERGEABLE"
+        if lowered in {"false", "0", "no", "dirty"}:
+            return "CONFLICTING"
+    if value is True:
+        return "MERGEABLE"
+    if value is False:
+        return "CONFLICTING"
+    state = payload.get("mergeableState") or payload.get("mergeable_state")
+    if state is None or state == "":
+        return None
+    mapped = map_github_mergeable(
+        {"mergeable": value, "mergeable_state": state, "mergeableState": state}
+    )
+    return mapped
+
+
+def resolve_mergeable(payload: dict[str, Any]) -> dict[str, Any]:
+    """Honor waiter-supplied mergeable; otherwise look up GitHub when prUrl is a pull."""
+    known = payload_mergeable(payload)
+    if known is not None:
+        payload["mergeable"] = known
+        return payload
+    flag = github_pr_mergeable(payload.get("prUrl"))
+    if flag is not None:
+        payload["mergeable"] = flag
+    return payload
+
+
 def notify_owner(
     bc_id: str,
     payload: dict[str, Any],
@@ -379,7 +477,7 @@ def notify_owner(
     seat_name = seat or (hit[0] if hit else _seat_name())
     if hit is not None and _already_notified_by_waiter(hit[1]):
         return hit[1]
-    payload = resolve_ship_gate(dict(payload))
+    payload = resolve_mergeable(resolve_ship_gate(dict(payload)))
     text = notify_text(bc_id, payload)
     for target in notify_targets(seat_name):
         if not ping_seat(target, text):
@@ -396,6 +494,8 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
     url = payload.get("url") or f"https://cursor.com/agents/{bc_id}"
     ctx = context_snippet(payload)
     extra = f" context={ctx}" if ctx else ""
+    mergeable = payload_mergeable(payload)
+    merge_tag = f" mergeable={mergeable}" if mergeable else ""
     if run_status == "CANCELLED":
         # Latest run aborted. prUrl may still exist from git.branches — not merge-ready.
         return (
@@ -405,6 +505,14 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
             f"follow-up-or-close; do not ignore. RESULT."
         )
     if run_status == "FINISHED":
+        if mergeable == "CONFLICTING":
+            return (
+                f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
+                f"runStatus=FINISHED pr={pr}{merge_tag} url={url}.{extra} "
+                f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
+                f"GitHub PR is CONFLICTING: QA HOLD squash; do not ping QA MERGE_REQUEST; "
+                f"Extra High rebase only. RESULT with bc-id + pr."
+            )
         if should_hold_empty_checks(payload):
             check_runs = payload.get("checkRuns")
             if check_runs is None:
@@ -441,7 +549,7 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
         if pr_is_url and not has_paste_evidence(paste):
             return (
                 f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
-                f"runStatus=FINISHED pr={pr} url={url}.{extra} "
+                f"runStatus=FINISHED pr={pr}{merge_tag} url={url}.{extra} "
                 f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
                 f"HOLD MERGE_REQUEST: empty GitHub leftover-green is not a "
                 f"ship-gate. Paste .venv/bin/pytest -q (N passed, N>=1) and "
@@ -450,16 +558,21 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
             )
         return (
             f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
-            f"runStatus=FINISHED pr={pr} url={url}.{extra} "
+            f"runStatus=FINISHED pr={pr}{merge_tag} url={url}.{extra} "
             f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
             f"If pr is a URL: {MERGE_READY}; "
             f"do not launch a twin. RESULT with bc-id + pr."
         )
+    hold = (
+        " GitHub PR is CONFLICTING: QA HOLD squash; Extra High rebase only."
+        if mergeable == "CONFLICTING"
+        else ""
+    )
     return (
         f"FLEET_DONE: Extra High {bc_id} ({name}) "
-        f"runStatus={run_status} pr={pr} url={url}.{extra} "
+        f"runStatus={run_status} pr={pr}{merge_tag} url={url}.{extra} "
         f"Inspect with scripts/cloud/result-cloud-agent.sh {bc_id}; "
-        f"follow-up or close; do not ignore. RESULT."
+        f"follow-up or close; do not ignore.{hold} RESULT."
     )
 
 
@@ -490,6 +603,9 @@ def complete(
         payload.get("runStatus") or payload.get("status") or ""
     )
     row["pr_url"] = payload.get("prUrl")
+    mergeable = payload_mergeable(payload)
+    if mergeable is not None:
+        row["mergeable"] = mergeable
     snip = context_snippet(payload)
     if snip:
         row["context"] = snip

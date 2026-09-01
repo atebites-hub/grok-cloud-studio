@@ -78,7 +78,7 @@ MERGE_REQUEST / QA squash requires pasted `.venv/bin/pytest -q` (`N passed`) and
 
 | Path | When |
 |---|---|
-| Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`). Empty GitHub checks (`check_runs=0`) are not MERGE_REQUEST-ready. MERGEABLE+empty CI is leftover-green theatre. Latest run `CANCELLED` with `prUrl` pings `INSPECT follow-up-or-close` (not MERGE_REQUEST). |
+| Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`). GitHub CONFLICTING PRs ping `mergeable=CONFLICTING` (QA HOLD squash). Empty GitHub checks (`check_runs=0`) are not MERGE_REQUEST-ready. MERGEABLE+empty CI is leftover-green theatre. Latest run `CANCELLED` with `prUrl` pings `INSPECT follow-up-or-close` (not MERGE_REQUEST). |
 | Webhook | `GCS_WEBHOOK_SECRET` set and `webhook-harness.sh serve` |
 | Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook). Dead `waiter_pid` is evicted on `fleet.jsonl` before notify-once. |
 
