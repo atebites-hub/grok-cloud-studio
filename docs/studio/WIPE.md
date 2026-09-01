@@ -25,14 +25,17 @@ bash scripts/studio/systemd/install-systemd.sh   # optional boot timer -> recove
 
 `setup.sh` / `cleanup.sh` are the deploy/teardown entrypoints.
 `health_check.sh` + `recover.sh` are the **DR loop** once the box is supposed
-to be up: probe live hub `/health`, taskboard `:3010`, mcp-http `:3011`, and
-each `GCS_MIND_SEATS` mind pid; restart only the down pieces via
-`start-studio-bus.sh start` (NO `--daemons`), `start-taskboard.sh start`,
-`mcp-http.sh start`, and `start-tailscale-serve.sh start` when Tailscale is
-on PATH and `PALEMON_TAILSCALE_SERVE` is not `0`. Do not remint sessions.
+to be up: probe live hub `/health`, taskboard `:3010`, mcp-http `:3011`,
+each `GCS_MIND_SEATS` mind pid, and this beat's Manning apply-log
+(`studio-archive/log/YYYY-MM-DD.md`, hive law LIV-71); restart only the
+down pieces via `start-studio-bus.sh start` (NO `--daemons`),
+`start-taskboard.sh start`, `mcp-http.sh start`, and
+`start-tailscale-serve.sh start` when Tailscale is on PATH and
+`PALEMON_TAILSCALE_SERVE` is not `0`. Do not remint sessions.
 Do not wipe state. Do not launch Cursor Cloud. bot-bridge stays off unless
 `GCS_BOT_BRIDGE=1`. Do not `systemctl` leftover Agent Kanban units.
-Tailscale missing is WARN, not FAIL.
+Tailscale missing is WARN, not FAIL. `HEALTH_OK` is illegal without this
+beat's APPLY line. See `docs/studio/HIVE.md`.
 
 Optional boot hook (user systemd, not grok serve):
 `scripts/studio/systemd/install-systemd.sh` renders `gcs-recover.service` +

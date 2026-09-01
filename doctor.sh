@@ -53,6 +53,8 @@ for p in \
   recover.sh \
   scripts/studio/higgsfield_sentry.py \
   scripts/studio/liv84_art_env.py \
+  scripts/studio/apply_log.py \
+  docs/studio/HIVE.md \
   .gitmodules \
   .cursor/mcp.json \
   scripts/studio/taskboard/run-mcp.sh \
