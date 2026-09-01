@@ -96,6 +96,9 @@ Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_resu
 
 ## Tests + secret scan
 
+GitHub ship-gate is `.github/workflows/ship-gate.yml` → `scripts/ci/ship-gate.sh`.
+Empty CI is not evidence.
+
 ```bash
 .venv/bin/pytest -q
 python3 scripts/secret_scan.py
