@@ -27,6 +27,10 @@ def test_github_ci_is_not_empty() -> None:
     assert "actions/checkout" in blob
     low = blob.lower()
     assert "submodule" in low
+    # actions/checkout recursive does not fetch submodule tags; wipe kit
+    # pin test uses `git describe --tags --exact-match` on vendor/taskboard.
+    assert "vendor/taskboard" in blob
+    assert "fetch --tags" in blob
     # A workflow that only echo's success is empty CI.
     assert "run:" in blob
     assert "pytest" in blob
