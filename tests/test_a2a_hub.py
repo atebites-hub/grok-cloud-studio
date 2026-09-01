@@ -73,6 +73,8 @@ def test_registry_example_seats() -> None:
         "systems",
         "qa-a",
         "qa-b",
+        "audio",
+        "narrative",
     ):
         assert seat in names
     assert "orchestrator" not in names

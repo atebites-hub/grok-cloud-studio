@@ -59,6 +59,8 @@ _USAGE_EXHAUSTED_RE = re.compile(
 )
 MIND_FAIL_STDERR_CHARS = 240
 CURSOR_MIND_MODEL = "cursor-grok-4.6-xhigh"
+GROK_MIND_MODEL = "grok-4.6"
+GROK_MIND_REASONING_EFFORT = "xhigh"  # extra-high
 
 
 @dataclass(frozen=True)
@@ -443,10 +445,12 @@ def grok_cli_argv(
     """Pinned-session grok CLI. First turn mints; later turns resume that UUID.
 
     Headless law (never bare `-p`; never grok-agent `--agent-profile` /
-    `--trust` / `--plugin-dir`):
+    `--trust` / `--plugin-dir`). Pin grok-4.6 extra-high (`xhigh` is the CLI
+    extra-high alias). Cursor fallback stays `cursor-grok-4.6-xhigh`.
 
         grok --resume $UUID --prompt-file $mail --verbatim --output-format json \\
-            --always-approve --permission-mode bypassPermissions --max-turns 40
+            --always-approve --permission-mode bypassPermissions --max-turns 40 \\
+            --model grok-4.6 --reasoning-effort xhigh
 
     First turn uses `--session-id $UUID` instead of `--resume`.
     """
@@ -468,6 +472,10 @@ def grok_cli_argv(
             "bypassPermissions",
             "--max-turns",
             "40",
+            "--model",
+            GROK_MIND_MODEL,
+            "--reasoning-effort",
+            GROK_MIND_REASONING_EFFORT,
         ]
     )
     agent_path = yaml_agent_file(agent)

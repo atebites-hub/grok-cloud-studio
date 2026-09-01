@@ -102,6 +102,8 @@ def _argv_log(path: Path) -> list[dict]:
 
 _BANNED_GROK_FLAGS = ("-p", "--single", "--trust", "--agent-profile", "--plugin-dir")
 _LAW_SID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+GROK_MIND_MODEL = "grok-4.6"
+GROK_MIND_REASONING_EFFORT = "xhigh"  # CLI extra-high alias
 
 
 def _law_argv(
@@ -125,6 +127,10 @@ def _law_argv(
         "bypassPermissions",
         "--max-turns",
         "40",
+        "--model",
+        GROK_MIND_MODEL,
+        "--reasoning-effort",
+        GROK_MIND_REASONING_EFFORT,
     ]
 
 
@@ -347,6 +353,13 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "create-chat" in doc
     assert CURSOR_MIND_MODEL in src
     assert CURSOR_MIND_MODEL in doc
+    assert "--model" in src
+    assert GROK_MIND_MODEL in src
+    assert "--reasoning-effort" in src or "--effort" in src
+    assert GROK_MIND_REASONING_EFFORT in src or "extra-high" in src
+    assert GROK_MIND_MODEL in doc
+    assert "--reasoning-effort" in doc or "--effort" in doc
+    assert GROK_MIND_REASONING_EFFORT in doc or "extra-high" in doc
     assert "usage balance exhausted" in doc.lower()
     assert "GCS_MIND_RUNNER" in src
     assert "GCS_MIND_RUNNER" in doc
@@ -407,6 +420,10 @@ def test_fake_grok_mints_then_resumes_same_uuid(
         "bypassPermissions",
         "--max-turns",
         "40",
+        "--model",
+        GROK_MIND_MODEL,
+        "--reasoning-effort",
+        GROK_MIND_REASONING_EFFORT,
     ]
     assert rows[0]["GROK_MEMORY"] == "1"
     assert str(state / "floor" / "grok-home") in rows[0]["GROK_HOME"]
@@ -441,6 +458,10 @@ def test_fake_grok_mints_then_resumes_same_uuid(
         "bypassPermissions",
         "--max-turns",
         "40",
+        "--model",
+        GROK_MIND_MODEL,
+        "--reasoning-effort",
+        GROK_MIND_REASONING_EFFORT,
     ]
     assert "--prompt-file" in argv2
     empty = mind.process_once("floor")
@@ -677,6 +698,19 @@ def test_grok_cli_argv_first_and_later_turns() -> None:
     assert "/home/box" not in joined
     assert "--agent" not in first
     assert "--agent" not in later
+    assert "--model" in first and _flag_value(first, "--model") == GROK_MIND_MODEL
+    assert "--model" in later and _flag_value(later, "--model") == GROK_MIND_MODEL
+    effort_flag = "--reasoning-effort" if "--reasoning-effort" in first else "--effort"
+    assert _flag_value(first, effort_flag) in {GROK_MIND_REASONING_EFFORT, "extra-high", "max"}
+    assert _flag_value(later, effort_flag) in {GROK_MIND_REASONING_EFFORT, "extra-high", "max"}
+    cursor = mind.cursor_cli_argv(
+        chat_id=_CURSOR_CHAT_ID, prompt="keep cursor pin", binary="agent"
+    )
+    assert _flag_value(cursor, "--model") == CURSOR_MIND_MODEL
+    assert "--reasoning-effort" not in cursor
+    assert mind.GROK_MIND_MODEL == GROK_MIND_MODEL
+    assert mind.GROK_MIND_REASONING_EFFORT == GROK_MIND_REASONING_EFFORT
+    assert mind.CURSOR_MIND_MODEL == CURSOR_MIND_MODEL
 
 
 def test_grok_cli_argv_agent_only_for_yaml_frontmatter(tmp_path: Path) -> None:

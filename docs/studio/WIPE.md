@@ -69,7 +69,8 @@ No third Python tool loop. No ACP `session/prompt` GROW. No `deliver_wake`
 overlay.
 
 The grunt is **Cursor Cloud** (not "Extra High" as the noun, not "Cursor Cloud API").
-Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI:
+Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
+`--model grok-4.6 --reasoning-effort xhigh` (extra-high). Cursor fallback:
 `--model cursor-grok-4.6-xhigh` only. The PATH launcher stays
 `scripts/launch-cloud-extra-high.sh`. Full mind law: `docs/studio/MIND.md`.
 
@@ -139,8 +140,9 @@ Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI:
    `scripts/studio/taskboard/run-mcp.sh`). Do not copy `GROK_HOME` MCP.
    Do not put MagicDNS hostnames or private GitHub URLs in that file.
 
-7. Mind seats come from `studio.env` (`GCS_MIND_SEATS` eight first-class
-   names). Start the bus **without** `--daemons`:
+7. Mind seats come from `studio.env` (`GCS_MIND_SEATS` first-class directors
+   plus CCGS leads `audio` and `narrative`; not 49 specialists). Start the bus
+   **without** `--daemons`:
 
    ```bash
    scripts/a2a/start-studio-bus.sh start
@@ -186,7 +188,14 @@ python3 scripts/secret_scan.py
 ## Seats (first-class)
 
 `floor` (8740), `floor-ops` (8753), `studio-ops` (8752), `art` (8746),
-`content` (8742), `systems` (8744), `qa-a` (8748), `qa-b` (8751).
+`content` (8742), `systems` (8744), `qa-a` (8748), `qa-b` (8751),
+`audio` (8754), `narrative` (8755).
 `skipSeats`: `orchestrator`, `donald`. Generic extract still ships `ops` and
 `cloud`. ACP/GROW cap stays crash-safe (`GCS_ACP_SEATS` default
 `floor,studio-ops` unless `studio.env` overlays the Palemon list).
+
+CCGS lead map (aliases in `scripts/a2a/lib.py`): producer=`floor-ops`,
+creative=`floor`, technical=`systems`, game-designer=`content`,
+lead-programmer=`systems` until split, art-director=`art`, qa-lead=`qa-a`,
+release-manager=`studio-ops`. Directors and leads spawn specialists only via
+`scripts/launch-cloud-extra-high.sh`. Do not add 49 specialists.

@@ -180,47 +180,9 @@ _write_seat_taskboard_mcp_config() {
   # Merge stdio MCP into GROK_HOME/config.toml. Equivalent to:
   #   GROK_HOME=$gh grok mcp add taskboard -- "$bin" --db "$db" mcp
   # Cursor workspace MCP JSON is not the serve config and is not inherited.
+  # Idempotent: never append a second [compat.cursor] / [mcp_servers.taskboard].
   local dest="$1" command="$2" db="$3"
-  python3 - "$dest" "$command" "$db" <<'PY'
-import json
-import pathlib
-import re
-import sys
-
-dest = pathlib.Path(sys.argv[1])
-command, db = sys.argv[2], sys.argv[3]
-start = "# gcs-seat-taskboard-mcp"
-end = "# gcs-seat-taskboard-mcp-end"
-
-
-def q(s: str) -> str:
-    return json.dumps(s)
-
-
-block = (
-    f"{start}\n"
-    "[compat.cursor]\n"
-    "mcps = false\n"
-    "\n"
-    "[mcp_servers.taskboard]\n"
-    f"command = {q(command)}\n"
-    f"args = [{q('--db')}, {q(db)}, {q('mcp')}]\n"
-    f"{end}\n"
-)
-text = dest.read_text(encoding="utf-8") if dest.is_file() else ""
-text = re.sub(
-    re.escape(start) + r"\n.*?" + re.escape(end) + r"\n?",
-    "",
-    text,
-    flags=re.S,
-)
-text = text.rstrip()
-if text:
-    text += "\n\n"
-text += block
-dest.parent.mkdir(parents=True, exist_ok=True)
-dest.write_text(text, encoding="utf-8")
-PY
+  python3 "$ROOT/scripts/directors/seat_grok_mcp.py" "$dest" "$command" "$db"
 }
 
 install_seat_grok_mcp() {

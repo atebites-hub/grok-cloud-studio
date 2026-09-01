@@ -72,6 +72,18 @@
       "endpoint": "http://127.0.0.1:8732/a2a/qa-b",
       "wellKnown": "http://127.0.0.1:8732/a2a/qa-b/.well-known/agent-card.json",
       "acpPort": 8751
+    },
+    "audio": {
+      "card": "docs/a2a/cards/audio.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/audio",
+      "wellKnown": "http://127.0.0.1:8732/a2a/audio/.well-known/agent-card.json",
+      "acpPort": 8754
+    },
+    "narrative": {
+      "card": "docs/a2a/cards/narrative.json",
+      "endpoint": "http://127.0.0.1:8732/a2a/narrative",
+      "wellKnown": "http://127.0.0.1:8732/a2a/narrative/.well-known/agent-card.json",
+      "acpPort": 8755
     }
   }
 }

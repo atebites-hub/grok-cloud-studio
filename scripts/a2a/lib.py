@@ -27,6 +27,19 @@ _SEAT_PROMPT_ALIASES = {
     "ops": "studio-ops",
 }
 
+# CCGS lead titles fold onto first-class GCS seats. Audio and narrative are
+# first-class (not aliases). Do not map the 49-specialist roster.
+CCGS_LEAD_ALIASES = {
+    "producer": "floor-ops",
+    "creative": "floor",
+    "technical": "systems",
+    "game-designer": "content",
+    "lead-programmer": "systems",
+    "art-director": "art",
+    "qa-lead": "qa-a",
+    "release-manager": "studio-ops",
+}
+
 
 def env_first(*names: str, default: str = "") -> str:
     for name in names:
@@ -89,6 +102,7 @@ def canonical_seat(seat: str, root: Path | None = None) -> str:
         "ops": "studio-ops",
         "floor-ops": "floor",
         "floor": "floor-ops",
+        **CCGS_LEAD_ALIASES,
     }
     alt = aliases.get(key)
     if alt and alt in entries:
@@ -116,8 +130,9 @@ def grow_seats(root: Path | None = None) -> frozenset[str]:
 def mind_seats(root: Path | None = None) -> frozenset[str]:
     """Opt-in Grok Build mind seats (GCS_MIND_SEATS, default empty).
 
-    Example: GCS_MIND_SEATS=floor,ops. Palemon-floor wipe uses the eight
-    first-class seats in studio.env.example. skipSeats (orchestrator, donald)
+    Example: GCS_MIND_SEATS=floor,ops. Palemon-floor wipe uses the
+    first-class seats in studio.env.example (directors, CCGS leads including
+    audio and narrative; not 49 specialists). skipSeats (orchestrator, donald)
     never join this set. Names missing from the registry are ignored.
     """
     raw = env_first("GCS_MIND_SEATS")
