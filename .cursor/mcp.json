@@ -5,6 +5,14 @@
       "args": [
         "${workspaceFolder}/scripts/studio/taskboard/run-mcp.sh"
       ]
+    },
+    "gcs-cursor-cloud": {
+      "command": "python3",
+      "args": [
+        "${workspaceFolder}/scripts/mcp/gcs_mcp.py",
+        "--plane",
+        "cloud"
+      ]
     }
   }
 }

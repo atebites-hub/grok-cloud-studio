@@ -20,7 +20,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK` |
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
-| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
+| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus` |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
@@ -35,7 +35,7 @@ Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|res
 
 Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 
-- `model.id = grok-4.6`
+- `model.id = grok-4.6` (pinned; Extra High create does not take the Cursor CLI mind model id)
 - `model.params`: `effort=xhigh`, `fast=false`
 - `repos[0].url` from **`GCS_CLOUD_REPO` or `CLOUD_REPO_URL`** (required; fail closed)
 - `repos[0].startingRef` from `GCS_CLOUD_REF` / `CLOUD_REPO_REF` / `CURSOR_CLOUD_REF` (default `main`)
@@ -111,6 +111,17 @@ scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check
 In-flight: `CREATING` · `RUNNING`
 
 `watch.sh` / `watch-cloud-agent.sh` poll the agent's latest run. `FINISHED` exits 0; the other three terminals exit non-zero.
+
+## List rows: agent status vs run status
+
+Cloud agents are durable membership. `GET /v1/agents` `status` stays `ACTIVE` until archive, even after the latest run is terminal. Directors who only look at `ACTIVE` treat leftover FINISHED grunts as spinning workers (stale membership).
+
+`list.sh` / `list-cloud-agents.sh` print both on each row:
+
+- `status=` agent lifecycle (`ACTIVE` leftover vs `ARCHIVED`)
+- `runStatus=` latest run (`RUNNING` vs `FINISHED`, also `CREATING` / `ERROR` / `CANCELLED` / `EXPIRED` / `none`)
+
+REST resolves `latestRunId` via `GET /v1/agents/{id}/runs/{runId}`. SDK uses `Agent.listRuns`. A missing or failed run fetch prints `runStatus=none`.
 
 Poll interval: `CLOUD_WATCH_INTERVAL` (short-name default 10s). Optional deadline: `CLOUD_WATCH_TIMEOUT_SEC` (0 = none on `watch.sh`). Long-name `watch-cloud-agent.sh` defaults timeout 1800s / poll 30s when those env vars are unset.
 

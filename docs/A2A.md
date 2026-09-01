@@ -78,6 +78,7 @@ Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh d
 
 Role map onto first-class GCS seats. Do not mint 49 specialist seats.
 Directors and leads spawn specialists only via `scripts/launch-cloud-extra-high.sh`.
+List Extra High with `scripts/cloud/list-cloud-agents.sh`: agent `status=ACTIVE` is leftover membership; live work is `runStatus=RUNNING` (FINISHED leftovers are not spinning workers).
 
 | CCGS lead | GCS seat |
 |---|---|

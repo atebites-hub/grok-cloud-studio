@@ -209,6 +209,33 @@ def test_directors_and_leads_spawn_specialists_via_cloud_launcher() -> None:
         assert PRIVATE_GAME not in prompt
 
 
+HIVE_ROLE_SOULS = {
+    "floor-ops": ("producer",),
+    "floor": ("creative",),
+    "systems": ("technical", "lead-programmer"),
+    "content": ("game-designer",),
+    "art": ("art-director",),
+    "qa-a": ("qa-lead",),
+    "studio-ops": ("release-manager",),
+}
+
+
+def test_hive_souls_carry_ccgs_lead_roles() -> None:
+    """CCGS director/lead titles live on hive souls. Specialists stay Extra High."""
+    for seat, roles in HIVE_ROLE_SOULS.items():
+        soul = (SOULS / seat / "SOUL.md").read_text(encoding="utf-8")
+        prompt_path = _director_prompt(seat)
+        assert prompt_path is not None, seat
+        blob = (soul + "\n" + prompt_path.read_text(encoding="utf-8")).lower()
+        for role in roles:
+            assert role in blob, (seat, role)
+        assert LAUNCH in soul, seat
+        assert "runstatus" in blob or "running" in blob
+        assert "leftover" in blob or "active" in blob
+        assert PRIVATE_GAME not in soul
+        assert "49" not in soul
+
+
 def test_ccgs_map_is_documented() -> None:
     blob = "\n".join(
         p.read_text(encoding="utf-8") for p in (A2A_DOC, WIPE, MIND_DOC, STUDIO_ENV)

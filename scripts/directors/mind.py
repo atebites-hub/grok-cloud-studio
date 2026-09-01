@@ -40,7 +40,7 @@ from typing import Any, Callable
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
-from lib import canonical_seat, skip_seats  # noqa: E402
+from lib import canonical_seat, launch_seats, skip_seats  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
@@ -364,8 +364,20 @@ def plugin_a2a_send(arguments: dict[str, Any]) -> str:
     return _run_cmd(cmd, timeout=60)
 
 
+def plugin_a2a_list_seats(arguments: dict[str, Any]) -> str:
+    """List A2A seats from docs/a2a/registry.json (canonical ids)."""
+    del arguments
+    seats = list(launch_seats(ROOT))
+    skipped = sorted(skip_seats(ROOT))
+    return json.dumps({"seats": seats, "skipSeats": skipped}, indent=2)
+
+
 def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
-    """scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT."""
+    """Cursor Cloud grunt: scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT.
+
+    Model grok-4.6, effort xhigh, fast=false. Directors stay Grok Build minds.
+    Specialists are Cursor Cloud Extra High. Never Grok Bot as the grunt.
+    """
     script = ROOT / "scripts" / "launch-cloud-extra-high.sh"
     if not script.is_file():
         return "PLUGIN_ERR cloud_launch: missing scripts/launch-cloud-extra-high.sh"
@@ -378,6 +390,49 @@ def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
         cmd.extend(["--name", name])
     cmd.append(prompt)
     return _run_cmd(cmd, timeout=180)
+
+
+def plugin_cloud_list(arguments: dict[str, Any]) -> str:
+    """scripts/cloud/list-cloud-agents.sh [limit]. Rows print runStatus, not only leftover ACTIVE."""
+    script = ROOT / "scripts" / "cloud" / "list-cloud-agents.sh"
+    if not script.is_file():
+        return "PLUGIN_ERR cloud_list: missing scripts/cloud/list-cloud-agents.sh"
+    limit = str(arguments.get("limit") or "20").strip() or "20"
+    return _run_cmd(["bash", str(script), limit], timeout=60)
+
+
+def plugin_cloud_status(arguments: dict[str, Any]) -> str:
+    """scripts/cloud/status-cloud-agent.sh <bc-id>."""
+    script = ROOT / "scripts" / "cloud" / "status-cloud-agent.sh"
+    if not script.is_file():
+        return "PLUGIN_ERR cloud_status: missing scripts/cloud/status-cloud-agent.sh"
+    agent_id = str(arguments.get("id") or arguments.get("agent_id") or "").strip()
+    if not agent_id:
+        return "PLUGIN_ERR cloud_status: id is required"
+    return _run_cmd(["bash", str(script), agent_id], timeout=60)
+
+
+def plugin_cloud_followup(arguments: dict[str, Any]) -> str:
+    """scripts/cloud/followup-cloud-agent.sh <bc-id> PROMPT."""
+    script = ROOT / "scripts" / "cloud" / "followup-cloud-agent.sh"
+    if not script.is_file():
+        return "PLUGIN_ERR cloud_followup: missing scripts/cloud/followup-cloud-agent.sh"
+    agent_id = str(arguments.get("id") or arguments.get("agent_id") or "").strip()
+    prompt = str(arguments.get("prompt") or "").strip()
+    if not agent_id or not prompt:
+        return "PLUGIN_ERR cloud_followup: id and prompt are required"
+    return _run_cmd(["bash", str(script), agent_id, prompt], timeout=180)
+
+
+def plugin_cloud_result(arguments: dict[str, Any]) -> str:
+    """scripts/cloud/result-cloud-agent.sh <bc-id>."""
+    script = ROOT / "scripts" / "cloud" / "result-cloud-agent.sh"
+    if not script.is_file():
+        return "PLUGIN_ERR cloud_result: missing scripts/cloud/result-cloud-agent.sh"
+    agent_id = str(arguments.get("id") or arguments.get("agent_id") or "").strip()
+    if not agent_id:
+        return "PLUGIN_ERR cloud_result: id is required"
+    return _run_cmd(["bash", str(script), agent_id], timeout=60)
 
 
 TICKET_SCHEMA: dict[str, Any] = {
@@ -407,20 +462,61 @@ A2A_SEND_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+A2A_LIST_SEATS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": False,
+}
+
 CLOUD_LAUNCH_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "prompt": {"type": "string"},
-        "name": {"type": "string", "description": "Short Extra High agent name"},
+        "name": {
+            "type": "string",
+            "description": "Short Cursor Cloud agent name (grok-4.6 xhigh, fast=false)",
+        },
     },
     "required": ["prompt"],
+    "additionalProperties": False,
+}
+
+CLOUD_LIST_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "limit": {"type": "string", "description": "Max agents (default 20)"},
+    },
+    "additionalProperties": False,
+}
+
+CLOUD_ID_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string", "description": "Cursor Cloud agent bc-id"},
+    },
+    "required": ["id"],
+    "additionalProperties": False,
+}
+
+CLOUD_FOLLOWUP_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string", "description": "Cursor Cloud agent bc-id"},
+        "prompt": {"type": "string", "description": "Follow-up prompt"},
+    },
+    "required": ["id", "prompt"],
     "additionalProperties": False,
 }
 
 PLUGINS: dict[str, Plugin] = {
     "ticket": Plugin(schema=TICKET_SCHEMA, call=plugin_ticket),
     "a2a_send": Plugin(schema=A2A_SEND_SCHEMA, call=plugin_a2a_send),
+    "a2a_list_seats": Plugin(schema=A2A_LIST_SEATS_SCHEMA, call=plugin_a2a_list_seats),
     "cloud_launch": Plugin(schema=CLOUD_LAUNCH_SCHEMA, call=plugin_cloud_launch),
+    "cloud_list": Plugin(schema=CLOUD_LIST_SCHEMA, call=plugin_cloud_list),
+    "cloud_status": Plugin(schema=CLOUD_ID_SCHEMA, call=plugin_cloud_status),
+    "cloud_followup": Plugin(schema=CLOUD_FOLLOWUP_SCHEMA, call=plugin_cloud_followup),
+    "cloud_result": Plugin(schema=CLOUD_ID_SCHEMA, call=plugin_cloud_result),
 }
 
 

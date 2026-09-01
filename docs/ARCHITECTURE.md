@@ -12,6 +12,7 @@ Grok Cloud Studio is a **local control plane**:
    art-director=`art`, qa-lead=`qa-a`, release-manager=`studio-ops`,
    plus first-class `audio` and `narrative`. Do not add 49 specialists.
    Spawn specialists only via `scripts/launch-cloud-extra-high.sh`.
+   List Extra High by `runStatus=RUNNING`, not leftover agent `status=ACTIVE`.
 2. **Extra High grunts** are Cursor Cloud agents (`grok-4.6`, `effort=xhigh`) that open PRs against `GCS_CLOUD_REPO` / `CLOUD_REPO_URL`.
 3. **A2A** is seat-to-seat. **MCP** is agent-to-tool.
 

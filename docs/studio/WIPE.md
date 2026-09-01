@@ -198,4 +198,5 @@ CCGS lead map (aliases in `scripts/a2a/lib.py`): producer=`floor-ops`,
 creative=`floor`, technical=`systems`, game-designer=`content`,
 lead-programmer=`systems` until split, art-director=`art`, qa-lead=`qa-a`,
 release-manager=`studio-ops`. Directors and leads spawn specialists only via
-`scripts/launch-cloud-extra-high.sh`. Do not add 49 specialists.
+`scripts/launch-cloud-extra-high.sh`. Judge live Extra High by `runStatus=RUNNING`,
+not leftover agent `status=ACTIVE`. Do not add 49 specialists.

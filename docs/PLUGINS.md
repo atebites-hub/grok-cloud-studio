@@ -18,9 +18,15 @@ python3 plugins/a2a/server.py
 
 | Tool | Action |
 |---|---|
-| `cloud_launch` | `scripts/launch-cloud-extra-high.sh` |
+| `cloud_launch` | `scripts/launch-cloud-extra-high.sh` (grok-4.6, xhigh, `fast=false`) |
+| `cloud_list` | `scripts/cloud/list-cloud-agents.sh` (prints leftover `status=ACTIVE` and latest-run `runStatus=RUNNING` vs `FINISHED`) |
 | `cloud_status` | `scripts/cloud/status-cloud-agent.sh` |
+| `cloud_followup` | `scripts/cloud/followup-cloud-agent.sh` |
 | `cloud_result` | `scripts/cloud/result-cloud-agent.sh` |
+
+Do not expose `cloud_watch` as an MCP tool (Directors must not block a turn). Watch stays `scripts/cloud/watch-cloud-agent.sh` / the waiter.
+
+Cursor CLI catalog: checkout `.cursor/mcp.json` (`gcs-cursor-cloud` → `scripts/mcp/gcs_mcp.py --plane cloud`). Not a copy of seat `GROK_HOME` MCP.
 
 ```bash
 grok plugin install ./plugins/cursor-cloud --trust

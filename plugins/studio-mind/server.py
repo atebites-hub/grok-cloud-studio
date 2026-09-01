@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Studio-mind MCP: ticket, a2a_send, cloud_launch.
+"""Studio-mind MCP: ticket, a2a_send, a2a_list_seats, cloud_launch, cloud_list, cloud_status, cloud_followup, cloud_result.
 
 Grok is the agent. This process only exposes tools. Python mind.py does not
 parse grok stdout for function calls. Installed into seat GROK_HOME with
@@ -45,7 +45,7 @@ def handle(msg: dict[str, Any]) -> dict[str, Any] | None:
             "result": {
                 "protocolVersion": PROTOCOL,
                 "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": "studio-mind", "version": "1.0.0"},
+                "serverInfo": {"name": "studio-mind", "version": "1.1.0"},
             },
         }
     if method == "notifications/initialized" or method == "initialized":
