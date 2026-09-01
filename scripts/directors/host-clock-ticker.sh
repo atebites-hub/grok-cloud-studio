@@ -2,7 +2,7 @@
 # Host clock: enqueue ACP_PING STATUS/CONTINUE onto a seat inbox.
 # Inbox growth is woken by seat-wake-loop.sh → local ACP session/prompt.
 # This script does not ACP-inject and does not emit a LAUNCH kind.
-# Keep-alive is a work turn (not RESULT-only). Tools are allowed.
+# Keep-alive is a work turn (not RESULT-only / PONG). Tools are allowed.
 #
 # Usage:
 #   host-clock-ticker.sh enqueue_continue <seat>
@@ -47,7 +47,7 @@ text = (
     f"ACP_PING STATUS/CONTINUE seat={seat} token={token}. "
     "Keep-alive turn: do work, do not idle. Quote token in STATUS. "
     "Tools are allowed (taskboard ticket move, send.sh, "
-    "scripts/launch-cloud-extra-high.sh). RESULT-only is a bug."
+    "scripts/launch-cloud-extra-high.sh). RESULT-only / PONG is a bug."
 )
 rec = {
     "kind": "message",

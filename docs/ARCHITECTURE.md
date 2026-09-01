@@ -24,7 +24,7 @@ send.sh → hub.py (enqueue SUBMITTED + inbox JSONL; ACK is a receipt, not mind-
         dispatch.py     → leftover acp_inject.py            (non-GROW only)
                         → launch-director.sh  (one-shot -p fallback)
 
-host-ticker.py → ACP_PING STATUS/CONTINUE inbox lines (work turns, tools allowed)
+host-ticker.py → ACP_PING STATUS/CONTINUE inbox lines (work turns, tools allowed; not PONG; not a LAUNCH kind)
 
 launch-cloud-extra-high.sh → @cursor/sdk Agent.create
                            → spawn-waiter.sh → wait-notify.ts (GET latest runStatus)

@@ -247,7 +247,8 @@ def test_fat_ticker_does_not_start_bot_bridge_or_clone_liv85() -> None:
         assert "Bot CloudAgent" not in blob or "never" in blob.lower()
     assert "not a LAUNCH kind" in ticker_src or "not a LAUNCH" in ticker_src
     ticker_fn = bus_src.split("start_host_ticker() {", 1)[1].split("stop_host_ticker()", 1)[0]
-    assert "host-ticker.py" in ticker_fn
+    assert "TICKER_PY" in ticker_fn
+    assert "host-ticker.py" in bus_src
     assert "bot-bridge" not in ticker_fn
     assert "BOT_BRIDGE" not in ticker_fn
     hub_src = HUB_PY.read_text(encoding="utf-8")
