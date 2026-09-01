@@ -48,3 +48,19 @@ RUNNING. Pick a new Extra High name.
 Palemon Linear is **Living Sky** (`LIV`), never Black Swan.
 
 Helper: `scripts/cloud/directors_spawn.py` (`cloud_mind_spawn_if_required`).
+
+## Running counts (LIV-41 / LIV-67)
+
+```bash
+scripts/cloud/count-running.sh
+scripts/cloud/count-running.sh --repo org/name
+scripts/cloud/count-running.sh --repo https://github.com/ORG/REPO
+```
+
+Prints `CLOUD_RUNNING repo=org/name running=N` using latest-run
+**`runStatus=RUNNING`** per bound git remote. Leftover agent `status=ACTIVE`
+is membership, not capacity. `CREATING` is not `RUNNING`.
+
+This is the per-repo RUNNING counter. It does not remint `list.sh --repo`
+(GCS #50) or list `runStatus` rows (GCS #29). Palemon Linear is Living Sky
+(`LIV`), not Black Swan. Never Bot CloudAgent.

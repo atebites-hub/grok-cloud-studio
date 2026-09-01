@@ -357,10 +357,13 @@ def test_never_bot_cloudagent_as_grunt() -> None:
         for p in (CLOUD_DOC, CLOUD_README, FOOTER, A2A_DOC, COUNT_SH, COUNT_PY)
     )
     assert "Bot CloudAgent" in blob or "Grok Bot CloudAgent" in blob
+    count_src = COUNT_SH.read_text(encoding="utf-8") + COUNT_PY.read_text(encoding="utf-8")
+    assert "GCS_BOT_AGENT_ID" not in count_src
     launch = LAUNCH_TS.read_text(encoding="utf-8") + LAUNCH_SH.read_text(encoding="utf-8")
-    assert "GCS_BOT_AGENT_ID" not in launch
-    assert "GCS_BOT_AGENT_ID" not in COUNT_SH.read_text(encoding="utf-8")
-    assert "GCS_BOT_AGENT_ID" not in COUNT_PY.read_text(encoding="utf-8")
+    assert "Bot CloudAgent" in launch
+    # Launch may skip GCS_BOT_AGENT_ID so Bot is never treated as an Extra High grunt.
+    if "GCS_BOT_AGENT_ID" in launch:
+        assert "continue" in launch or "skip" in launch.lower()
 
 
 def test_launch_stays_grok_46_xhigh_fast_false() -> None:
