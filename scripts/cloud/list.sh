@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # List Cursor Cloud agents (newest first). SDK-first; REST fallback.
 # Usage: list.sh [--limit N]   or   list.sh [N]
-# Never prints API keys.
+# Each row prints agent status and latest-run runStatus. Never prints API keys.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -55,17 +55,60 @@ if ! cloud_http_is_2xx; then
   exit 1
 fi
 
+# Agent.status stays ACTIVE after the latest run is terminal (stale membership).
+# Fetch each latest run so rows show runStatus (RUNNING vs FINISHED), not only ACTIVE.
 python3 -c '
-import json, sys
+import base64
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+def unwrap(data, key):
+    if isinstance(data, dict) and key in data and "id" not in data:
+        inner = data[key]
+        if isinstance(inner, dict):
+            return inner
+    return data
+
+def fetch_run_status(base, key, agent_id, run_id, timeout):
+    url = f"{base}/v1/agents/{agent_id}/runs/{run_id}"
+    token = base64.b64encode(f"{key}:".encode("utf-8")).decode("ascii")
+    req = urllib.request.Request(
+        url,
+        headers={"Accept": "application/json", "Authorization": f"Basic {token}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, ValueError):
+        return "none"
+    if not isinstance(payload, dict):
+        return "none"
+    run = unwrap(payload, "run")
+    if not isinstance(run, dict):
+        return "none"
+    status = str(run.get("status") or "").strip()
+    return status.upper() if status else "none"
+
+base = (os.environ.get("CURSOR_API_BASE") or "https://api.cursor.com").rstrip("/")
+key = os.environ.get("CURSOR_API_KEY") or ""
+timeout = float(os.environ.get("CLOUD_CURL_MAX_TIME") or "120")
 with open(sys.argv[1], encoding="utf-8") as fh:
     data = json.load(fh)
 items = data.get("items") or []
 for item in items:
-    print("\t".join([
-        str(item.get("id") or ""),
-        str(item.get("status") or ""),
-        str(item.get("name") or ""),
-        str(item.get("url") or ""),
-        str(item.get("latestRunId") or ""),
-    ]))
+    agent_id = str(item.get("id") or "")
+    agent_status = str(item.get("status") or "")
+    name = str(item.get("name") or "")
+    url = str(item.get("url") or "")
+    run_id = str(item.get("latestRunId") or "")
+    run_status = "none"
+    if agent_id and run_id:
+        run_status = fetch_run_status(base, key, agent_id, run_id, timeout)
+    print(
+        f"id={agent_id} status={agent_status} runStatus={run_status} "
+        f"name={name} url={url} latestRunId={run_id}"
+    )
 ' "$CLOUD_HTTP_BODY"
