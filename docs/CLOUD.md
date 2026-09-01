@@ -5,7 +5,7 @@ See also `scripts/cloud/README.md`.
 ## Required env
 
 ```bash
-export CURSOR_API_KEY=...          # or ~/.config/cursor/agent.env
+export CURSOR_API_KEY=...          # or ~/.config/cursor/agent.env (never printed)
 export GCS_CLOUD_REPO=https://github.com/ORG/REPO
 export GCS_CLOUD_REF=main          # optional
 ```
@@ -46,6 +46,8 @@ Launch `--name` **REFUSE**s when a live `runStatus=RUNNING` Extra High already h
 Palemon Linear is Living Sky (`LIV`).
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
+
+Auth (`scripts/cloud/_common.sh` / `auth.sh`) never prints `CURSOR_API_KEY`, including under `bash -x` and when an `agent.env` dump hits a curl/SDK error stream. `cloud_redact_stream` redacts assignment lines (`export CURSOR_API_KEY=…`). Do not launch Bot CloudAgent from this path.
 
 MCP `cloud_list` (`plugins/cursor-cloud`, `scripts/cloud/list_helper.py`) prints latest-run `runStatus` (`RUNNING` vs `FINISHED`) next to agent `status`. Cursor Cloud agents stay `ACTIVE` until archive, so leftover `ACTIVE`+`FINISHED` rows are not live workers. This is independent of bash `list.sh`.
 
