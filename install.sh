@@ -42,6 +42,7 @@ chmod +x \
   "$ROOT/health_check.sh" \
   "$ROOT/recover.sh" \
   "$ROOT"/scripts/*.sh \
+  "$ROOT"/scripts/ci/*.sh \
   "$ROOT"/scripts/a2a/*.sh \
   "$ROOT"/scripts/cloud/*.sh \
   "$ROOT"/scripts/cloud/sdk/*.sh \
