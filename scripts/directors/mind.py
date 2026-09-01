@@ -459,7 +459,8 @@ TICKET_SCHEMA: dict[str, Any] = {
             "items": {"type": "string"},
             "description": (
                 "Arguments after `ticket`, e.g. [\"list\"] or "
-                "[\"move\", \"T-1\", \"--status\", \"done\"]."
+                "[\"move\", \"01ARZ3NDEKTSV4RRFFQ69G5FAV\", \"--status\", "
+                "\"done\"] (tcarac Crockford ULID, not a display key)."
             ),
         }
     },

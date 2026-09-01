@@ -1,29 +1,32 @@
 #!/usr/bin/env bash
-# Install tcarac/taskboard v0.6.0. Source pin: vendor/taskboard submodule.
-# Prefer a prebuilt already in that checkout; else brew tap; else GitHub tarball.
-# Do not compile. Do not vendor the binary into git. Agent Kanban stays gone.
+# Install tcarac/taskboard from scripts/studio/taskboard/PIN (v0.6.0 on main).
+# Source pin: vendor/taskboard submodule. Prefer a prebuilt already in that
+# checkout; else brew tap; else GitHub tarball. Do not compile. Do not vendor
+# the binary into git. Agent Kanban stays gone. studio-ops bumps PIN via
+# upgrade-taskboard.sh — do not snowflake a second version string.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=common.sh
 source "$SCRIPT_DIR/common.sh"
 
-VERSION="${TASKBOARD_VERSION:-v0.6.0}"
+VERSION="${TASKBOARD_VERSION:-$(gcs_taskboard_pin)}"
 DEST_DIR="${TASKBOARD_INSTALL_DIR:-$HOME/.local/bin}"
 ROOT_BIN="$GCS_KIT_ROOT/bin"
 REPO_SLUG="tcarac/taskboard"
 ASSET_BASE="https://github.com/${REPO_SLUG}/releases/download/${VERSION}"
 
 usage() {
-  cat <<'EOF'
+  cat <<EOF
 Usage: install-taskboard.sh
 
-Installs tcarac/taskboard v0.6.0 onto PATH:
+Installs tcarac/taskboard ${VERSION} onto PATH (PIN $(gcs_taskboard_pin_file)):
   0. Prefer a prebuilt already in vendor/taskboard (source pin; usually none)
   1. brew tap tcarac/taskboard && brew install taskboard
   2. else GitHub release tarball (linux/darwin amd64/arm64)
 
 Does not compile from source. Does not vendor a compiled binary blob.
+Bump the pin with upgrade-taskboard.sh --apply vX.Y.Z (studio-ops).
 See scripts/studio/taskboard/README.md and docs/studio/WIPE.md.
 EOF
 }

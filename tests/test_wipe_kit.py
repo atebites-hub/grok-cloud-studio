@@ -320,8 +320,10 @@ def test_wipe_doc_has_host_bootstrap_steps() -> None:
 
 def test_install_taskboard_uses_brew_or_release_tarball_not_compile() -> None:
     text = INSTALL_TB.read_text(encoding="utf-8")
+    pin = (TASKBOARD_DIR / "PIN").read_text(encoding="utf-8")
+    assert PINNED_TASKBOARD_TAG in pin
     assert "tcarac/taskboard" in text
-    assert "v0.6.0" in text
+    assert "gcs_taskboard_pin" in text
     assert "brew tap tcarac/taskboard" in text
     assert "releases/download" in text
     assert "compile" in text.lower()

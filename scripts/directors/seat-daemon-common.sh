@@ -135,18 +135,44 @@ _write_taskboard_wrapper() {
   mkdir -p "$(dirname "$dest")"
   bin_q="$(printf '%q' "$bin")"
   db_q="$(printf '%q' "$db")"
-  case "$kind" in
-    taskboard)
-      cat >"$dest" <<EOF
+  {
+    cat <<'EOF'
 #!/bin/bash
 # gcs-seat-taskboard-wrapper
 set -euo pipefail
+gcs_taskboard_id_is_ulid() {
+  local id="${1:-}"
+  id="${id^^}"
+  [[ "$id" =~ ^[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{26}$ ]]
+}
+gcs_taskboard_require_move_ulid() {
+  local id="${1:-}"
+  if ! gcs_taskboard_id_is_ulid "$id"; then
+    echo "GCS_TASKBOARD_FAIL ticket move requires a 26-char Crockford ULID (tcarac primary key), not T-1/PAL-1/display-key: ${id:-empty}" >&2
+    exit 2
+  fi
+}
+gcs_taskboard_scan_move_ulid() {
+  local prev="" arg
+  for arg in "$@"; do
+    if [[ "$prev" == "move" ]]; then
+      gcs_taskboard_require_move_ulid "$arg"
+      return 0
+    fi
+    prev="$arg"
+  done
+}
+EOF
+    case "$kind" in
+      taskboard)
+        cat <<EOF
 BIN=\${TASKBOARD_BIN:-$bin_q}
 DB=\${GCS_TASKBOARD_DB:-\${TASKBOARD_DB:-$db_q}}
 if [[ ! -x "\$BIN" ]]; then
   echo "GCS_TASKBOARD_FAIL missing binary (set TASKBOARD_BIN)" >&2
   exit 127
 fi
+gcs_taskboard_scan_move_ulid "\$@"
 has_db=0
 for arg in "\$@"; do
   if [[ "\$arg" == "--db" ]]; then
@@ -159,26 +185,25 @@ if [[ "\$has_db" == "1" ]]; then
 fi
 exec "\$BIN" --db "\$DB" "\$@"
 EOF
-      ;;
-    ticket|tb)
-      cat >"$dest" <<EOF
-#!/bin/bash
-# gcs-seat-taskboard-wrapper
-set -euo pipefail
+        ;;
+      ticket|tb)
+        cat <<EOF
 BIN=\${TASKBOARD_BIN:-$bin_q}
 DB=\${GCS_TASKBOARD_DB:-\${TASKBOARD_DB:-$db_q}}
 if [[ ! -x "\$BIN" ]]; then
   echo "GCS_TASKBOARD_FAIL missing binary (set TASKBOARD_BIN)" >&2
   exit 127
 fi
+gcs_taskboard_scan_move_ulid "\$@"
 exec "\$BIN" --db "\$DB" ticket "\$@"
 EOF
-      ;;
-    *)
-      echo "install_seat_taskboard_cli: unknown wrapper kind=$kind" >&2
-      return 1
-      ;;
-  esac
+        ;;
+      *)
+        echo "install_seat_taskboard_cli: unknown wrapper kind=$kind" >&2
+        return 1
+        ;;
+    esac
+  } >"$dest"
   chmod +x "$dest"
 }
 

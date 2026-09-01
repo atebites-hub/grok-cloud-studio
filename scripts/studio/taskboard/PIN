@@ -1,0 +1,5 @@
+# tcarac/taskboard release tag (not floating main).
+# studio-ops bumps this with scripts/studio/taskboard/upgrade-taskboard.sh --apply vX.Y.Z
+# then reinstalls the host binary (brew/tarball). Do not compile. Do not vendor a blob.
+# Do not reconnect Agent Kanban. Dashboard under scripts/studio/dashboard/ stays LEGACY.
+v0.6.0

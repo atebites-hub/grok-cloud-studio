@@ -43,6 +43,35 @@ gcs_taskboard_db() {
   printf '%s\n' "$(gcs_studio_state_dir)/taskboard/taskboard.db"
 }
 
+gcs_taskboard_pin_file() {
+  printf '%s\n' "$GCS_KIT_ROOT/scripts/studio/taskboard/PIN"
+}
+
+gcs_taskboard_pin() {
+  local pinf line
+  pinf="$(gcs_taskboard_pin_file)"
+  if [[ ! -f "$pinf" ]]; then
+    echo "error: missing taskboard PIN file: $pinf" >&2
+    return 1
+  fi
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%%#*}"
+    line="$(printf '%s' "$line" | tr -d '[:space:]')"
+    if [[ -n "$line" ]]; then
+      printf '%s\n' "$line"
+      return 0
+    fi
+  done < "$pinf"
+  echo "error: empty taskboard PIN file: $pinf" >&2
+  return 1
+}
+
+gcs_taskboard_id_is_ulid() {
+  local id="${1:-}"
+  id="$(printf '%s' "$id" | tr '[:lower:]' '[:upper:]')"
+  [[ "$id" =~ ^[0123456789ABCDEFGHJKMNPQRSTVWXYZ]{26}$ ]]
+}
+
 gcs_taskboard_vendor_dir() {
   printf '%s\n' "$GCS_KIT_ROOT/vendor/taskboard"
 }
