@@ -203,7 +203,7 @@ install_seat_grok_mcp() {
   bin="$(_gcs_abs_path "$bin")"
   db="$(_gcs_abs_path "$db")"
   case "$bin$db" in
-    *'${'*)
+    *'${'*) 
       echo "SEAT_GROK_MCP_FAIL seat=${seat:-?} refusing unexpanded interpolation in MCP argv" >&2
       return 1
       ;;
@@ -228,20 +228,42 @@ _mind_plugin_already_installed() {
   return 1
 }
 
-install_studio_mind_plugin() {
-  # Install plugins/studio-mind into this seat GROK_HOME. grok headless cannot
-  # take --plugin-dir (that is a grok agent flag). --trust belongs here, not
-  # on grok --prompt-file. Failure is MCP-only: taskboard is already in
-  # GROK_HOME/config.toml. Never abort the mind loop. Already-installed and
-  # idempotent reinstall are success (MIND_PLUGIN_OK), not install-fail.
+_install_one_mind_grok_plugin() {
+  # grok plugin install --trust of one plugins/<name> dir into GROK_HOME.
+  # Already-installed is MIND_PLUGIN_OK. Never abort the mind loop.
   local seat="${1:-}"
-  local plugin gh grok_bin out rc=0
-  plugin="$ROOT/plugins/studio-mind"
-  gh="${GROK_HOME:-}"
-  if [[ ! -d "$plugin" ]]; then
-    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=missing-dir mcp-only" >&2
+  local name="${2:-}"
+  local gh="${3:-}"
+  local grok_bin="${4:-}"
+  local plugin out rc=0
+  plugin="$ROOT/plugins/$name"
+  if [[ ! -d "$plugin" || ! -f "$plugin/plugin.json" ]]; then
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} plugin=$name reason=missing-dir mcp-only" >&2
     return 0
   fi
+  plugin="$(_gcs_abs_path "$plugin")"
+  out="$(GROK_HOME="$gh" "$grok_bin" plugin install "$plugin" --trust 2>&1)" && rc=0 || rc=$?
+  if [[ -n "$out" ]]; then
+    printf '%s\n' "$out" >&2
+  fi
+  if [[ "$rc" -eq 0 ]] || _mind_plugin_already_installed "$out"; then
+    echo "MIND_PLUGIN_OK seat=${seat:-?} plugin=$name dest=$gh" >&2
+  else
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} plugin=$name reason=install-fail mcp-only" >&2
+  fi
+  return 0
+}
+
+install_mind_grok_plugins() {
+  # Grok-bot-like mind plugins (ticket / A2A / cloud) into this seat GROK_HOME.
+  # grok headless cannot take --plugin-dir (that is a grok agent flag).
+  # --trust belongs here, not on grok --prompt-file. Failure is MCP-only:
+  # taskboard is already in GROK_HOME/config.toml. Never abort the mind loop.
+  # Already-installed and idempotent reinstall are success (MIND_PLUGIN_OK).
+  # Do not vendor Hermes. Do not copy GROK_HOME MCP into Cursor CLI.
+  local seat="${1:-}"
+  local gh grok_bin name
+  gh="${GROK_HOME:-}"
   grok_bin="$(command -v grok 2>/dev/null || true)"
   if [[ -z "$grok_bin" ]]; then
     echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-grok mcp-only" >&2
@@ -252,17 +274,17 @@ install_studio_mind_plugin() {
     return 0
   fi
   mkdir -p "$gh"
-  plugin="$(_gcs_abs_path "$plugin")"
-  out="$(GROK_HOME="$gh" "$grok_bin" plugin install "$plugin" --trust 2>&1)" && rc=0 || rc=$?
-  if [[ -n "$out" ]]; then
-    printf '%s\n' "$out" >&2
-  fi
-  if [[ "$rc" -eq 0 ]] || _mind_plugin_already_installed "$out"; then
-    echo "MIND_PLUGIN_OK seat=${seat:-?} plugin=studio-mind dest=$gh" >&2
-  else
-    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=install-fail mcp-only" >&2
-  fi
+  # Grok-bot-like catalog: plugins/studio-mind, plugins/a2a, plugins/cursor-cloud.
+  # Grok plugin.json, not Hermes plugin.yaml. Do not vendor hermes-agent.
+  for name in studio-mind a2a cursor-cloud; do
+    _install_one_mind_grok_plugin "$seat" "$name" "$gh" "$grok_bin"
+  done
   return 0
+}
+
+install_studio_mind_plugin() {
+  # Compat alias: remaining LIV-63 installs ticket + A2A + cloud grok plugins.
+  install_mind_grok_plugins "$@"
 }
 
 install_seat_taskboard_cli() {
