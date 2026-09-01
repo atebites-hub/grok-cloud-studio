@@ -159,6 +159,9 @@ def test_recover_uses_official_scripts_without_daemons() -> None:
     assert "RECOVER_OK" in text
     assert "health_check.sh" in text
     assert "acp_inject.py" not in text
+    assert "GCS_BOT_BRIDGE=1" not in text
+    bus = (REPO / "scripts" / "a2a" / "start-studio-bus.sh").read_text(encoding="utf-8")
+    assert "GCS_BOT_BRIDGE" in bus
 
 
 def test_wipe_names_health_recover_dr_loop() -> None:

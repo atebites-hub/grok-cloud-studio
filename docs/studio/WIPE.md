@@ -146,7 +146,8 @@ Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI:
    scripts/a2a/start-studio-bus.sh start
    ```
 
-   That is hub + leftover dispatch + bot-bridge + shepherd + **mind loops**.
+   That is hub + leftover dispatch + shepherd + **mind loops**.
+   **bot-bridge stays off** unless `GCS_BOT_BRIDGE=1` (Bot seats standby).
    It does **not** spawn `grok agent serve` per seat. Never auto-spawn a
    13-seat grok serve floor on a ~15GB box.
 

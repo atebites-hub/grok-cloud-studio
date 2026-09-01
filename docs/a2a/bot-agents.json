@@ -6,7 +6,7 @@
       "kind": "grok-bot",
       "agentId": "REPLACE_WITH_YOUR_GROK_BOT_AGENT_ID",
       "inbox": ".a2a-state/orchestrator",
-      "note": "Default Bot orchestrator seat. Put Bot seats in registry skipSeats; bot-bridge wakes via bot-wake artifacts. Not an ACP inject target."
+      "note": "Default Bot orchestrator seat. Put Bot seats in registry skipSeats. bot-bridge is opt-in (GCS_BOT_BRIDGE=1) and wakes via bot-wake artifacts. Not an ACP inject target. Default: Bot seats standby."
     }
   }
 }

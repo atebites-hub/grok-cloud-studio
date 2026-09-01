@@ -935,7 +935,13 @@ def _bus_env(state: Path, extra: dict[str, str] | None = None) -> dict[str, str]
     env = {
         k: v
         for k, v in os.environ.items()
-        if k not in {"GCS_MIND_SEATS", "GCS_START_SEAT_DAEMONS", "GCS_ACP_STOP_WITH_BUS"}
+        if k
+        not in {
+            "GCS_MIND_SEATS",
+            "GCS_START_SEAT_DAEMONS",
+            "GCS_ACP_STOP_WITH_BUS",
+            "GCS_BOT_BRIDGE",
+        }
     }
     env.update(
         {
@@ -1133,6 +1139,73 @@ def test_bus_keeps_dispatch_when_mind_seats_match(tmp_path: Path) -> None:
         assert procs["serve:qa-a"].poll() is None
         assert int((state / "dispatch.pid").read_text(encoding="utf-8").strip().split()[0]) == leftover_disp
     finally:
+        _reap_planted(procs, state)
+
+
+def _reap_pidfile(state: Path, name: str) -> None:
+    path = state / f"{name}.pid"
+    try:
+        raw = path.read_text(encoding="utf-8").strip().split()[0]
+        _reap_pid(int(raw))
+    except (OSError, ValueError, IndexError):
+        pass
+
+
+def test_bus_skips_bot_bridge_by_default(tmp_path: Path) -> None:
+    """Jay: Bot seats standby. recover / start must not wake them unless opted in."""
+    state = tmp_path / "a2a-state"
+    procs = _plant_leftover_bus(state, mind_seats=())
+    _reap_proc(procs["bot-bridge"])
+    (state / "bot-bridge.pid").unlink(missing_ok=True)
+    try:
+        proc = _run_bus_start(state, _bus_env(state))
+        out = proc.stdout + proc.stderr
+        assert proc.returncode == 0, out
+        assert "STUDIO_BUS_BOT_BRIDGE_START" not in out
+        assert "STUDIO_BUS_BOT_BRIDGE_SKIP" in out
+        assert "GCS_BOT_BRIDGE=1" in out or "standby" in out.lower()
+        pid_path = state / "bot-bridge.pid"
+        if pid_path.is_file():
+            raw = pid_path.read_text(encoding="utf-8").strip().split()[0]
+            pid = int(raw)
+            try:
+                os.kill(pid, 0)
+                alive = True
+            except OSError:
+                alive = False
+            assert not alive, "default start must not leave a live bot-bridge"
+        bus = BUS_SH.read_text(encoding="utf-8")
+        assert "GCS_BOT_BRIDGE" in bus
+        recover = (REPO / "recover.sh").read_text(encoding="utf-8")
+        assert "GCS_BOT_BRIDGE=1" not in recover
+    finally:
+        _reap_pidfile(state, "bot-bridge")
+        _reap_planted(procs, state)
+
+
+def test_bus_starts_bot_bridge_when_gcs_bot_bridge_is_1(tmp_path: Path) -> None:
+    state = tmp_path / "a2a-state"
+    procs = _plant_leftover_bus(state, mind_seats=())
+    _reap_proc(procs["bot-bridge"])
+    (state / "bot-bridge.pid").unlink(missing_ok=True)
+    env = _bus_env(
+        state,
+        {"GCS_BOT_BRIDGE": "1", "GCS_BOT_BRIDGE_POLL_SEC": "60"},
+    )
+    started_pid = 0
+    try:
+        proc = _run_bus_start(state, env)
+        out = proc.stdout + proc.stderr
+        assert proc.returncode == 0, out
+        assert "STUDIO_BUS_BOT_BRIDGE_START" in out
+        assert "STUDIO_BUS_BOT_BRIDGE_SKIP" not in out
+        raw = (state / "bot-bridge.pid").read_text(encoding="utf-8").strip().split()[0]
+        started_pid = int(raw)
+        os.kill(started_pid, 0)
+    finally:
+        if started_pid:
+            _reap_pid(started_pid)
+        _reap_pidfile(state, "bot-bridge")
         _reap_planted(procs, state)
 
 
