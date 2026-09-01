@@ -5,4 +5,4 @@ alwaysApply: false
 
 # Cursor Cloud Extra High
 
-Use MCP `cloud_launch`, `cloud_status`, and `cloud_result` (or `scripts/launch-cloud-extra-high.sh`). Set `GCS_CLOUD_REPO` or `CLOUD_REPO_URL` before create. Do not print API keys. After `CLOUD_LAUNCH_OK`, a waiter A2A-pings the owning seat; do not block the Director turn on watch.
+Use MCP `cloud_launch`, `cloud_status`, and `cloud_result` (or `scripts/launch-cloud-extra-high.sh`). Set `GCS_CLOUD_REPO` or `CLOUD_REPO_URL` before create. Model grok-4.6 effort=xhigh. Directors must cloud_launch until ≥8 RUNNING per repo; count `runStatus`, not leftover `ACTIVE`. Never Bot CloudAgent. Do not print API keys. After `CLOUD_LAUNCH_OK`, a waiter A2A-pings the owning seat; do not block the Director turn on watch.

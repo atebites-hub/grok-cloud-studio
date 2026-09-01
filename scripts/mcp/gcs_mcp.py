@@ -73,7 +73,7 @@ def cloud_tools() -> list[dict[str, Any]]:
         },
         {
             "name": "cloud_status",
-            "description": "Compact status for a Cursor Cloud agent bc-id.",
+            "description": "Compact status for a Cursor Cloud agent bc-id (prints runStatus, not leftover ACTIVE).",
             "inputSchema": {
                 "type": "object",
                 "properties": {"id": {"type": "string", "description": "bc-id"}},

@@ -72,7 +72,7 @@ When a new wake appears, read the task and act as orchestrator.
 Reply via `scripts/a2a/send.sh <seat> "…"`. This seat is NOT an ACP inject target.
 ```
 
-Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh donald` still works if you keep that seat name). Do not launch Bot CloudAgent for this path.
+Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh donald` still works if you keep that seat name). Do not launch Bot CloudAgent for this path. Never mint a Cursor Cloud Extra High agent as the Bot.
 
 ## CCGS leads (mind seats)
 

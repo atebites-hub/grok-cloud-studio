@@ -36,6 +36,8 @@ No third Python tool loop. No ACP `session/prompt` GROW. No `deliver_wake` overl
 
 The grunt is **Cursor Cloud** (not "Extra High" as the noun, not "Cursor Cloud API"). Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI: `--model grok-4.6 --reasoning-effort xhigh` (extra-high). Cursor fallback: `--model cursor-grok-4.6-xhigh` only. The PATH launcher stays `scripts/launch-cloud-extra-high.sh`.
 
+Directors must `cloud_launch` until ≥8 in-flight runs per `GCS_CLOUD_REPO` (`GCS_CLOUD_MIN_RUNNING`, default 8). Count latest-run **`runStatus`** (`RUNNING`/`CREATING`). Leftover agent `ACTIVE`+`FINISHED` is not a worker. `list`/`status` print `runStatus`. Never launch Bot CloudAgent.
+
 ### State (disk only)
 
 Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a-state`):

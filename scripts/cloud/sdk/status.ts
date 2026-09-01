@@ -4,7 +4,7 @@ import { die, safeError } from "./common.ts";
 function compactLine(result: Awaited<ReturnType<typeof collectResult>>): void {
   const latest = result.runId || "";
   process.stdout.write(
-    `id=${result.agentId} status=${result.agentStatus || "unknown"} url=${result.url} latestRunId=${latest}\n`,
+    `id=${result.agentId} agentStatus=${result.agentStatus || "unknown"} url=${result.url} latestRunId=${latest}\n`,
   );
   process.stdout.write(
     `runStatus=${result.runStatus || "none"} prUrl=${result.prUrl || "none"} branches=${result.branch || "none"}\n`,
