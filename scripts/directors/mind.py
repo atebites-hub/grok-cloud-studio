@@ -61,6 +61,11 @@ MIND_FAIL_STDERR_CHARS = 240
 CURSOR_MIND_MODEL = "cursor-grok-4.6-xhigh"
 GROK_MIND_MODEL = "grok-4.6"
 GROK_MIND_REASONING_EFFORT = "xhigh"  # extra-high
+_STATUS_ACK_HEAD_RE = re.compile(
+    r"^\s*(?:STATUS(?:\s+ACK)?|ACP_PING|ACK)\b",
+    re.IGNORECASE,
+)
+_MAIL_TURNS: set[str] = set()
 
 
 @dataclass(frozen=True)
@@ -98,6 +103,94 @@ def mind_dir(seat: str) -> Path:
     d = STATE_DIR / seat / "mind"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def mail_file(seat: str) -> Path:
+    return mind_dir(seat) / "mail.txt"
+
+
+def mail_inflight_file(seat: str) -> Path:
+    return mind_dir(seat) / "mail.in-flight"
+
+
+def is_status_ack(text: str) -> bool:
+    """True for keep-alive / protocol ACK lines that must not clobber a beat TASK.
+
+    Ack is an action (Grokking Simplicity): writing STATUS ACK onto mail.txt
+    mutates the in-flight prompt. Do not treat a Donald TASK as an ack.
+    """
+    blob = (text or "").strip()
+    if not blob:
+        return False
+    head = blob.split("\n", 1)[0]
+    if _STATUS_ACK_HEAD_RE.match(head):
+        return True
+    if "STATUS/CONTINUE" in blob.upper():
+        return True
+    if re.search(r"\bSTATUS ACK\b", blob, re.IGNORECASE):
+        return True
+    if re.search(r"^ACK seat=", blob, re.MULTILINE):
+        return True
+    return False
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def mail_turn_held(seat: str) -> bool:
+    """True when this process or another live pid holds mind/mail.txt."""
+    if seat in _MAIL_TURNS:
+        return True
+    path = mail_inflight_file(seat)
+    if not path.is_file():
+        return False
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip().split()[0])
+    except (ValueError, OSError, IndexError):
+        return True
+    if pid == os.getpid():
+        return False
+    return _pid_alive(pid)
+
+
+def write_seat_mail(seat: str, prompt: str) -> bool:
+    """Write mind/mail.txt. STATUS ACK cannot clobber an in-flight TASK.
+
+    Returns False when the write was refused so grok --prompt-file still
+    holds the beat TASK until that turn exits 0.
+    """
+    path = mail_file(seat)
+    inflight = mail_inflight_file(seat)
+    current = ""
+    if path.is_file():
+        try:
+            current = path.read_text(encoding="utf-8")
+        except OSError:
+            current = ""
+    if inflight.is_file() and current != prompt:
+        return False
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(prompt, encoding="utf-8")
+    tmp.replace(path)
+    inflight.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    return True
+
+
+def clear_mail_inflight(seat: str) -> None:
+    path = mail_inflight_file(seat)
+    try:
+        path.unlink()
+    except OSError:
+        pass
 
 
 def grok_home_dir(seat: str) -> Path:
@@ -488,8 +581,14 @@ def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str,
     grok_home = grok_home_dir(seat)
     session_id = load_or_create_session(seat)
     minted = session_is_minted(seat)
-    mail_path = mind_dir(seat) / "mail.txt"
-    mail_path.write_text(prompt, encoding="utf-8")
+    if not write_seat_mail(seat, prompt):
+        return {
+            "text": "PLUGIN_ERR mail in-flight (STATUS ACK cannot clobber TASK)",
+            "returncode": 1,
+            "stderr": "",
+            "backend": "grok",
+        }
+    mail_path = mail_file(seat)
     agent = yaml_agent_file(soul_profile(seat))
     env = os.environ.copy()
     env["GCS_ROOT"] = str(ROOT)
@@ -756,9 +855,13 @@ def _run_cursor_cmd(
 
 def cursor_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str, Any]:
     """One Cursor CLI turn. Pins mind/cursor-session, not grok mind/session."""
-    mind_dir(seat)
-    mail_path = mind_dir(seat) / "mail.txt"
-    mail_path.write_text(prompt, encoding="utf-8")
+    if not write_seat_mail(seat, prompt):
+        return {
+            "text": "PLUGIN_ERR mail in-flight (STATUS ACK cannot clobber TASK)",
+            "returncode": 1,
+            "stderr": "",
+            "backend": "cursor",
+        }
     env = _cursor_subprocess_env()
     if not (env.get("CURSOR_API_KEY") or "").strip():
         return {
@@ -855,7 +958,12 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """One inbox line → one agent turn. Offset advances only on runner exit 0."""
+    """One inbox line → one agent turn. Offset advances only on runner exit 0.
+
+    STATUS ACK is an action: it must not clobber an in-flight beat TASK in
+    mind/mail.txt. Offset and mail.in-flight stay put until that TASK turn
+    exits 0.
+    """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
         print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)
@@ -863,6 +971,10 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
 
     mind_dir(seat)
     grok_home_dir(seat)
+    if mail_turn_held(seat):
+        print(f"MIND_SKIP seat={seat} reason=in-flight", flush=True)
+        return {"consumed": 0, "reason": "in-flight", "offset": _read_offset(seat)}
+
     records = _read_new_records(seat)
     if not records:
         return {"consumed": 0, "reason": "empty", "offset": _read_offset(seat)}
@@ -876,63 +988,76 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
         context_id = str(rec.get("contextId") or "")
         text = _extract_text(rec.get("parts"))
         prompt = text or json.dumps(rec, ensure_ascii=False)
+        _MAIL_TURNS.add(seat)
         try:
-            raw = run(prompt, seat=seat)
-        except Exception as e:
-            print(
-                f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail "
-                f"err={stderr_log_snippet(str(e))}",
-                file=sys.stderr,
-            )
-            return {"consumed": 0, "reason": "runner-fail", "task_id": task_id}
+            if not write_seat_mail(seat, prompt):
+                print(f"MIND_SKIP seat={seat} reason=in-flight task={task_id}", flush=True)
+                return {
+                    "consumed": 0,
+                    "reason": "in-flight",
+                    "task_id": task_id,
+                    "offset": _read_offset(seat),
+                }
+            try:
+                raw = run(prompt, seat=seat)
+            except Exception as e:
+                print(
+                    f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail "
+                    f"err={stderr_log_snippet(str(e))}",
+                    file=sys.stderr,
+                )
+                return {"consumed": 0, "reason": "runner-fail", "task_id": task_id}
 
-        assistant_text, returncode, stderr = _runner_payload(raw)
-        if returncode != 0:
+            assistant_text, returncode, stderr = _runner_payload(raw)
+            if returncode != 0:
+                print(
+                    f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail "
+                    f"rc={returncode} stderr={stderr_log_snippet(stderr)}",
+                    file=sys.stderr,
+                )
+                return {
+                    "consumed": 0,
+                    "reason": "runner-fail",
+                    "task_id": task_id,
+                    "returncode": returncode,
+                }
+
+            backend = ""
+            if isinstance(raw, dict):
+                backend = str(raw.get("backend") or "")
+            if backend != "cursor":
+                mark_session_minted(seat)
+            _append_transcript(
+                seat,
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "taskId": task_id,
+                    "contextId": context_id,
+                },
+            )
+            _append_transcript(
+                seat,
+                {
+                    "role": "assistant",
+                    "content": assistant_text,
+                    "format": "json",
+                },
+            )
+            _write_offset(seat, end_offset)
+            clear_mail_inflight(seat)
             print(
-                f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail "
-                f"rc={returncode} stderr={stderr_log_snippet(stderr)}",
-                file=sys.stderr,
+                f"MIND_TURN seat={seat} task={task_id} offset={end_offset}",
+                flush=True,
             )
             return {
-                "consumed": 0,
-                "reason": "runner-fail",
+                "consumed": 1,
+                "reason": "ok",
                 "task_id": task_id,
-                "returncode": returncode,
+                "offset": end_offset,
             }
-
-        backend = ""
-        if isinstance(raw, dict):
-            backend = str(raw.get("backend") or "")
-        if backend != "cursor":
-            mark_session_minted(seat)
-        _append_transcript(
-            seat,
-            {
-                "role": "user",
-                "content": prompt,
-                "taskId": task_id,
-                "contextId": context_id,
-            },
-        )
-        _append_transcript(
-            seat,
-            {
-                "role": "assistant",
-                "content": assistant_text,
-                "format": "json",
-            },
-        )
-        _write_offset(seat, end_offset)
-        print(
-            f"MIND_TURN seat={seat} task={task_id} offset={end_offset}",
-            flush=True,
-        )
-        return {
-            "consumed": 1,
-            "reason": "ok",
-            "task_id": task_id,
-            "offset": end_offset,
-        }
+        finally:
+            _MAIL_TURNS.discard(seat)
 
     return {"consumed": 0, "reason": "no-actionable", "offset": _read_offset(seat)}
 

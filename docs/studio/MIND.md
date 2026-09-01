@@ -45,7 +45,8 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 | `session` | Pinned grok session UUID (uuid4, created once) |
 | `session.minted` | Written after the first grok exit 0 (later grok turns `--resume`) |
 | `cursor-session` | Pinned Cursor chat id (from `agent create-chat`; not the grok UUID) |
-| `mail.txt` | Current inbox line (grok `--prompt-file`; Cursor positional prompt) |
+| `mail.txt` | Current inbox line (grok `--prompt-file`; Cursor positional prompt). An in-flight beat TASK stays here until that grok/Cursor turn exits 0. |
+| `mail.in-flight` | Pid holding `mail.txt`. STATUS ACK must not clobber an unread Donald TASK (ack is an action, not a calculation). Cleared only on runner exit 0. |
 | `transcript.jsonl` | Agent json stdout plus the user mail row |
 | `offset` | Byte offset into that seat’s `inbox.jsonl` (advanced only on runner exit 0) |
 | `pid` | Live mind process |
@@ -71,6 +72,7 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 
 - Create the UUID once (`uuid4`), store in `mind/session`. First turn uses `--session-id $UUID` instead of `--resume`. Later turns **only** `--resume` that id.
 - Never bare `-p` on grok. Live proven 2026-08-21: `-p` before `--resume` is clap rc=2 because `--single` requires `<PROMPT>`. `--prompt-file` is the prompt and also triggers headless mode.
+- An in-flight beat TASK stays in `mail.txt` until that runner exits 0. A later STATUS ACK is an action (Grokking Simplicity): it must not clobber an unread Donald TASK. `mind/mail.in-flight` holds the pid; `write_seat_mail` refuses STATUS overwrites while that file exists.
 - `--agent-profile`, `--trust`, and `--plugin-dir` are **grok agent** flags, not grok headless. Do not put them on this argv.
 - `--agent PATH` only if PATH is a file starting with YAML `---`. Markdown `SOUL.md` is not an agent file; omit `--agent`.
 - If grok says the session is already in use, treat it as minted and `--resume` the same UUID. Do not mint a new UUID.
