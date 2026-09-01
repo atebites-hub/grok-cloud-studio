@@ -386,3 +386,84 @@ def test_sdk_launch_does_not_hardcode_private_repo() -> None:
     assert banned not in common
     assert "cloudRepo()" in common
     assert "GCS_CLOUD_REPO" in common
+
+
+def _list_row(stdout: str, agent_id: str) -> str:
+    rows = [line for line in stdout.splitlines() if agent_id in line]
+    assert rows, stdout
+    return rows[0]
+
+
+def test_list_prints_run_status_so_finished_leftovers_are_not_spinning(tmp_path: Path) -> None:
+    """ACTIVE leftover agents with a FINISHED run must not look like live workers."""
+    items = [
+        {
+            "id": "bc-leftover",
+            "name": "done-grunt",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-leftover",
+            "latestRunId": "run-done",
+        },
+        {
+            "id": "bc-live",
+            "name": "busy-grunt",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-live",
+            "latestRunId": "run-live",
+        },
+        {
+            "id": "bc-idle",
+            "name": "no-run",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-idle",
+            "latestRunId": "",
+        },
+    ]
+    with MockCursorAPI(
+        list_items=items,
+        run_status_by_id={"run-done": "FINISHED", "run-live": "RUNNING"},
+    ) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        listed = _run(CLOUD / "list-cloud-agents.sh", [], env)
+    assert listed.returncode == 0, listed.stdout + listed.stderr
+    leftover = _list_row(listed.stdout, "bc-leftover")
+    live = _list_row(listed.stdout, "bc-live")
+    idle = _list_row(listed.stdout, "bc-idle")
+    assert "status=ACTIVE" in leftover
+    assert "runStatus=FINISHED" in leftover
+    assert "runStatus=RUNNING" not in leftover
+    assert "status=ACTIVE" in live
+    assert "runStatus=RUNNING" in live
+    assert "runStatus=FINISHED" not in live
+    assert "runStatus=none" in idle
+    assert any(path.endswith("/runs/run-done") for path in api.gets), api.gets
+    assert any(path.endswith("/runs/run-live") for path in api.gets), api.gets
+    assert FAKE_KEY not in listed.stdout + listed.stderr
+
+
+def test_list_run_not_found_prints_run_status_none(tmp_path: Path) -> None:
+    items = [
+        {
+            "id": "bc-stale-id",
+            "name": "ghost-run",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-stale-id",
+            "latestRunId": "run-missing",
+        }
+    ]
+    with MockCursorAPI(list_items=items, run_not_found_ids={"run-missing"}) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        listed = _run(CLOUD / "list-cloud-agents.sh", [], env)
+    assert listed.returncode == 0, listed.stdout + listed.stderr
+    row = _list_row(listed.stdout, "bc-stale-id")
+    assert "status=ACTIVE" in row
+    assert "runStatus=none" in row
+    assert any(path.endswith("/runs/run-missing") for path in api.gets), api.gets
+    assert FAKE_KEY not in listed.stdout + listed.stderr
+
+
+def test_sdk_list_prints_run_status_on_each_row() -> None:
+    src = (CLOUD / "sdk" / "list.ts").read_text(encoding="utf-8")
+    assert "runStatus=" in src
+    assert "mapRunStatus" in src
+    assert "listRuns" in src or "getRun" in src
