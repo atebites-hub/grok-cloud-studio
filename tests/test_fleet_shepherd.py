@@ -288,6 +288,61 @@ def test_health_probe_does_not_skip_orphan_cycle(tmp_path: Path, monkeypatch) ->
     assert "bc-orphan-health" in blob
 
 
+def test_probe_exception_does_not_abort_orphan_cycle(tmp_path: Path, monkeypatch) -> None:
+    """HTTP glitches must log TASKBOARD_HEALTH_FAIL and still walk orphans."""
+    state = _base_env(monkeypatch, tmp_path)
+    db = state / "taskboard" / "taskboard.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    db.write_bytes(b"")
+    binary, _argv = _fake_taskboard(tmp_path, rc=1)
+    monkeypatch.setenv("TASKBOARD_BIN", str(binary))
+    seat = state / "ops"
+    seat.mkdir(parents=True, exist_ok=True)
+    (seat / "fleet.jsonl").write_text(
+        json.dumps(
+            {
+                "bc_id": "bc-orphan-probe-exc",
+                "seat": "ops",
+                "status": "open",
+                "notified": False,
+                "waiter_pid": None,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    mod = _load()
+    _bind(mod, state)
+
+    def _boom() -> bool:
+        raise ConnectionResetError("mcp reset")
+
+    monkeypatch.setattr(mod, "_mcp_http_ok", _boom)
+    monkeypatch.setattr(mod, "_probe", lambda bc_id: None)
+    n = mod._cycle()
+    blob = _log_text(mod)
+    assert n == 0
+    assert "TASKBOARD_HEALTH_FAIL" in blob
+    assert "TASKBOARD_HEALTH_OK" not in blob
+    assert "SHEPHERD_ORPHAN_EMPTY" in blob
+    assert "bc-orphan-probe-exc" in blob
+    assert "test-cursor-api-key-shepherd-health-not-leaked" not in blob
+
+
+def test_once_missing_db_still_exits_zero(tmp_path: Path, monkeypatch) -> None:
+    state = _base_env(monkeypatch, tmp_path)
+    binary, _argv = _fake_taskboard(tmp_path, rc=0)
+    monkeypatch.setenv("TASKBOARD_BIN", str(binary))
+    mod = _load()
+    _bind(mod, state)
+    monkeypatch.setattr(sys, "argv", ["fleet-shepherd.py", "--once"])
+    rc = mod.main()
+    blob = _log_text(mod)
+    assert rc == 0
+    assert "TASKBOARD_HEALTH_FAIL" in blob
+    assert "SHEPHERD_ONCE" in blob
+
+
 def test_scope_does_not_clone_siblings_or_reconnect_ak() -> None:
     text = SHEPHERD.read_text(encoding="utf-8")
     assert "is_leftover_shell" not in text

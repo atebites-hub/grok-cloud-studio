@@ -19,7 +19,6 @@ import shutil
 import subprocess
 import sys
 import time
-import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -121,15 +120,9 @@ def _taskboard_bin() -> Path | None:
 
 def _ticket_list_ok(db: Path) -> bool:
     binary = _taskboard_bin()
-    env = os.environ.copy()
-    if binary is not None:
-        argv = [str(binary), "--db", str(db), "ticket", "list"]
-    else:
-        ticket = shutil.which("ticket")
-        if ticket is None:
-            return False
-        argv = [ticket, "list"]
-        env["GCS_TASKBOARD_DB"] = str(db)
+    if binary is None:
+        return False
+    argv = [str(binary), "--db", str(db), "ticket", "list"]
     try:
         proc = subprocess.run(
             argv,
@@ -138,7 +131,7 @@ def _ticket_list_ok(db: Path) -> bool:
             text=True,
             timeout=10,
             check=False,
-            env=env,
+            env=os.environ.copy(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -170,23 +163,27 @@ def _mcp_http_ok() -> bool:
             status = int(getattr(resp, "status", 200) or 200)
             resp.read()
         return 200 <= status < 300
-    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, ValueError):
+    except Exception:
         return False
 
 
 def _probe_taskboard_health() -> bool:
-    db = _taskboard_db()
-    if not db.is_file():
-        _log(f"TASKBOARD_HEALTH_FAIL db={db} reason=missing-db")
+    try:
+        db = _taskboard_db()
+        if not db.is_file():
+            _log(f"TASKBOARD_HEALTH_FAIL db={db} reason=missing-db")
+            return False
+        if _ticket_list_ok(db):
+            _log(f"TASKBOARD_HEALTH_OK db={db} via=ticket")
+            return True
+        if _mcp_http_ok():
+            _log(f"TASKBOARD_HEALTH_OK db={db} via=mcp")
+            return True
+        _log(f"TASKBOARD_HEALTH_FAIL db={db} reason=cli-and-mcp")
         return False
-    if _ticket_list_ok(db):
-        _log(f"TASKBOARD_HEALTH_OK db={db} via=ticket")
-        return True
-    if _mcp_http_ok():
-        _log(f"TASKBOARD_HEALTH_OK db={db} via=mcp")
-        return True
-    _log(f"TASKBOARD_HEALTH_FAIL db={db} reason=cli-and-mcp")
-    return False
+    except Exception as exc:
+        _log(f"TASKBOARD_HEALTH_FAIL reason=probe-exc {type(exc).__name__}")
+        return False
 
 
 def _cycle() -> int:
