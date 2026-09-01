@@ -12,6 +12,9 @@ Do not wrap `watch` as an MCP tool. Target git repo is **required** via `GCS_CLO
 
 ## Install
 
+Grok `plugin.json` (not Hermes `plugin.yaml`). Seat mind also installs this
+via `install_mind_grok_plugins`. Never Bot CloudAgent.
+
 ```bash
 grok plugin install ./plugins/cursor-cloud --trust
 ```

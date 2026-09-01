@@ -2,13 +2,20 @@
 
 Grok Agent SDK / MCP tools for opted-in seat mind: `ticket`, `a2a_send`,
 `a2a_list_seats`, `cloud_launch`, `cloud_list`, `cloud_status`,
-`cloud_followup`, `cloud_result`.
+`cloud_followup`, `cloud_result`, plus grok-bot-like `plugins/a2a` and
+`plugins/cursor-cloud`. Grok `plugin.json`, not Hermes `plugin.yaml`.
+Do not vendor Hermes.
 
-`seat-mind-loop.sh` installs this directory into the seat `GROK_HOME` with:
+`seat-mind-loop.sh` installs all three into the seat `GROK_HOME` with
+`install_mind_grok_plugins`:
 
 ```bash
 GROK_HOME=$GCS_A2A_STATE/<seat>/grok-home \
   grok plugin install "$GCS_ROOT/plugins/studio-mind" --trust
+GROK_HOME=$GCS_A2A_STATE/<seat>/grok-home \
+  grok plugin install "$GCS_ROOT/plugins/a2a" --trust
+GROK_HOME=$GCS_A2A_STATE/<seat>/grok-home \
+  grok plugin install "$GCS_ROOT/plugins/cursor-cloud" --trust
 ```
 
 `--plugin-dir` is a grok **agent** flag and cannot go on headless `grok`
