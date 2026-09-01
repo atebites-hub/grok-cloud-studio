@@ -18,7 +18,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     { name: "cloud_launch", description: "Launch Extra High grunt", inputSchema: { type: "object", properties: { prompt: { type: "string" }, name: { type: "string" } }, required: ["prompt"] } },
     { name: "cloud_list", description: "List Extra High agents. Each row prints agent status and latest-run runStatus (RUNNING vs FINISHED). ACTIVE+FINISHED leftovers are not live workers.", inputSchema: { type: "object", properties: { limit: { type: "string" } } } },
-    { name: "cloud_status", description: "Status for bc-id", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+    { name: "cloud_status", description: "runStatus per bc-id (id and/or ids; non-blocking)", inputSchema: { type: "object", properties: { id: { type: "string" }, ids: { type: "string" } } } },
     { name: "cloud_result", description: "Result JSON for bc-id", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
     { name: "cloud_followup", description: "Follow-up on bc-id", inputSchema: { type: "object", properties: { id: { type: "string" }, prompt: { type: "string" } }, required: ["id", "prompt"] } },
   ],
@@ -29,7 +29,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   let r;
   if (name === "cloud_launch") r = run("scripts/launch-cloud-extra-high.sh", args.name ? ["--name", String(args.name), String(args.prompt)] : [String(args.prompt)]);
   else if (name === "cloud_list") r = runPy("scripts/cloud/list_helper.py", args.limit ? [String(args.limit)] : []);
-  else if (name === "cloud_status") r = run("scripts/cloud/status-cloud-agent.sh", [String(args.id)]);
+  else if (name === "cloud_status") {
+    const argv = [];
+    if (args.ids) argv.push("--ids", String(args.ids));
+    if (args.id) argv.push(String(args.id));
+    r = run("scripts/cloud/status-cloud-agent.sh", argv);
+  }
   else if (name === "cloud_result") r = run("scripts/cloud/result-cloud-agent.sh", [String(args.id)]);
   else if (name === "cloud_followup") r = run("scripts/cloud/followup-cloud-agent.sh", [String(args.id), String(args.prompt)]);
   else return { content: [{ type: "text", text: `unknown tool ${name}` }], isError: true };

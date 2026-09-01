@@ -24,7 +24,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus`. REST walks `nextCursor` when `--limit` exceeds the API page cap (100). Fail-closed if a page errors. |
 | `occupancy-count.sh` | Paginated occupancy catalog (`Agent.list` / `GET /v1/agents` via `nextCursor`, page size 100). Prints `CLOUD_OCCUPANCY running= leftover_active= creating= listed= pages=`. Fail-closed `CLOUD_OCCUPANCY_ERR reason=page` if a page errors — never fake `running=0`. |
-| `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
+| `status.sh` / `status-cloud-agent.sh <bc-id> [<bc-id>…] [--ids id,id]` | Compact **runStatus** per id (parallel; not leftover ACTIVE) |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` (`reason=director-no-block-wait`) unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
 | `result-cloud-agent.sh <bc-id>` | Non-blocking result/context JSON |
@@ -114,8 +114,10 @@ scripts/launch-cloud-extra-high.sh --name seat-short-name --prompt-file /path/to
 # → CLOUD_LAUNCH_OK id=bc-… run=run-… url=…
 # waiter pings this seat when the run is terminal — do not block on watch
 
-# 2) Optional status
+# 2) Optional status (batch ids — do not serial-timeout 10 get_agent_run calls)
 scripts/cloud/status-cloud-agent.sh bc-…
+scripts/cloud/status-cloud-agent.sh --ids bc-a,bc-b,bc-c
+# → id=bc-a agentStatus=ACTIVE runStatus=RUNNING …
 
 # 3) On FLEET_DONE / PR_READY
 scripts/cloud/result-cloud-agent.sh bc-…

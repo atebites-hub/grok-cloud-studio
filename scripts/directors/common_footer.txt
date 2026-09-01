@@ -21,7 +21,9 @@ Hard rules:
   Collect context with scripts/cloud/result-cloud-agent.sh <bc-id> or MCP cloud_result (non-blocking).
 - On FLEET_DONE / PR_READY: collect with scripts/cloud/result-cloud-agent.sh <bc-id>; if the JSON or ping has emptyChecks=true / check_runs=0 / shipGateOk=false, do not ping QA MERGE_REQUEST (empty GitHub checks are not evidence; MERGEABLE+empty CI is leftover-green theatre). Re-collect after the required check named pytest -q and secret_scan is SUCCESS, then ping QA; no twin launch.
 - On FLEET_DONE / INSPECT (latest run CANCELLED, even if prUrl exists): follow-up-or-close; do not ping QA MERGE_REQUEST.
-- Status: scripts/cloud/status-cloud-agent.sh <bc-id>
+- Status: scripts/cloud/status-cloud-agent.sh <bc-id> [<bc-id>...] [--ids id,id]
+  Prints runStatus per id (latest run, not leftover ACTIVE). Batch ids so
+  capacity beats do not serial-timeout get_agent_run. Does not remint list.sh.
 - Follow-up: scripts/cloud/followup-cloud-agent.sh <bc-id> "<prompt>"
 - List: scripts/cloud/list-cloud-agents.sh [limit]
   Each row prints status= (agent membership, often ACTIVE) and runStatus= (RUNNING vs FINISHED). Existence is not liveness. Leftover ACTIVE+FINISHED is not a live worker. REST paginates nextCursor when --limit exceeds 100.
