@@ -2,6 +2,12 @@
 
 See also `scripts/cloud/README.md`.
 
+Directors **never block-wait** on Cloud. After `CLOUD_LAUNCH_OK`, the SDK waiter
+(`scripts/cloud/sdk/wait-notify.ts` / `run.wait`) A2A-pings the owning seat
+with waiter/context return. Collect **context** with
+`scripts/cloud/result-cloud-agent.sh` (or MCP `cloud_result`).
+Never launch a Grok **Bot CloudAgent**; Extra High is the grunt.
+
 ## Required env
 
 ```bash
@@ -38,7 +44,8 @@ scripts/cloud/result-cloud-agent.sh bc-...
 
 Prompt is exactly one of: command-line text, stdin `-`, or `--prompt-file PATH`.
 
-Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` from
+Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED`
+(`reason=director-no-block-wait`) from
 `watch.sh` / `watch-cloud-agent.sh` unless `CLOUD_ALLOW_BLOCK_WAIT=1`.
 
 Launch `--name` **REFUSE**s when a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Name-matched Extra High whose latest runStatus cannot be read is fail-closed (no create). Never Bot CloudAgent.
@@ -61,7 +68,7 @@ Empty GitHub leftover-green is not MERGE_REQUEST evidence. QA squash requires pa
 
 `scripts/cloud/list.sh` / `list-cloud-agents.sh` print agent `status` (membership, often `ACTIVE`) and latest-run `runStatus` (`RUNNING` vs `FINISHED`). Agent `ACTIVE` is not a live worker. Leftover `ACTIVE`+`FINISHED` must not count as live.
 
-Wait-notify (`scripts/cloud/sdk/wait-notify.ts`) GETs `GET /v1/agents/{id}/runs` and A2A-pings `FLEET_DONE` only when the **latest** run is terminal. Leftover `FINISHED` while a newer run is `CREATING`/`RUNNING` is not done. Distinct from occupancy listRuns counts and paginated agent catalog. Never Bot CloudAgent.
+Wait-notify (`scripts/cloud/sdk/wait-notify.ts`) GETs `GET /v1/agents/{id}/runs` and A2A-pings `FLEET_DONE` only when the **latest** run is terminal, including waiter/context return from `result`. Leftover `FINISHED` while a newer run is `CREATING`/`RUNNING` is not done. Distinct from occupancy listRuns counts and paginated agent catalog. Never Bot CloudAgent.
 
 ## Directors-spawn law (LIV-41)
 

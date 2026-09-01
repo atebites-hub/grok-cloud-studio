@@ -29,10 +29,10 @@ python3 plugins/a2a/server.py
 
 | Tool | Action |
 |---|---|
-| `cloud_launch` | `scripts/launch-cloud-extra-high.sh` |
+| `cloud_launch` | Extra High spawn. Returns after `CLOUD_LAUNCH_OK`; SDK waiter pings with context. Directors never block-wait. |
 | `cloud_list` | `scripts/cloud/list_helper.py` — agent `status` plus latest-run `runStatus` (`RUNNING` vs `FINISHED`). ACTIVE+FINISHED leftovers are not workers |
 | `cloud_status` | `scripts/cloud/status-cloud-agent.sh` |
-| `cloud_result` | `scripts/cloud/result-cloud-agent.sh` |
+| `cloud_result` | `scripts/cloud/result-cloud-agent.sh` (non-blocking context JSON; do not watch) |
 
 ```bash
 grok plugin install ./plugins/cursor-cloud --trust

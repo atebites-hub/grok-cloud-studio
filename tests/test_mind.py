@@ -623,6 +623,7 @@ def test_injected_runner_inbox_grows_transcript_and_offset(
     assert "ticket" in mind.PLUGINS
     assert "a2a_send" in mind.PLUGINS
     assert "cloud_launch" in mind.PLUGINS
+    assert "cloud_watch" not in mind.PLUGINS
 
 
 def test_missing_ticket_binary_returns_error_string_not_crash(

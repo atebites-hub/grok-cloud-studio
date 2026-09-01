@@ -5,6 +5,7 @@ Grok is the agent. This process only exposes tools. Python mind.py does not
 parse grok stdout for function calls. Installed into seat GROK_HOME with
 `grok plugin install --trust` (not `--plugin-dir` on headless grok).
 The stdio handshake must not close on initialize.
+Directors never block-wait on Cloud; collect context via cursor-cloud cloud_result.
 """
 from __future__ import annotations
 

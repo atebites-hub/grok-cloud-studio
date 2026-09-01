@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Poll a Cursor Cloud agent until its latest run is terminal. SDK-first.
+# Directors: refused unless CLOUD_ALLOW_BLOCK_WAIT=1 (LIV-103).
 # Terminal run statuses: FINISHED (exit 0), ERROR/CANCELLED/EXPIRED (exit 1).
 # Usage: watch.sh AGENT_ID [timeout_sec] [poll_sec]
 # Env: CLOUD_WATCH_INTERVAL (default 10), CLOUD_WATCH_TIMEOUT_SEC (0 = none)
-# Never prints API keys.
+# Never prints API keys. Never Bot CloudAgent.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,6 +19,9 @@ if [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]]; then
 fi
 
 agent_id="$1"
+if cloud_refuse_director_block_wait "$agent_id"; then
+  exit 2
+fi
 interval="${CLOUD_WATCH_INTERVAL:-10}"
 timeout_sec="${CLOUD_WATCH_TIMEOUT_SEC:-0}"
 if [[ $# -ge 2 && "$2" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
@@ -27,12 +31,6 @@ if [[ $# -ge 3 && "$3" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
   interval="$3"
 fi
 start_ts="$(date +%s)"
-
-# LIV-103: directors never block-wait. Operator override: CLOUD_ALLOW_BLOCK_WAIT=1.
-if [[ -n "${GCS_DIRECTOR_SEAT:-}" && "${CLOUD_ALLOW_BLOCK_WAIT:-0}" != "1" ]]; then
-  echo "CLOUD_WATCH_REFUSED seat=${GCS_DIRECTOR_SEAT} use=spawn-waiter/result-cloud-agent.sh override=CLOUD_ALLOW_BLOCK_WAIT=1" >&2
-  exit 2
-fi
 
 if ! cloud_load_auth; then
   echo "error: CURSOR_API_KEY is not set (export it or add it to ~/.config/cursor/agent.env)" >&2
