@@ -30,7 +30,7 @@ launch-cloud-extra-high.sh → @cursor/sdk Agent.create
                            → A2A ping owning seat (FLEET_DONE / PR_READY)
 
 fleet-shepherd.py = orphan-only safety net (no live waiter_pid)
-webhook_receiver.py = optional signed completion path
+webhook_receiver.py = optional signed statusChange path (no get_agent_run)
 ```
 
 ## A2A hub
@@ -61,10 +61,10 @@ See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / 
 | Path | When |
 |---|---|
 | Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`) |
-| Webhook | `GCS_WEBHOOK_SECRET` set and `webhook-harness.sh serve` |
+| Webhook | `GCS_WEBHOOK_SECRET` set; bus starts `webhook_receiver.py`; Cursor `statusChange` POST |
 | Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook) |
 
-Do not double-notify a live waiter.
+Do not double-notify a live waiter. The webhook path does not call `get_agent_run`.
 
 ## Prompts
 

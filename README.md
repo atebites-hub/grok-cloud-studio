@@ -55,6 +55,8 @@ Launch Extra High (requires `CURSOR_API_KEY` in the environment or `~/.config/cu
 export GCS_CLOUD_REPO="https://github.com/example/your-repo"
 scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." "floor-demo"
 # CLOUD_LAUNCH_OK id=bc-…  — waiter pings the owning seat when the run finishes
+# Optional: GCS_WEBHOOK_SECRET + statusChange webhook also pings FLEET_DONE
+
 ```
 
 ## Environment
@@ -68,7 +70,8 @@ See `.env.example`. Prefix is **`GCS_*`**. Important:
 - `GCS_CLOUD_REF` — default `main`
 - `GCS_PROMPT_DIR` — director prompts dir; empty uses `prompts/` or `docs/studio/directors`
 - `GCS_SPAWN_WAITER=0` — disable the detached waiter (tests)
-- `GCS_WEBHOOK_SECRET` — enable signed webhook receiver
+- `GCS_WEBHOOK_SECRET` — enable signed Cursor Cloud `statusChange` receiver (`FLEET_DONE` without `get_agent_run`)
+- `GCS_WEBHOOK_URL` — public URL to give Cursor (dashboard or v0 `webhook.url`)
 - `CURSOR_API_KEY` — never print; never commit
 
 ## Grok Bot orchestrator (A2A)

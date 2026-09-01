@@ -14,7 +14,7 @@
 # start recycles leftover dispatch only when .a2a-state/dispatch.mind-seats
 # differs from current GCS_MIND_SEATS (env / studio.env). Matching keeps
 # STUDIO_BUS_DISPATCH_ALREADY. Recycle does not kill hub, bot-bridge,
-# fleet-shepherd, seat minds, host ticker, or grok agent serve.
+# fleet-shepherd, webhook, seat minds, host ticker, or grok agent serve.
 # Host ticker enqueues ACP_PING STATUS/CONTINUE keep-alives (work turns).
 # Agent Kanban / `ak` was removed. Board is tcarac/taskboard (ticket CLI + HTTP /mcp).
 # Host board after a wipe: scripts/studio/taskboard/start-taskboard.sh start
@@ -48,6 +48,9 @@ BOT_BRIDGE_LOG="$STATE_DIR/bot-bridge.log"
 SHEPHERD_PY="$ROOT/scripts/directors/fleet-shepherd.py"
 SHEPHERD_PID_FILE="$STATE_DIR/fleet-shepherd.pid"
 SHEPHERD_LOG="$STATE_DIR/fleet-shepherd.log"
+WEBHOOK_PY="$ROOT/scripts/cloud/webhook_receiver.py"
+WEBHOOK_PID_FILE="$STATE_DIR/webhook.pid"
+WEBHOOK_LOG="$STATE_DIR/webhook.log"
 START_DAEMON="$ROOT/scripts/directors/start-seat-daemon.sh"
 STOP_DAEMON="$ROOT/scripts/directors/stop-seat-daemon.sh"
 STATUS_DAEMON="$ROOT/scripts/directors/status-seat-daemon.sh"
@@ -77,7 +80,9 @@ usage() {
 Usage: start-studio-bus.sh [start|stop|status] [--daemons]
 
 start            hub + dispatch + fleet-shepherd (idempotent; recycle leftover
-                 dispatch only when dispatch.mind-seats != current GCS_MIND_SEATS)
+                 dispatch only when dispatch.mind-seats != current GCS_MIND_SEATS).
+                 Optional Cursor Cloud statusChange receiver when GCS_WEBHOOK_SECRET
+                 is set (scripts/cloud/webhook_receiver.py).
 start --daemons  also start per-seat ACP daemons + GROW wake loops + host ticker
 stop             stop hub/dispatch/shepherd/wake/mind/ticker (leaves seat serve)
 stop --daemons   also stop seat ACP daemons and clear daemons.enabled
@@ -175,7 +180,7 @@ write_dispatch_mind_seats() {
 
 # Recycle leftover dispatch only when its persisted GCS_MIND_SEATS set differs
 # from current env / studio.env. Missing persist file is the empty set (pre-feature
-# leftovers). Do not touch hub, bot-bridge, shepherd, minds, ticker, or serve.
+# leftovers). Do not touch hub, bot-bridge, shepherd, webhook, minds, ticker, or serve.
 recycle_dispatch_for_mind_seats() {
   local disp_pid="$1"
   local want have
@@ -365,6 +370,52 @@ start_host_ticker() {
   echo "STUDIO_BUS_TICKER_START pid=$(read_pid "$TICKER_PID_FILE") log=$TICKER_LOG"
 }
 
+start_webhook_receiver() {
+  local pid
+  if [[ -z "${GCS_WEBHOOK_SECRET:-}" ]]; then
+    echo "STUDIO_BUS_WEBHOOK_SKIP (set GCS_WEBHOOK_SECRET for statusChange FLEET_DONE)"
+    return 0
+  fi
+  if [[ ! -f "$WEBHOOK_PY" ]]; then
+    echo "STUDIO_BUS_WEBHOOK_SKIP missing $WEBHOOK_PY"
+    return 0
+  fi
+  pid="$(read_pid "$WEBHOOK_PID_FILE")"
+  if pid_alive "$pid"; then
+    echo "STUDIO_BUS_WEBHOOK_ALREADY pid=$pid"
+    return 0
+  fi
+  rm -f "$WEBHOOK_PID_FILE"
+  nohup python3 "$WEBHOOK_PY" >>"$WEBHOOK_LOG" 2>&1 &
+  echo $! >"$WEBHOOK_PID_FILE"
+  pid="$(read_pid "$WEBHOOK_PID_FILE")"
+  sleep 0.2
+  if ! pid_alive "$pid"; then
+    echo "STUDIO_BUS_FAIL webhook did not stay up; see $WEBHOOK_LOG" >&2
+    return 0
+  fi
+  echo "STUDIO_BUS_WEBHOOK_START pid=$pid log=$WEBHOOK_LOG"
+}
+
+stop_webhook_receiver() {
+  local pid
+  pid="$(read_pid "$WEBHOOK_PID_FILE")"
+  if pid_alive "$pid"; then
+    kill "$pid" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      pid_alive "$pid" || break
+      sleep 0.2
+    done
+    if pid_alive "$pid"; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+    echo "STUDIO_BUS_WEBHOOK_STOP pid=$pid"
+  else
+    echo "STUDIO_BUS_WEBHOOK_NOT_RUNNING"
+  fi
+  rm -f "$WEBHOOK_PID_FILE"
+}
+
 stop_host_ticker() {
   local pid
   pid="$(read_pid "$TICKER_PID_FILE")"
@@ -539,6 +590,8 @@ case "$cmd" in
       fi
     fi
 
+    start_webhook_receiver
+
     bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
     if pid_alive "$bridge_pid"; then
       echo "STUDIO_BUS_BOT_BRIDGE_ALREADY pid=$bridge_pid"
@@ -567,13 +620,15 @@ case "$cmd" in
       echo "STUDIO_BUS_DAEMONS_SKIP (pass --daemons or GCS_START_SEAT_DAEMONS=1)"
     fi
 
-    echo "STUDIO_BUS_READY hub_pid=$hub_pid dispatch_pid=$disp_pid shepherd_pid=$shep_pid bot_bridge_pid=${bridge_pid:-none} state=$STATE_DIR"
+    hook_pid="$(read_pid "$WEBHOOK_PID_FILE")"
+    echo "STUDIO_BUS_READY hub_pid=$hub_pid dispatch_pid=$disp_pid shepherd_pid=$shep_pid webhook_pid=${hook_pid:-none} bot_bridge_pid=${bridge_pid:-none} state=$STATE_DIR"
     ;;
 
   stop)
     stop_wake_daemons
     stop_mind_daemons
     stop_host_ticker
+    stop_webhook_receiver
     hub_pid="$(read_pid "$HUB_PID_FILE")"
     disp_pid="$(read_pid "$DISPATCH_PID_FILE")"
     shep_pid="$(read_pid "$SHEPHERD_PID_FILE")"
@@ -666,7 +721,13 @@ case "$cmd" in
     if pid_alive "$bridge_pid"; then bridge_state="up"; fi
     daemon_flag="off"
     [[ -f "$DAEMONS_FLAG" ]] && daemon_flag="on"
-    echo "STUDIO_BUS_STATUS hub=$hub_state pid=${hub_pid:-none} dispatch=$disp_state pid=${disp_pid:-none} shepherd=$shep_state pid=${shep_pid:-none} bot_bridge=$bridge_state pid=${bridge_pid:-none} daemons=$daemon_flag state=$STATE_DIR"
+    hook_pid="$(read_pid "$WEBHOOK_PID_FILE")"
+    hook_state="down"
+    if pid_alive "$hook_pid"; then hook_state="up"; fi
+    if [[ -z "${GCS_WEBHOOK_SECRET:-}" && "$hook_state" == "down" ]]; then
+      hook_state="skip"
+    fi
+    echo "STUDIO_BUS_STATUS hub=$hub_state pid=${hub_pid:-none} dispatch=$disp_state pid=${disp_pid:-none} shepherd=$shep_state pid=${shep_pid:-none} webhook=$hook_state pid=${hook_pid:-none} bot_bridge=$bridge_state pid=${bridge_pid:-none} daemons=$daemon_flag state=$STATE_DIR"
     status_mind_daemons || true
     if [[ "$daemon_flag" == "on" ]] || want_daemons; then
       status_seat_daemons || true

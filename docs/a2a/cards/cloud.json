@@ -1,6 +1,6 @@
 {
   "name": "Cloud",
-  "description": "Own Extra High launch, waiter, webhook, and SDK wrappers. Never print API keys.",
+  "description": "Own Extra High launch, waiter, optional statusChange webhook, and SDK wrappers. Never print API keys.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {

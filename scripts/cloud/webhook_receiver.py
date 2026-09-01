@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Signed Cursor Cloud webhook receiver for Grok Cloud Studio.
 
-HMAC-SHA256 over the raw request body. Header:
+HMAC-SHA256 over the raw request body (never parse first). Header:
 
   X-Webhook-Signature: sha256=<hex>
 
+Official Cursor Cloud statusChange payload (id, status, target.prUrl):
+https://cursor.com/docs/cloud-agent/api/webhooks
+
 Secret from GCS_WEBHOOK_SECRET (never logged). On a terminal Extra High
-status, look up the bc-id in the fleet ledger, A2A-ping the owning seat,
-and mark notified_by=webhook. The waiter remains the fallback when this
+status, look up the bc-id in the fleet ledger, A2A-ping the owning seat
+(FLEET_DONE / PR_READY), and mark notified_by=webhook. This path does not
+poll the Cursor Cloud run API. The waiter remains the fallback when this
 receiver is not running.
 
 Stdlib only. Local studio bind (default 127.0.0.1:8788).
@@ -90,24 +94,50 @@ def extract_status(payload: dict[str, Any]) -> str:
     return ""
 
 
+def _first_str(*values: Any) -> str:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
 def normalize_payload(payload: dict[str, Any], bc_id: str) -> dict[str, Any]:
+    """Map Cursor statusChange (and local fixtures) onto fleet notify_text fields.
+
+    Official Cursor Cloud webhooks put prUrl / agent url under ``target``.
+    See https://cursor.com/docs/cloud-agent/api/webhooks
+    """
     run = payload.get("run") if isinstance(payload.get("run"), dict) else {}
     git = run.get("git") if isinstance(run, dict) else payload.get("git")
-    pr = payload.get("prUrl") or payload.get("pr_url")
+    target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
+    pr = _first_str(
+        payload.get("prUrl"),
+        payload.get("pr_url"),
+        target.get("prUrl"),
+        target.get("pr_url"),
+    )
     if not pr and isinstance(git, dict):
         for branch in git.get("branches") or []:
             if isinstance(branch, dict) and branch.get("prUrl"):
-                pr = branch["prUrl"]
+                pr = str(branch["prUrl"]).strip()
                 break
     status = extract_status(payload)
+    url = _first_str(
+        payload.get("url"),
+        target.get("url"),
+        f"https://cursor.com/agents/{bc_id}",
+    )
+    result = payload.get("result")
+    if result is None:
+        result = payload.get("summary")
     return {
         "agentId": bc_id,
         "name": payload.get("name") or "",
-        "url": payload.get("url") or f"https://cursor.com/agents/{bc_id}",
+        "url": url,
         "runStatus": status,
         "status": status,
-        "prUrl": pr,
-        "result": payload.get("result"),
+        "prUrl": pr or None,
+        "result": result,
     }
 
 
@@ -134,7 +164,12 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = urlparse(self.path).path
-        if path not in ("/webhooks/cursor-cloud", "/v0/statusChange", "/webhook"):
+        if path not in (
+            "/webhooks/cursor-cloud",
+            "/v0/statusChange",
+            "/webhook",
+            "/hook",
+        ):
             self._json(404, {"error": "not found"})
             return
         length = int(self.headers.get("Content-Length") or "0")
@@ -142,6 +177,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
         header = (
             self.headers.get("X-Webhook-Signature")
             or self.headers.get("X-Hub-Signature-256")
+            or self.headers.get("X-GCS-Signature")
             or ""
         )
         try:
@@ -164,12 +200,34 @@ class WebhookHandler(BaseHTTPRequestHandler):
         if not bc_id:
             self._json(400, {"error": "missing agent id"})
             return
+        event = str(payload.get("event") or self.headers.get("X-Webhook-Event") or "").strip()
+        if event and event.lower() not in {"statuschange", "status_change"}:
+            self._json(
+                202,
+                {"ok": True, "ignored": True, "id": bc_id, "event": event},
+            )
+            return
         status = extract_status(payload)
         if status not in TERMINAL:
             self._json(202, {"ok": True, "ignored": True, "id": bc_id, "status": status or "unknown"})
             return
         hit = find_by_bc(bc_id)
         seat = hit[0] if hit else os.environ.get("GCS_DIRECTOR_SEAT", "ops")
+        if hit is not None and hit[1].get("notified"):
+            # Cursor retries statusChange. Do not A2A-ping FLEET_DONE twice.
+            # Handler-level; does not change fleet_ledger.notify_owner (#34).
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "duplicate": True,
+                    "id": bc_id,
+                    "seat": seat,
+                    "notified_by": hit[1].get("notified_by"),
+                    "status": status,
+                },
+            )
+            return
         normalized = normalize_payload(payload, bc_id)
         try:
             row = notify_owner(bc_id, normalized, notified_by="webhook", seat=seat)
@@ -197,7 +255,7 @@ def main() -> int:
         return 2
     httpd = ThreadingHTTPServer((HOST, PORT), WebhookHandler)
     print(f"gcs-webhook listening on http://{HOST}:{PORT}")
-    print("POST /webhooks/cursor-cloud  POST /v0/statusChange  GET /health")
+    print("POST /webhooks/cursor-cloud  POST /v0/statusChange  POST /hook  GET /health")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
