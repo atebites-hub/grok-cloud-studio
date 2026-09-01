@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import subprocess
 import threading
 from dataclasses import dataclass, field
@@ -496,3 +497,121 @@ def test_followup_fail_closed_when_run_returns_non_grok_model(tmp_path: Path) ->
     assert "CLOUD_FOLLOWUP_ERR" in proc.stdout
     assert "CLOUD_FOLLOWUP_OK" not in proc.stdout
     assert FAKE_KEY not in proc.stdout + proc.stderr
+
+
+# Real CloudAgent leaks (Donald LIV-67): unpinned send → Auto picked these.
+LEAK_MODEL_IDS = ("auto", "claude-4.5-sonnet", "gemini-3.1-pro")
+_UNPINNED_SEND_RE = re.compile(r"agent\.send\(\s*prompt\s*\)\s*(?!,)")
+_CREATE_SEND_FOLLOWUP_PATHS = (
+    CLOUD / "sdk" / "launch.ts",
+    CLOUD / "sdk" / "followup.ts",
+    CLOUD / "sdk" / "common.ts",
+    CLOUD / "sdk" / "result.ts",
+    CLOUD / "sdk" / "watch.ts",
+    CLOUD / "sdk" / "collect.ts",
+    CLOUD / "followup.sh",
+    CLOUD / "followup-cloud-agent.sh",
+    REPO / "scripts" / "launch-cloud-extra-high.sh",
+)
+
+
+def test_create_send_followup_path_has_no_unpinned_agent_send() -> None:
+    """Unpinned agent.send(prompt) lets Auto pick claude-4.5-sonnet / gemini-3.1-pro."""
+    common = (CLOUD / "sdk" / "common.ts").read_text(encoding="utf-8")
+    launch = (CLOUD / "sdk" / "launch.ts").read_text(encoding="utf-8")
+    followup = (CLOUD / "sdk" / "followup.ts").read_text(encoding="utf-8")
+    followup_sh = FOLLOWUP.read_text(encoding="utf-8")
+    for path in _CREATE_SEND_FOLLOWUP_PATHS:
+        src = path.read_text(encoding="utf-8")
+        hit = _UNPINNED_SEND_RE.search(src)
+        assert hit is None, f"unpinned send in {path}: {hit.group(0) if hit else ''}"
+    assert "sendPinned(" in launch
+    assert "sendPinned(" in followup
+    assert "return agent.send(prompt, { model });" in common
+    assert "extraHighModel()" in launch
+    assert "extraHighModel()" in followup
+    assert "followup-body" in followup_sh
+    assert "CURSOR_CLOUD_MODEL" not in common
+
+
+def test_rest_followup_body_is_not_prompt_only(tmp_path: Path) -> None:
+    """REST POST /runs must include extraHighModel, not {prompt} only."""
+    script = CLOUD / "extra_high_model.py"
+    proc = subprocess.run(
+        ["python3", str(script), "followup-body"],
+        cwd=str(REPO),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env={**os.environ, "CLOUD_PROMPT_TEXT": "continue the PR"},
+    )
+    assert proc.returncode == 0, proc.stderr
+    body = json.loads(proc.stdout)
+    assert "prompt" in body
+    assert "model" in body, f"prompt-only followup body: {body}"
+    assert set(body.keys()) != {"prompt"}
+    assert body["model"]["id"] == "grok-4.6"
+    with MockCursorAPI() as api:
+        posted = _run(
+            FOLLOWUP,
+            ["bc-mock", "continue the PR"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert posted.returncode == 0, posted.stdout + posted.stderr
+    runs = [p for p in api.posts if str(p.get("path") or "").endswith("/runs")]
+    assert runs, api.posts
+    rest_body = runs[0]["body"]
+    assert "model" in rest_body
+    assert set(rest_body.keys()) != {"prompt"}
+    assert rest_body["model"]["id"] == "grok-4.6"
+
+
+@pytest.mark.parametrize("model_id", LEAK_MODEL_IDS)
+def test_launch_rejects_auto_sonnet_gemini_leak_ids(tmp_path: Path, model_id: str) -> None:
+    body = {
+        "agent": {
+            "id": "bc-leak",
+            "name": "leak",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-leak",
+            "latestRunId": "run-leak",
+            "model": {"id": model_id},
+        },
+        "run": {
+            "id": "run-leak",
+            "agentId": "bc-leak",
+            "status": "CREATING",
+            "model": {"id": model_id},
+        },
+        "model": {"id": model_id},
+    }
+    with MockCursorAPI(create_http=201, create_body=body) as api:
+        proc = _run(
+            LAUNCH,
+            ["should-reject-leak"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode != 0, model_id
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout, model_id
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout, model_id
+
+
+@pytest.mark.parametrize("model_id", LEAK_MODEL_IDS)
+def test_followup_rejects_auto_sonnet_gemini_leak_ids(tmp_path: Path, model_id: str) -> None:
+    wrong = {
+        "run": {
+            "id": "run-followup",
+            "agentId": "bc-mock",
+            "status": "CREATING",
+            "model": {"id": model_id},
+        }
+    }
+    with MockCursorAPI(followup_http=201, followup_body=wrong) as api:
+        proc = _run(
+            FOLLOWUP,
+            ["bc-mock", "continue"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode != 0, model_id
+    assert "CLOUD_FOLLOWUP_ERR" in proc.stdout, model_id
+    assert "CLOUD_FOLLOWUP_OK" not in proc.stdout, model_id

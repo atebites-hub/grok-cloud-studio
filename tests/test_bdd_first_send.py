@@ -18,10 +18,13 @@ import re
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 from test_cloud_launch import (
     CLOUD,
     EXAMPLE_REPO,
     FAKE_KEY,
+    FOLLOWUP,
     LAUNCH,
     MockCursorAPI,
     _run,
@@ -106,8 +109,62 @@ def test_bdd_first_agent_send_on_gcs_is_grok_46_xhigh_not_dashboard_auto(
     # And Auto is not Extra High; Bot is never a CloudAgent on this path
     assert pin.is_extra_high_model("auto") is False
     assert pin.is_extra_high_model("auto-smart") is False
+    assert pin.is_extra_high_model("claude-4.5-sonnet") is False
+    assert pin.is_extra_high_model("gemini-3.1-pro") is False
     assert pin.extra_high_model_object()["id"] == "grok-4.6"
     assert BOT_CLOUDAGENT not in launch_ts
     assert BOT_CLOUDAGENT not in common_ts
     assert "GCS_BOT_AGENT_ID" not in launch_ts
     assert EXAMPLE_REPO in body["repos"][0]["url"]
+
+
+@pytest.mark.parametrize("model_id", ("auto", "claude-4.5-sonnet", "gemini-3.1-pro"))
+def test_bdd_create_and_send_reject_real_auto_sonnet_gemini_leaks(
+    tmp_path: Path,
+    model_id: str,
+) -> None:
+    """Donald: unpinned Auto leaked these CloudAgent model ids."""
+    create_body = {
+        "agent": {
+            "id": "bc-leak",
+            "name": "leak",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-leak",
+            "latestRunId": "run-leak",
+            "model": {"id": model_id},
+        },
+        "run": {
+            "id": "run-leak",
+            "agentId": "bc-leak",
+            "status": "CREATING",
+            "model": {"id": model_id},
+        },
+        "model": {"id": model_id},
+    }
+    with MockCursorAPI(create_http=201, create_body=create_body) as api:
+        launch = _run(
+            LAUNCH,
+            ["reject-leak"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert launch.returncode != 0, model_id
+    assert "CLOUD_LAUNCH_ERR" in launch.stdout
+    assert "CLOUD_LAUNCH_OK" not in launch.stdout
+
+    follow_body = {
+        "run": {
+            "id": "run-followup",
+            "agentId": "bc-mock",
+            "status": "CREATING",
+            "model": {"id": model_id},
+        }
+    }
+    with MockCursorAPI(followup_http=201, followup_body=follow_body) as api:
+        follow = _run(
+            FOLLOWUP,
+            ["bc-mock", "continue"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert follow.returncode != 0, model_id
+    assert "CLOUD_FOLLOWUP_ERR" in follow.stdout
+    assert "CLOUD_FOLLOWUP_OK" not in follow.stdout
