@@ -10,8 +10,9 @@ vendored NousResearch/hermes-agent.
 
 Mail-is-a-turn stays grok mailbox + pin + stay-up, not ACP overlay.
 Does not land harvest #26/#28. Does not restack #47 cloud_list /
-cloud_followup into mind.py. Never Bot CloudAgent. Empty CI is not
-ship-gate evidence.
+cloud_followup into mind.py (cursor-cloud MCP may advertise cloud_list;
+that is the Extra High plane, not a hive restack). Never Bot CloudAgent.
+Empty CI is not ship-gate evidence.
 
 BDD: demonstrate, don't theatre. No LGTM without evidence.
 """
@@ -58,7 +59,10 @@ HARVEST_MARKERS = (
     "defang",
     "mail envelope",
 )
+# Banned on studio-mind / mind.py PLUGINS. cursor-cloud MCP advertises
+# cloud_list (Extra High plane; GCS #33). cloud_followup stays off both.
 PR47_RESTACK = ("cloud_list", "cloud_followup")
+CLOUD_PLANE = ("cloud_launch", "cloud_list", "cloud_status", "cloud_result")
 BANNED_SPAWN = ("Bot CloudAgent", "Grok Bot CloudAgent")
 
 HERMES_DIR_NAMES = frozenset(
@@ -463,10 +467,12 @@ def test_scenario_copied_plugins_honor_gcs_root(tmp_path: Path) -> None:
     assert "a2a_list_seats" in a2a_names
     assert "a2a_send" in a2a_names
     assert "cloud_launch" in cloud_names
+    assert "cloud_list" in cloud_names
     assert "cloud_status" in cloud_names
     assert "cloud_result" in cloud_names
+    assert set(CLOUD_PLANE) <= cloud_names
+    assert "cloud_followup" not in cloud_names
     for restack in PR47_RESTACK:
-        assert restack not in cloud_names, restack
         assert restack not in a2a_names, restack
     a2a_src = (PLUGIN_A2A / "server.py").read_text(encoding="utf-8")
     cloud_src = (PLUGIN_CLOUD / "server.py").read_text(encoding="utf-8")
@@ -481,7 +487,7 @@ def test_scenario_off_tree_handshake_from_gcs_root_stamp(tmp_path: Path) -> None
     expected = {
         "studio-mind": {"ticket", "a2a_send", "cloud_launch"},
         "a2a": {"a2a_list_seats", "a2a_send"},
-        "cursor-cloud": {"cloud_launch", "cloud_status", "cloud_result"},
+        "cursor-cloud": set(CLOUD_PLANE),
     }
     grok_home = tmp_path / "grok-home"
     grok_home.mkdir(parents=True)
@@ -514,8 +520,11 @@ def test_scenario_off_tree_handshake_from_gcs_root_stamp(tmp_path: Path) -> None
             listed = _read_frame(proc)
             names = {t["name"] for t in listed["result"]["tools"]}
             assert expected[name] <= names, (name, names)
-            for restack in PR47_RESTACK:
-                assert restack not in names, (name, restack)
+            if name == "cursor-cloud":
+                assert "cloud_followup" not in names
+            else:
+                for restack in PR47_RESTACK:
+                    assert restack not in names, (name, restack)
             _assert_alive(proc)
         finally:
             _reap(proc)

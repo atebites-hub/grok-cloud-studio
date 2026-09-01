@@ -11,7 +11,8 @@ Feature: Grok-bot-like mind plugins (ticket/A2A/cloud) without Hermes (LIV-63 re
   Mail-is-a-turn stays grok mailbox + pin + stay-up (`grok --prompt-file`,
   grok-4.6 xhigh). Not ACP `session/prompt` overlay. Do not land harvest
   mailbox PRs #26 and #28 (envelope, defang, heartbeat). Do not restack
-  #47 `cloud_list` / `cloud_followup` into mind.py. Never Bot CloudAgent.
+  #47 `cloud_list` / `cloud_followup` into mind.py. cursor-cloud MCP may
+  advertise `cloud_list` (Extra High plane). Never Bot CloudAgent.
   skipSeats orchestrator/donald stay skipped. Empty CI is not ship-gate
   evidence. Demonstrate, don't theatre.
 
@@ -27,6 +28,7 @@ Feature: Grok-bot-like mind plugins (ticket/A2A/cloud) without Hermes (LIV-63 re
     Given plugins/a2a and plugins/cursor-cloud copied off the repo tree
     When the stdio server starts with GCS_ROOT pointing at the kit
     Then tools/list still returns the A2A and cloud planes
+    And cursor-cloud includes cloud_list; mind.py does not
 
   Scenario: Off-tree copies handshake from gcs-root stamp without GCS_ROOT
     Given grok plugin install copied studio-mind, a2a, and cursor-cloud
