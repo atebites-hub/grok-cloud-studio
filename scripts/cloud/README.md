@@ -51,7 +51,7 @@ After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.
 
 Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
-`scripts/directors/fleet-shepherd.py` is an **orphan-only** safety net: it skips rows with a live `waiter_pid` or `notified_by` in `{waiter, webhook, shepherd}`.
+`scripts/directors/fleet-shepherd.py` is an **orphan-only** safety net: it skips rows with a live `waiter_pid` or `notified_by` in `{waiter, webhook, shepherd}`. It also skips leftover shells so it does not `get_agent_run` them: notified closed rows, and agents whose latest run is already `FINISHED`. Cursor Cloud agent `status` stays `ACTIVE` until archive; probing those leftovers burns the hourly run-GET cap and looks like spinning workers.
 
 Optional signed webhooks (`scripts/cloud/webhook_receiver.py`) are the other completion path. Waiter remains the fallback when `GCS_WEBHOOK_SECRET` is unset.
 
