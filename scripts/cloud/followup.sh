@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Send a follow-up prompt to an existing Cursor Cloud agent. SDK-first.
 # Prints CLOUD_FOLLOWUP_OK only on success. Never prints API keys.
+# CURSOR_CLOUD_MODEL must be unset or grok-4.6; any other value is
+# CLOUD_FOLLOWUP_ERR and does not POST /runs.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,6 +38,10 @@ fi
 
 if ! cloud_load_auth; then
   fail_followup "error: CURSOR_API_KEY is not set (export it or add it to ~/.config/cursor/agent.env)"
+fi
+
+if ! python3 "${HERE}/extra_high_model.py" assert-env; then
+  fail_followup "error: CURSOR_CLOUD_MODEL is not grok-4.6"
 fi
 
 if cloud_sdk_exec followup "$agent_id" "$prompt"; then

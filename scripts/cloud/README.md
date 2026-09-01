@@ -36,9 +36,10 @@ Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|res
 
 Hard-wired Extra High create **and send** (SDK `Agent.create` + `agent.send` / REST `POST /v1/agents` and `POST /v1/agents/{id}/runs`):
 
-- `model.id = grok-4.6` (not `CURSOR_CLOUD_MODEL` / `CURSOR_CLOUD_EFFORT`)
+- `model.id = grok-4.6` from `extraHighModel()` / `extra_high_model_object()` (hardcoded; no env switch)
+- `CURSOR_CLOUD_MODEL` unset or exactly `grok-4.6` only. Any other value (including `auto`, `claude-opus-5`, Opus, Sonnet, Gemini, Composer, `cursor-grok-4.6-xhigh`) is refused before create or send
 - `model.params`: `effort=xhigh`, `fast=false`
-- SDK first run and follow-up call `sendPinned` → `agent.send(prompt, { model: extraHighModel() })`
+- SDK first run and follow-up call `sendPinned` → `requirePinnedCloudModelEnv()` then `agent.send(prompt, { model: extraHighModel() })`
 - `repos[0].url` from **`GCS_CLOUD_REPO` or `CLOUD_REPO_URL`** (required; fail closed)
 - `repos[0].startingRef` from `GCS_CLOUD_REF` / `CLOUD_REPO_REF` / `CURSOR_CLOUD_REF` (default `main`)
 - `autoCreatePR = true`

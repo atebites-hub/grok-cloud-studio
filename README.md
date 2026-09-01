@@ -57,7 +57,7 @@ scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." 
 # CLOUD_LAUNCH_OK id=bc-…  — waiter pings the owning seat when the run finishes
 ```
 
-**Never launch a Grok Bot CloudAgent.** Specialists are Cursor Cloud Extra High only (`grok-4.6`, `effort=xhigh`, `fast=false`). Create and every `send` pin that model; there is no env override. If create or send returns another model, the launcher prints `CLOUD_LAUNCH_ERR` and does not count that agent as a worker.
+**Never launch a Grok Bot CloudAgent.** Specialists are Cursor Cloud Extra High only (`grok-4.6`, `effort=xhigh`, `fast=false`). Create and every `send` pin that model. `CURSOR_CLOUD_MODEL` must be unset or `grok-4.6`; anything else fails create and send. If create or send returns another model, the launcher prints `CLOUD_LAUNCH_ERR` and does not count that agent as a worker.
 
 In the Cursor dashboard, set the Cloud Agent default model to **grok-4.6 extra-high (xhigh)** so Auto cannot pick Sonnet or Gemini.
 
