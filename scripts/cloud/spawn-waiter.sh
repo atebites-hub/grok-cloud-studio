@@ -2,6 +2,11 @@
 # After CLOUD_LAUNCH_OK: register the run in the fleet ledger and spawn a
 # detached waiter that blocks on SDK run.wait() (or REST poll) then A2A-pings
 # the owning seat. Disable with GCS_SPAWN_WAITER=0 / CLOUD_SPAWN_WAITER=0.
+#
+# LIV-82 remaining vs OPEN #109: also attempt a Living Sky Linear stamp
+# (scripts/studio/linear_stamp_after_launch_beat1740.sh) for this launch id.
+# Waiter skip/dry still stamps — that skip is not a fake every-chatter stamp.
+# LINEAR_STAMP_FAIL must not block waiter spawn. Never print credentials.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -20,6 +25,16 @@ while [[ $# -gt 0 ]]; do
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# Stamp Living Sky after a real Extra High launch id, even when the waiter
+# itself is skipped. Missing LINEAR_API_KEY is LINEAR_STAMP_FAIL + local evidence.
+STAMP_SCRIPT="$ROOT/scripts/studio/linear_stamp_after_launch_beat1740.sh"
+if [[ -f "$STAMP_SCRIPT" && ( -n "$ID" || -n "$RUN" ) ]]; then
+  bash "$STAMP_SCRIPT" --source spawn-waiter \
+    ${ID:+--id "$ID"} \
+    ${RUN:+--run "$RUN"} \
+    ${NAME:+--name "$NAME"} || true
+fi
 
 if [[ "${GCS_SPAWN_WAITER:-${CLOUD_SPAWN_WAITER:-1}}" == "0" ]]; then
   echo "CLOUD_WAITER_SKIPPED id=${ID:-unset} reason=GCS_SPAWN_WAITER=0"

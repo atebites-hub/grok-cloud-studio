@@ -51,6 +51,12 @@ After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.
 
 Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
+After a real `CLOUD_LAUNCH_OK`, `spawn-waiter.sh` also runs
+`scripts/studio/linear_stamp_after_launch_beat1740.sh` (Living Sky `LIV-69`,
+optional `GCS_LINEAR_STAMP_ISSUES`). Missing `LINEAR_API_KEY` prints
+`LINEAR_STAMP_FAIL` and still records local evidence; it does not fake
+`save_comment` and does not fail the launch. This is not #109's every-mind-turn hive stamp.
+
 `scripts/directors/fleet-shepherd.py` is an **orphan-only** safety net: it skips rows with a live `waiter_pid` or `notified_by` in `{waiter, webhook, shepherd}`.
 
 Optional signed webhooks (`scripts/cloud/webhook_receiver.py`) are the other completion path. Waiter remains the fallback when `GCS_WEBHOOK_SECRET` is unset.

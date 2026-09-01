@@ -4,6 +4,7 @@
 # with autoCreatePR. Canonical: @cursor/sdk (scripts/cloud/sdk/launch.ts). REST curl is fallback.
 # Prints CLOUD_LAUNCH_OK only on HTTP 200/201 (REST) or SDK create success.
 # Otherwise CLOUD_LAUNCH_ERR. Never prints API keys.
+# After CLOUD_LAUNCH_OK, spawn-waiter attempts LINEAR_STAMP (Living Sky LIV-69).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -163,5 +164,7 @@ run_id="$(cloud_json_get "$CLOUD_HTTP_BODY" run.id)"
 [[ -n "$url" ]] && printf 'url=%s\n' "$url"
 [[ -n "$run_id" ]] && printf 'run_id=%s\n' "$run_id"
 if [[ -n "$id" ]]; then
+  # LINEAR_STAMP_ATTEMPT runs from spawn-waiter (LIV-82 after CLOUD_LAUNCH_OK,
+  # scripts/studio/linear_stamp_after_launch_beat1740.sh). Not a mind-turn stamp.
   bash "${SCRIPT_DIR}/cloud/spawn-waiter.sh" --id "$id" ${run_id:+--run "$run_id"} ${name:+--name "$name"} || true
 fi
