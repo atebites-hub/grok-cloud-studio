@@ -8,7 +8,9 @@ the agent for that turn (its own tool loop, `--max-turns 40`). Default
 `cursor`). Each mail line uses that file. On quota / HTTP 402, flip the file
 and retry that same mail line once on the other runner (`MIND_SWITCH`). Forced
 `GCS_MIND_RUNNER=grok|cursor` does not flip. Never remint the grok UUID because
-harvest was empty or because the runner switched.
+harvest was empty or because the runner switched. Hub TASK_STATE_COMPLETED is
+a receipt, not mind-turn done. Offset advances only on runner exit 0. A runner
+that did not run (None) is runner-fail, not harvest-fake success.
 
 Do not parse grok stdout for function calls. Do not run a second tool-calling
 loop. Do not use grok agent serve or leftover ACP inject on opted-in mind
@@ -833,7 +835,7 @@ DEFAULT_RUNNER: Callable[..., Any] = mind_turn_runner
 
 def _runner_payload(raw: Any) -> tuple[str, int, str]:
     if raw is None:
-        return "", 0, ""
+        return "", 1, ""
     if isinstance(raw, dict):
         text = str(raw.get("text") or "")
         stderr = str(raw.get("stderr") or "")
@@ -855,7 +857,12 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """One inbox line → one agent turn. Offset advances only on runner exit 0."""
+    """One inbox line → one agent turn. Offset advances only on runner exit 0.
+
+    Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not mind-turn done.
+    Do not treat a COMPLETE hub task as mail consumed. A runner that did
+    not run (None) is runner-fail, not harvest-fake success.
+    """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
         print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)

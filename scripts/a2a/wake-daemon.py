@@ -19,6 +19,8 @@ session/new; later session/load). Named identity is SOUL.md + MEMORY.md
 + GROK_MEMORY=1 on the **serve** process.
 
 Hub TASK_STATE_COMPLETED is a receipt, not proof the Director acted.
+That COMPLETE is not mind-turn done. Mail is consumed only after grok/cursor
+runner exit 0.
 Local studio only. Stdlib only.
 """
 from __future__ import annotations

@@ -76,7 +76,7 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - If grok says the session is already in use, treat it as minted and `--resume` the same UUID. Do not mint a new UUID.
 - Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty. Do not remint because the runner switched.
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
-- Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after the effective runner exits 0.
+- Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after the effective runner exits 0. Hub `TASK_STATE_COMPLETED` / A2A ACK is a **receipt, not mind-turn done** (Living Sky **LIV-85**). Do not treat send.sh COMPLETE as `MIND_TURN`. Mail is consumed only after grok/cursor runner exit 0. A runner that did not run is not success. Empty harvest does not remint and does not consume mail.
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
 
 No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.
@@ -99,7 +99,8 @@ Forced `GCS_MIND_RUNNER=grok` or `GCS_MIND_RUNNER=cursor` does **not** flip
 (and does not rewrite `mind/runner`). Missing `mind/runner` under auto starts
 as grok; a successful auto turn writes the runner that won.
 
-Do not consume/advance `offset` unless the effective runner exits 0. If the
+Do not consume/advance `offset` unless the effective runner exits 0. Hub
+COMPLETE / A2A ACK is a receipt, not that success. If the
 retry also fails, keep today’s `MIND_FAIL` / 2s runner-fail sleep (do not
 tight-loop faster). Do not fork sessions. Do not become a 45s assigner. Do
 not set `GROK_BIN=cursor-grok`. Do not reuse `mind/session` (that UUID is

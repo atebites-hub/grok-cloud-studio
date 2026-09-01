@@ -16,9 +16,10 @@ Grok Cloud Studio is a **local control plane**:
 3. **A2A** is seat-to-seat. **MCP** is agent-to-tool.
 
 ```
-send.sh → hub.py (ack + inbox JSONL)
+send.sh → hub.py (ack COMPLETE + inbox JSONL; receipt, not mind-turn done)
             ↓
         mind.py         → grok --resume pinned UUID --prompt-file   (GCS_MIND_SEATS)
+                        → mail consumed (offset) only after runner exit 0
         wake-daemon.py  → seat-prompt-acp.sh --pin-session  (GROW seats, leftover)
         dispatch.py     → leftover acp_inject.py            (non-GROW only)
                         → launch-director.sh  (one-shot -p fallback)
@@ -39,7 +40,7 @@ Stdlib HTTP+JSON (`scripts/a2a/hub.py`):
 
 - `GET /health` `GET /registry`
 - `GET /a2a/{seat}/.well-known/agent-card.json`
-- `POST /a2a/{seat}/message:send` — appends `.a2a-state/<seat>/inbox.jsonl`, returns `TASK_STATE_COMPLETED` + receipt
+- `POST /a2a/{seat}/message:send` — appends `.a2a-state/<seat>/inbox.jsonl`, returns `TASK_STATE_COMPLETED` + receipt. That COMPLETE / A2A ACK is a receipt, not mind-turn done. Mail is consumed only after grok/cursor runner exit 0.
 - tasks get/list/cancel
 
 Default bind `127.0.0.1:8732`. Cards live in `docs/a2a/cards/`. Seats and ACP ports live in `docs/a2a/registry.json` (`scripts/a2a/lib.py` is the source of truth).
