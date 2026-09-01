@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """Minimal local A2A HTTP+JSON hub for Grok Cloud Studio seats.
 
-Stdlib only. Serves Agent Cards, Send Message, Get/List/Cancel Task.
-This hub is the protocol ack bus: it appends per-seat inbox JSONL and
-returns TASK_STATE_COMPLETED + a receipt artifact.
+Stdlib plus scripts/a2a/lib.py (canonical_seat). Serves Agent Cards,
+Send Message, Get/List/Cancel Task. This hub is the protocol ack bus:
+it appends per-seat inbox JSONL and returns TASK_STATE_COMPLETED + a
+receipt artifact. Seat aliases (donald → orchestrator Bot) resolve
+before card lookup so skipSeats back-compat names still land mail.
+
 
 Auto-wake of Grok Build Director seats is handled separately by
 scripts/a2a/dispatch.py (standing inbox poller) and
@@ -25,6 +28,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+from lib import canonical_seat
 
 HOST = os.environ.get("GCS_A2A_HOST", "127.0.0.1")
 PORT = int(os.environ.get("GCS_A2A_PORT", "8732"))
@@ -169,6 +174,8 @@ class A2AHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         seat, action, task_id, _ = _parse_path(self.path)
+        if seat:
+            seat = canonical_seat(seat, ROOT)
         if action == "health":
             _json_response(
                 self,
@@ -214,6 +221,8 @@ class A2AHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         seat, action, task_id, _ = _parse_path(self.path)
+        if seat:
+            seat = canonical_seat(seat, ROOT)
         if action == "message-send" and seat:
             if _load_card(seat) is None:
                 _json_response(self, 404, {"error": f"unknown seat: {seat}"})

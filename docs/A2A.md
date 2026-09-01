@@ -50,7 +50,7 @@ Leftover dispatch (no `--pin-session`) still harvests work/STATUS and `session/c
 
 ## Grok Bot seats (orchestrator)
 
-Grok **Bot** agents are not `grok agent serve` / ACP inject targets. Put Bot seats in `docs/a2a/registry.json` `skipSeats` (`orchestrator` is the default example; `donald` stays in skipSeats for back-compat) and map them in `docs/a2a/bot-agents.json`.
+Grok **Bot** agents are not `grok agent serve` / ACP inject targets. Put Bot seats in `docs/a2a/registry.json` `skipSeats` (`orchestrator` is the default example; `donald` stays in skipSeats for back-compat) and map them in `docs/a2a/bot-agents.json`. `donald` is an alias for `orchestrator` when donald is not a first-class registry seat: `send.sh donald` and `POST /a2a/donald/message:send` land in `.a2a-state/orchestrator/inbox.jsonl` so Bot capacity ACK can wake via bot-bridge. Do not remint a live bot-bridge pid (PR #36). Do not launch Bot as a Cursor CloudAgent.
 
 Bind your Bot id (idempotent; never prints the full agent id):
 
@@ -72,7 +72,7 @@ When a new wake appears, read the task and act as orchestrator.
 Reply via `scripts/a2a/send.sh <seat> "…"`. This seat is NOT an ACP inject target.
 ```
 
-Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh donald` still works if you keep that seat name). Do not launch Bot CloudAgent for this path.
+Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh donald` aliases to orchestrator). Do not launch Bot CloudAgent for this path.
 
 ## CCGS leads (mind seats)
 
