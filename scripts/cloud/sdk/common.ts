@@ -21,10 +21,11 @@ function envFirst(...names: string[]): string {
 }
 
 export function extraHighModel(): ModelSelection {
+  // Pinned Extra High create. Ignore CLI mind model overrides.
   return {
-    id: process.env.CURSOR_CLOUD_MODEL || "grok-4.6",
+    id: "grok-4.6",
     params: [
-      { id: "effort", value: process.env.CURSOR_CLOUD_EFFORT || "xhigh" },
+      { id: "effort", value: "xhigh" },
       { id: "fast", value: "false" },
     ],
   };

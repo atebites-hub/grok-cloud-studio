@@ -92,7 +92,7 @@ grok plugin install ./plugins/a2a --trust
 grok plugin install ./plugins/cursor-cloud --trust
 ```
 
-Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_result`. Details: `docs/PLUGINS.md`.
+Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_list`, `cloud_status`, `cloud_followup`, `cloud_result`. Details: `docs/PLUGINS.md`.
 
 ## Tests + secret scan
 
@@ -102,6 +102,8 @@ python3 scripts/secret_scan.py
 ```
 
 The secret scan fails closed on credentials, private-key blocks, and product lore that does not belong in this public control plane.
+
+GitHub Actions (`.github/workflows/ship-gate.yml`) runs the same two commands on every pull request via `scripts/ci/ship-gate.sh`. The job fails unless pytest prints `N passed` with N≥1 and `secret_scan=clean`. It does not use leftover-green `--override-ini`, and it does not launch Bot CloudAgent.
 
 ## License
 

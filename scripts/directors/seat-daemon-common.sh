@@ -176,6 +176,46 @@ _gcs_abs_path() {
   python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$1"
 }
 
+_write_cloud_wrapper() {
+  # PATH wrapper for Extra High scripts. Not MCP. Not a GROK_HOME copy
+  # into Cursor CLI — Cursor uses .cursor/mcp.json (second catalog).
+  local dest="$1" script="$2"
+  local script_q
+  script_q="$(printf '%q' "$script")"
+  cat >"$dest" <<EOF
+#!/bin/bash
+# gcs-seat-cloud-wrapper
+set -euo pipefail
+exec bash $script_q "\$@"
+EOF
+  chmod +x "$dest"
+}
+
+install_seat_cloud_cli() {
+  # Put cloud_launch / cloud_list / cloud_status / cloud_followup / cloud_result
+  # on grok serve PATH. Wrappers exec the Extra High bash scripts. Do not wrap
+  # watch (Directors must not block a turn). Do not copy GROK_HOME MCP.
+  local seat="${1:-}"
+  local sd gh wrap_dir launch list status followup result
+  sd="$(seat_state_dir "${seat:-floor}")"
+  gh="${GROK_HOME:-$sd/grok-home}"
+  mkdir -p "$gh/bin" "${HOME:-$gh}/.grok/bin"
+  launch="$(_gcs_abs_path "$ROOT/scripts/launch-cloud-extra-high.sh")"
+  list="$(_gcs_abs_path "$ROOT/scripts/cloud/list-cloud-agents.sh")"
+  status="$(_gcs_abs_path "$ROOT/scripts/cloud/status-cloud-agent.sh")"
+  followup="$(_gcs_abs_path "$ROOT/scripts/cloud/followup-cloud-agent.sh")"
+  result="$(_gcs_abs_path "$ROOT/scripts/cloud/result-cloud-agent.sh")"
+  for wrap_dir in "$gh/bin" "${HOME:-$gh}/.grok/bin"; do
+    mkdir -p "$wrap_dir"
+    _write_cloud_wrapper "$wrap_dir/cloud_launch" "$launch"
+    _write_cloud_wrapper "$wrap_dir/cloud_list" "$list"
+    _write_cloud_wrapper "$wrap_dir/cloud_status" "$status"
+    _write_cloud_wrapper "$wrap_dir/cloud_followup" "$followup"
+    _write_cloud_wrapper "$wrap_dir/cloud_result" "$result"
+  done
+  echo "SEAT_CLOUD_CLI_OK seat=${seat:-?} wrap=$gh/bin" >&2
+}
+
 _write_seat_taskboard_mcp_config() {
   # Merge stdio MCP into GROK_HOME/config.toml. Equivalent to:
   #   GROK_HOME=$gh grok mcp add taskboard -- "$bin" --db "$db" mcp
@@ -228,20 +268,43 @@ _mind_plugin_already_installed() {
   return 1
 }
 
-install_studio_mind_plugin() {
-  # Install plugins/studio-mind into this seat GROK_HOME. grok headless cannot
-  # take --plugin-dir (that is a grok agent flag). --trust belongs here, not
-  # on grok --prompt-file. Failure is MCP-only: taskboard is already in
-  # GROK_HOME/config.toml. Never abort the mind loop. Already-installed and
-  # idempotent reinstall are success (MIND_PLUGIN_OK), not install-fail.
+_install_one_mind_grok_plugin() {
+  # grok plugin install --trust of one plugins/<name> dir into GROK_HOME.
+  # Already-installed is MIND_PLUGIN_OK. Never abort the mind loop.
   local seat="${1:-}"
-  local plugin gh grok_bin out rc=0
-  plugin="$ROOT/plugins/studio-mind"
-  gh="${GROK_HOME:-}"
-  if [[ ! -d "$plugin" ]]; then
-    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=missing-dir mcp-only" >&2
+  local name="${2:-}"
+  local gh="${3:-}"
+  local grok_bin="${4:-}"
+  local plugin out rc=0
+  plugin="$ROOT/plugins/$name"
+  if [[ ! -d "$plugin" || ! -f "$plugin/plugin.json" ]]; then
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} plugin=$name reason=missing-dir mcp-only" >&2
     return 0
   fi
+  plugin="$(_gcs_abs_path "$plugin")"
+  out="$(GROK_HOME="$gh" "$grok_bin" plugin install "$plugin" --trust 2>&1)" && rc=0 || rc=$?
+  if [[ -n "$out" ]]; then
+    printf '%s\n' "$out" >&2
+  fi
+  if [[ "$rc" -eq 0 ]] || _mind_plugin_already_installed "$out"; then
+    echo "MIND_PLUGIN_OK seat=${seat:-?} plugin=$name dest=$gh" >&2
+  else
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} plugin=$name reason=install-fail mcp-only" >&2
+  fi
+  return 0
+}
+
+install_mind_grok_plugins() {
+  # Grok-bot-like mind plugins (ticket / A2A / cloud) into this seat GROK_HOME.
+  # grok headless cannot take --plugin-dir (that is a grok agent flag).
+  # --trust belongs here, not on grok --prompt-file. Failure is MCP-only:
+  # taskboard is already in GROK_HOME/config.toml. Never abort the mind loop.
+  # Already-installed and idempotent reinstall are success (MIND_PLUGIN_OK).
+  # Do not vendor Hermes. Do not copy GROK_HOME MCP into Cursor CLI.
+  # PATH Extra High wrappers stay install_seat_cloud_cli (hive upgrade).
+  local seat="${1:-}"
+  local gh grok_bin name
+  gh="${GROK_HOME:-}"
   grok_bin="$(command -v grok 2>/dev/null || true)"
   if [[ -z "$grok_bin" ]]; then
     echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-grok mcp-only" >&2
@@ -252,17 +315,17 @@ install_studio_mind_plugin() {
     return 0
   fi
   mkdir -p "$gh"
-  plugin="$(_gcs_abs_path "$plugin")"
-  out="$(GROK_HOME="$gh" "$grok_bin" plugin install "$plugin" --trust 2>&1)" && rc=0 || rc=$?
-  if [[ -n "$out" ]]; then
-    printf '%s\n' "$out" >&2
-  fi
-  if [[ "$rc" -eq 0 ]] || _mind_plugin_already_installed "$out"; then
-    echo "MIND_PLUGIN_OK seat=${seat:-?} plugin=studio-mind dest=$gh" >&2
-  else
-    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=install-fail mcp-only" >&2
-  fi
+  # Grok-bot-like catalog: plugins/studio-mind, plugins/a2a, plugins/cursor-cloud.
+  # Grok plugin.json, not Hermes plugin.yaml. Do not vendor hermes-agent.
+  for name in studio-mind a2a cursor-cloud; do
+    _install_one_mind_grok_plugin "$seat" "$name" "$gh" "$grok_bin"
+  done
   return 0
+}
+
+install_studio_mind_plugin() {
+  # Compat alias: LIV-63 installs ticket + A2A + cloud grok plugins.
+  install_mind_grok_plugins "$@"
 }
 
 install_seat_taskboard_cli() {
@@ -317,6 +380,7 @@ install_seat_identity() {
   mkdir -p "$sd/grok-home"
   install_seat_grok_auth "$seat"
   install_seat_taskboard_cli "$seat"
+  install_seat_cloud_cli "$seat"
   install_seat_grok_mcp "$seat"
   if [[ -f "$src/SOUL.md" ]]; then
     cp "$src/SOUL.md" "$sd/SOUL.md"

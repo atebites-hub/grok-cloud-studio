@@ -34,7 +34,7 @@ Non-GROW seats may still use leftover `acp_inject.py` (no `--pin-session`).
 
 ## Seat mind (Bot-equivalent)
 
-`GCS_MIND_SEATS` (default empty, example `floor,ops`) starts `scripts/directors/seat-mind-loop.sh` → `scripts/directors/mind.py`. Python is mailbox + pin + stay-up: inbox growth → one `grok --resume` (first turn `--session-id`) of a UUID in `$GCS_A2A_STATE/<seat>/mind/session` with `--prompt-file` (never bare `-p`) → persist `transcript.jsonl` / `offset` (offset only on grok exit 0). Grok is the agent for that turn. `seat-mind-loop.sh` installs `plugins/studio-mind` into seat `GROK_HOME` via `grok plugin install --trust` (`--plugin-dir` is a grok agent flag, not headless). No ACP WebSocket, no `session/prompt`, no leftover pin-session. Mind is the GROW path when opted in; ACP wake is skipped for those seats unless `GCS_MIND_PLUS_ACP_WAKE=1`. Do not kill existing serve. `skipSeats` (orchestrator, donald) are not mind seats. See `docs/studio/MIND.md`.
+`GCS_MIND_SEATS` (default empty, example `floor,ops`) starts `scripts/directors/seat-mind-loop.sh` → `scripts/directors/mind.py`. Python is mailbox + pin + stay-up: inbox growth → one `grok --resume` (first turn `--session-id`) of a UUID in `$GCS_A2A_STATE/<seat>/mind/session` with `--prompt-file` (never bare `-p`) → persist `transcript.jsonl` / `offset` (offset only on grok exit 0). Grok is the agent for that turn. `seat-mind-loop.sh` installs grok-bot-like mind plugins (`plugins/studio-mind`, `plugins/a2a`, `plugins/cursor-cloud`) into seat `GROK_HOME` via `grok plugin install --trust` (`install_mind_grok_plugins`; grok `plugin.json`, not Hermes `plugin.yaml`; do not vendor `NousResearch/hermes-agent`). (`--plugin-dir` is a grok agent flag, not headless). No ACP WebSocket, no `session/prompt`, no leftover pin-session. Mind is the GROW path when opted in; ACP wake is skipped for those seats unless `GCS_MIND_PLUS_ACP_WAKE=1`. Do not kill existing serve. `skipSeats` (orchestrator, donald) are not mind seats. See `docs/studio/MIND.md` and `tests/features/liv63_mind_plugins.feature`.
 
 ## Leftover ACP / pin-session rules
 
@@ -78,6 +78,7 @@ Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh d
 
 Role map onto first-class GCS seats. Do not mint 49 specialist seats.
 Directors and leads spawn specialists only via `scripts/launch-cloud-extra-high.sh`.
+List Extra High with `scripts/cloud/list-cloud-agents.sh`: agent `status=ACTIVE` is leftover membership; live work is `runStatus=RUNNING` (FINISHED leftovers are not spinning workers).
 
 | CCGS lead | GCS seat |
 |---|---|
