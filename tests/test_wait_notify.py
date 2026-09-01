@@ -1,8 +1,9 @@
-"""wait-notify FLEET_DONE flags GitHub mergeable=CONFLICTING.
+"""wait-notify FLEET_DONE flags GitHub draft PRs and mergeable=CONFLICTING.
 
-Sibling product PRs #301/#304 are mergeable_state=dirty. QA HOLD squash.
-Does not remint draft-flag GCS #52 or get_agent_run 429 backoff GCS #35.
-Never Bot CloudAgent. Occupancy HOLD. Living Sky LIV-41.
+GCS #41 (LIV-67) draft is not MERGE_REQUEST-ready. Sibling product PRs
+#301/#304 are mergeable_state=dirty: QA HOLD squash.
+Does not remint occupancy or get_agent_run 429 backoff GCS #35.
+Never Bot CloudAgent. Occupancy HOLD. Living Sky LIV-41 / LIV-67.
 """
 from __future__ import annotations
 
@@ -22,8 +23,10 @@ CLOUD = ROOT / "scripts" / "cloud"
 WAIT_TS = CLOUD / "sdk" / "wait-notify.ts"
 WAIT_NOTIFY = CLOUD / "sdk" / "run.sh"
 PR_MERGEABLE_TS = CLOUD / "sdk" / "pr-mergeable.ts"
+PR_DRAFT_TS = CLOUD / "sdk" / "pr-draft.ts"
 FAKE_KEY = "test-cursor-api-key-waiter-mergeable"
 PR301 = "https://github.com/atebites-hub/grok-cloud-studio/pull/301"
+GCS41 = "https://github.com/atebites-hub/grok-cloud-studio/pull/41"
 MERGE_READY = "ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST"
 HEAD_SHA = "abc123deadbeefmergeable"
 _PASTE = (
@@ -68,6 +71,8 @@ def test_wait_notify_source_flags_github_mergeable() -> None:
     blob = src + "\n" + helper
     assert "githubPrMergeable" in blob
     assert "CONFLICTING" in blob
+    assert "githubPrIsDraft" in src
+    assert "pr-draft.ts" in src or PR_DRAFT_TS.is_file()
     assert "GITHUB_API_BASE" in blob
     assert "rateLimitBackoffMs" not in helper
     assert "CLOUD_WAITER_BACKOFF_MS" not in helper
@@ -80,12 +85,14 @@ def test_footer_and_qa_souls_hold_conflicting_squash() -> None:
     footer = (ROOT / "scripts" / "directors" / "common_footer.txt").read_text(encoding="utf-8")
     assert "mergeable=CONFLICTING" in footer
     assert "HOLD squash" in footer
+    assert "draft=true" in footer
     for seat in ("qa-a", "qa-b"):
         soul = (ROOT / "docs" / "studio" / "directors" / "souls" / seat / "SOUL.md").read_text(
             encoding="utf-8"
         )
         assert "CONFLICTING" in soul
         assert "HOLD squash" in soul
+        assert "draft" in soul.lower()
         assert "Bot CloudAgent" not in soul
     for name in (
         "qa_a.txt",
@@ -96,6 +103,7 @@ def test_footer_and_qa_souls_hold_conflicting_squash() -> None:
         text = (ROOT / "prompts" / name).read_text(encoding="utf-8")
         assert "HOLD squash" in text
         assert "CONFLICTING" in text
+        assert "draft" in text.lower()
 
 
 def _script_env(
@@ -219,6 +227,7 @@ class MockCursorFinishedPR:
 class MockGitHubPulls:
     mergeable_state: str = "dirty"
     mergeable: bool | None = False
+    draft: bool = False
     ship_gate_ok: bool = True
     paths: list[str] = field(default_factory=list)
     _httpd: ThreadingHTTPServer | None = None
@@ -253,7 +262,7 @@ class MockGitHubPulls:
                 else:
                     body = json.dumps(
                         {
-                            "draft": False,
+                            "draft": api.draft,
                             "number": 301,
                             "html_url": PR301,
                             "state": "open",
@@ -385,3 +394,38 @@ def test_wait_notify_mergeable_pr_still_merge_request(tmp_path: Path) -> None:
         assert "mergeable=CONFLICTING" not in ping
         assert MERGE_READY in ping
         assert "HOLD squash" not in ping
+        assert "draft=true" not in ping
+
+
+def test_wait_notify_source_flags_github_draft() -> None:
+    src = WAIT_TS.read_text(encoding="utf-8")
+    helper = PR_DRAFT_TS.read_text(encoding="utf-8") if PR_DRAFT_TS.is_file() else ""
+    blob = src + "\n" + helper
+    assert "githubPrIsDraft" in blob
+    assert "draft=true" in blob or "draft" in src
+    assert "GITHUB_API_BASE" in blob
+    assert "rateLimitBackoffMs" not in helper
+    assert "CLOUD_WAITER_BACKOFF_MS" not in helper
+    assert "Bot CloudAgent" not in src
+    assert "vendor/hermes" not in blob
+
+
+def test_wait_notify_ping_includes_draft_true_not_merge_ready(tmp_path: Path) -> None:
+    with (
+        MockCursorFinishedPR(pr_url=GCS41) as cursor,
+        MockGitHubPulls(draft=True, mergeable_state="clean", mergeable=True, ship_gate_ok=False) as github,
+        FakeA2AHub() as hub,
+    ):
+        env = _script_env(tmp_path, api_base=cursor.base, github_base=github.base, hub=hub.base)
+        proc = _run_wait_notify(env)
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode == 0, combined
+    assert "CLOUD_WAITER_DONE" in combined
+    assert "draft=true" in combined
+    assert FAKE_KEY not in combined
+    assert github.paths, "waiter must query GitHub for draft status"
+    assert hub.texts, "waiter must A2A-ping the owning seat"
+    ping = hub.texts[0]
+    assert "draft=true" in ping
+    assert MERGE_READY not in ping
+    assert ping.startswith("FLEET_DONE / PR_READY:")

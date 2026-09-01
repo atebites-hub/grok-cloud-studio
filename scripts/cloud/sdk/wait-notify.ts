@@ -18,6 +18,7 @@ import {
   type RunLike,
 } from "./latest_run.ts";
 import { attachShipGate } from "./pr-checks.ts";
+import { githubPrIsDraft } from "./pr-draft.ts";
 import { githubPrMergeable, mapGitHubMergeable } from "./pr-mergeable.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -257,7 +258,22 @@ async function sdkWait(agentId: string, runId: string, apiKey: string): Promise<
   throw new Error(`CLOUD_WAITER_TIMEOUT id=${agentId} lastStatus=${last}`);
 }
 
-type WaiterPayload = DirectorResult & { mergeable?: string };
+type WaiterPayload = DirectorResult & {
+  draft?: boolean;
+  mergeable?: string;
+  checkRuns?: number;
+  emptyChecks?: boolean;
+  shipGateOk?: boolean;
+};
+
+async function withDraftFlag<T extends DirectorResult>(
+  payload: T,
+): Promise<T & { draft?: boolean }> {
+  // One-shot GitHub draft lookup. Do not reuse Extra High waiter 429 backoff (GCS #35).
+  const draft = await githubPrIsDraft(payload.prUrl);
+  if (draft === null) return payload;
+  return { ...payload, draft };
+}
 
 async function withMergeableFlag(payload: DirectorResult): Promise<WaiterPayload> {
   // One-shot GitHub mergeable lookup. Do not reuse Extra High waiter 429 backoff (GCS #35).
@@ -302,11 +318,15 @@ async function main(): Promise<void> {
   process.stdout.write(`CLOUD_WAITER_START id=${agentId} run=${runId || "latest"}\n`);
   try {
     const payload = await withMergeableFlag(
-      await attachShipGate(
-        preferRest() ? await restPoll(agentId, runId, apiKey) : await sdkWait(agentId, runId, apiKey),
+      await withDraftFlag(
+        await attachShipGate(
+          preferRest() ? await restPoll(agentId, runId, apiKey) : await sdkWait(agentId, runId, apiKey),
+        ),
       ),
     );
     ledgerNotify(agentId, payload);
+    const draftTag =
+      payload.draft === true ? " draft=true" : payload.draft === false ? " draft=false" : "";
     const checkTag =
       typeof payload.checkRuns === "number"
         ? ` check_runs=${payload.checkRuns}`
@@ -318,7 +338,7 @@ async function main(): Promise<void> {
     const mergeTag = payload.mergeable ? ` mergeable=${payload.mergeable}` : "";
     const ctx = (payload.result || payload.summary || "").replace(/\s+/g, " ").trim().slice(0, 240);
     process.stdout.write(
-      `CLOUD_WAITER_DONE id=${agentId} run=${payload.runId || "none"} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"} repo=${payload.repoUrl || "none"}${checkTag}${gateTag}${mergeTag}${ctx ? ` context=${ctx}` : ""}\n`,
+      `CLOUD_WAITER_DONE id=${agentId} run=${payload.runId || "none"} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"} repo=${payload.repoUrl || "none"}${draftTag}${checkTag}${gateTag}${mergeTag}${ctx ? ` context=${ctx}` : ""}\n`,
     );
   } catch (err) {
     console.error(`CLOUD_WAITER_ERR id=${agentId} ${safeError(err)}`);
