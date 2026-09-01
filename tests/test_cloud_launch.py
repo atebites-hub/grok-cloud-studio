@@ -202,6 +202,7 @@ def test_launch_posts_parameterized_repo(tmp_path: Path) -> None:
     assert body["repos"] == [{"url": EXAMPLE_REPO, "startingRef": "main"}]
     assert body["autoCreatePR"] is True
     assert body["name"] == "gcs-eh-test"
+    assert "webhook" not in body
 
 
 def test_launch_fail_closed_without_cloud_repo(tmp_path: Path) -> None:

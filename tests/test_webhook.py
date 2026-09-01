@@ -22,7 +22,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts" / "cloud"))
-from fleet_ledger import load_entries, register  # noqa: E402
+from fleet_ledger import complete, load_entries, register  # noqa: E402
 from webhook_receiver import (  # noqa: E402
     extract_bc_id,
     extract_status,
@@ -93,6 +93,20 @@ def test_webhook_receiver_does_not_poll_get_agent_run() -> None:
     assert "listRuns" not in src
     assert "Bot CloudAgent" not in src
     assert "Grok Bot CloudAgent" not in src
+    assert "hermes" not in src.lower()
+
+
+def test_followup_does_not_vendor_hermes_or_retune_waiter() -> None:
+    """FOLLOWUP_FIRST: keep #57 isolated. No Hermes vendor, no #34/#35 remint."""
+    wait = (ROOT / "scripts" / "cloud" / "sdk" / "wait-notify.ts").read_text(encoding="utf-8")
+    ledger = (ROOT / "scripts" / "cloud" / "fleet_ledger.py").read_text(encoding="utf-8")
+    launch = (ROOT / "scripts" / "launch-cloud-extra-high.sh").read_text(encoding="utf-8")
+    assert "CLOUD_WAITER_RETRY" not in wait
+    assert "_already_notified_by_waiter" not in ledger
+    assert "vendor/hermes" not in launch
+    assert "grok-4.6" in launch
+    assert "xhigh" in launch
+    assert "fast" in launch and "false" in launch
 
 
 def test_studio_bus_optionally_starts_webhook_receiver() -> None:
@@ -299,3 +313,58 @@ def test_official_error_on_v0_status_change_path(hub_and_receiver: dict) -> None
     assert "runStatus=ERROR" in text
     assert "PR_READY" not in text
     assert "bc-hook-err" in text
+
+
+def _signed_official(agent_id: str, status: str = "FINISHED", pr_url: str | None = PR_URL) -> bytes:
+    payload = official_status_change(agent_id=agent_id, status=status, pr_url=pr_url)
+    return json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+
+def test_cursor_retry_does_not_double_fleet_done(hub_and_receiver: dict) -> None:
+    """Cursor retries statusChange; second POST must not A2A-ping again."""
+    env = hub_and_receiver["env"]
+    os.environ["GCS_ROOT"] = env["GCS_ROOT"]
+    os.environ["GCS_A2A_STATE"] = env["GCS_A2A_STATE"]
+    os.environ["GCS_DIRECTOR_SEAT"] = "ops"
+    register("bc-hook-retry", seat="ops", name="liv-41-retry")
+    body = _signed_official("bc-hook-retry")
+    sig = hmac.new(SECRET, body, hashlib.sha256).hexdigest()
+    code1, reply1 = _post(hub_and_receiver["url"], body, f"sha256={sig}")
+    assert code1 == 200, reply1
+    inbox = Path(env["GCS_A2A_STATE"]) / "ops" / "inbox.jsonl"
+    first_lines = inbox.read_text(encoding="utf-8").splitlines()
+    assert len(first_lines) == 1
+    assert "FLEET_DONE" in first_lines[0]
+    code2, reply2 = _post(hub_and_receiver["url"], body, f"sha256={sig}")
+    assert code2 == 200, reply2
+    assert reply2.get("duplicate") is True
+    second_lines = inbox.read_text(encoding="utf-8").splitlines()
+    assert second_lines == first_lines
+    rows = load_entries(Path(env["GCS_A2A_STATE"]) / "ops" / "fleet.jsonl")
+    row = next(r for r in rows if r.get("bc_id") == "bc-hook-retry")
+    assert row["notified_by"] == "webhook"
+
+
+def test_webhook_skips_ping_when_ledger_already_notified(hub_and_receiver: dict) -> None:
+    """Waiter closed the row first; webhook retry must not fire a second FLEET_DONE."""
+    env = hub_and_receiver["env"]
+    os.environ["GCS_ROOT"] = env["GCS_ROOT"]
+    os.environ["GCS_A2A_STATE"] = env["GCS_A2A_STATE"]
+    os.environ["GCS_DIRECTOR_SEAT"] = "ops"
+    register("bc-hook-waiter", seat="ops", name="liv-41-waiter")
+    complete(
+        "bc-hook-waiter",
+        {"runStatus": "FINISHED", "prUrl": PR_URL},
+        notified_by="waiter",
+        seat="ops",
+    )
+    body = _signed_official("bc-hook-waiter")
+    sig = hmac.new(SECRET, body, hashlib.sha256).hexdigest()
+    code, reply = _post(hub_and_receiver["url"], body, f"sha256={sig}")
+    assert code == 200, reply
+    assert reply.get("duplicate") is True
+    inbox = Path(env["GCS_A2A_STATE"]) / "ops" / "inbox.jsonl"
+    assert not inbox.is_file() or inbox.read_text(encoding="utf-8").strip() == ""
+    rows = load_entries(Path(env["GCS_A2A_STATE"]) / "ops" / "fleet.jsonl")
+    row = next(r for r in rows if r.get("bc_id") == "bc-hook-waiter")
+    assert row["notified_by"] == "waiter"

@@ -87,7 +87,7 @@ scripts/a2a/start-studio-bus.sh start   # starts receiver when secret is set
 scripts/cloud/webhook-harness.sh simulate --id bc-test --status FINISHED --pr URL
 ```
 
-Do not remint waiter 429 backoff or fleet notify dedupe here. Never print the secret.
+Do not remint waiter 429 backoff or fleet notify dedupe here. Cursor `statusChange` retries return HTTP 200 `duplicate` without a second A2A ping. Never print the secret.
 
 Optional signed webhooks (`scripts/cloud/webhook_receiver.py`) are the other completion path. Waiter remains the fallback when `GCS_WEBHOOK_SECRET` is unset.
 
