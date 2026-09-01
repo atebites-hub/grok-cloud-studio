@@ -317,6 +317,9 @@ def test_wipe_doc_has_host_bootstrap_steps() -> None:
     assert "vendor/taskboard" in text
     assert "--recurse-submodules" in text
     assert "submodule update --init" in text
+    assert "chrome-devtools" in text
+    assert "npx" in text
+    assert "127.0.0.1:5173" in text
 
 
 def test_install_taskboard_uses_brew_or_release_tarball_not_compile() -> None:

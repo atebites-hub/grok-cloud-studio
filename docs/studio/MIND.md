@@ -137,7 +137,7 @@ agent --resume "$CURSOR_CHAT_ID" -p --force --output-format json --trust \
 
 Cursor runner: GROK_HOME taskboard MCP, chrome-devtools MCP, and grok `--plugin-dir` **do not transfer**. Two catalogs (see Two-runtime mind law). Cursor CLI uses Cursor builtins plus repo `.cursor/mcp.json` (taskboard only), never a copied `GROK_HOME`. Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`. No third Python tool loop.
 
-qa-a (qa-lead) visually playtests `http://127.0.0.1:5173/` with chrome-devtools in that seat `GROK_HOME`. Screenshots and live Chrome belong to the Grok catalog. Do not send that work to Cursor CLI or a Bot CloudAgent.
+qa-a (qa-lead) visually playtests `http://127.0.0.1:5173/` with chrome-devtools in that seat `GROK_HOME`. Screenshots and live Chrome belong to the Grok catalog. Host needs Node `npx` and Google Chrome. Do not send that work to Cursor CLI or a Bot CloudAgent.
 
 A missing binary returns an error string from the MCP tool. Plugin output is redacted (`CURSOR_API_KEY`, webhook secrets, bearer tokens) and never printed as credentials.
 

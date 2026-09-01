@@ -107,6 +107,10 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    `studio.env`.
 
 3. Install grok CLI and log in (BYO). Never commit `~/.grok/auth.json`.
+   chrome-devtools (Grok catalog live Chrome) needs host **Node `npx`** and
+   **Google Chrome**. Seat `GROK_HOME` registers `npx -y chrome-devtools-mcp@latest`
+   and `grok plugin install chrome-devtools --trust`. qa-a playtests
+   `http://127.0.0.1:5173/` there. Do not copy that MCP into Cursor.
 
 4. Install Cursor Agent CLI so `agent` is on PATH:
 
