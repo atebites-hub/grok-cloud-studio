@@ -19,8 +19,9 @@ export type RunLike = {
 
 export function runStatus(run: RunLike | undefined): string {
   if (!run) return "";
-  const raw = run.status || run.runStatus || "";
-  return String(raw).trim().toUpperCase();
+  const raw = String(run.status || run.runStatus || "").trim().toUpperCase();
+  if (raw === "CANCELED") return "CANCELLED";
+  return raw;
 }
 
 export function unwrapRuns(payload: unknown): RunLike[] {

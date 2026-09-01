@@ -55,11 +55,13 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         status = (payload.get('status') or (payload.get('run') or {}).get('status') or '').upper()
+        if status == 'CANCELED':
+            status = 'CANCELLED'
         agent_id = payload.get('id') or payload.get('agentId') or (payload.get('agent') or {}).get('id') or 'unknown'
         seat = payload.get('seat') or DEFAULT_SEAT
         pr = payload.get('prUrl') or payload.get('pr') or 'none'
         if status in ('FINISHED', 'ERROR', 'CANCELLED', 'EXPIRED'):
-            kind = 'PR_READY' if status == 'FINISHED' and pr not in (None, '', 'none') else 'FLEET_DONE'
+            kind = 'PR_READY' if status == 'FINISHED' and pr not in (None, '', 'none') else ('INSPECT' if status == 'CANCELLED' else 'FLEET_DONE')
             a2a_ping(str(seat), f'{kind} bc-id={agent_id} status={status} pr={pr}')
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')

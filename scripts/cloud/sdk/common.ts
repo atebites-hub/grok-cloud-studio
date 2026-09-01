@@ -181,7 +181,9 @@ export function mapAgentStatus(status: SDKAgentInfo["status"] | string | undefin
 
 export function mapRunStatus(status: string | undefined): string {
   if (!status) return "none";
-  return status.toUpperCase();
+  const upper = status.toUpperCase();
+  if (upper === "CANCELED") return "CANCELLED";
+  return upper;
 }
 
 export function isoFromEpoch(value: number | undefined): string {
