@@ -373,7 +373,7 @@ start_host_ticker() {
     return 0
   fi
   rm -f "$TICKER_PID_FILE"
-  nohup python3 "$TICKER_PY" >>"$TICKER_LOG" 2>&1 &
+  nohup python3 "$TICKER_PY" "$@" >>"$TICKER_LOG" 2>&1 &
   echo $! >"$TICKER_PID_FILE"
   echo "STUDIO_BUS_TICKER_START pid=$(read_pid "$TICKER_PID_FILE") log=$TICKER_LOG"
 }
@@ -578,13 +578,13 @@ case "$cmd" in
     fi
 
     start_mind_daemons
-    if [[ -n "$(canonical_mind_seats)" ]]; then
-      start_host_ticker
-    fi
     if want_daemons; then
       start_seat_daemons
     else
       echo "STUDIO_BUS_DAEMONS_SKIP (pass --daemons or GCS_START_SEAT_DAEMONS=1)"
+      if [[ -n "$(canonical_mind_seats)" ]]; then
+        start_host_ticker --seats "$(canonical_mind_seats)"
+      fi
     fi
 
     echo "STUDIO_BUS_READY hub_pid=$hub_pid dispatch_pid=$disp_pid shepherd_pid=$shep_pid bot_bridge_pid=${bridge_pid:-none} state=$STATE_DIR"

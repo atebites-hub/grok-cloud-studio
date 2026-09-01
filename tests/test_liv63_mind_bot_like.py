@@ -19,6 +19,7 @@ import os
 import stat
 import subprocess
 import sys
+import time
 from pathlib import Path
 from types import ModuleType
 
@@ -339,9 +340,14 @@ def test_scenario_mind_bus_starts_ticker_without_acp_daemons() -> None:
     assert "start_host_ticker" in start_body, (
         "grok-bot-like stay-up: ticker must start for mind seats even without --daemons"
     )
-    before_daemons, _after = start_body.split("want_daemons", 1)
-    assert "start_host_ticker" in before_daemons
     assert "STUDIO_BUS_DAEMONS_SKIP" in start_body
+    _before, after_daemons = start_body.split("want_daemons", 1)
+    assert "start_host_ticker" in after_daemons, (
+        "mind-only ticker belongs on the no-daemons branch so leftover GROW "
+        "is not ACP_PING'd into dispatch fallback -p"
+    )
+    assert "canonical_mind_seats" in after_daemons
+    assert "--seats" in after_daemons
 
 
 def test_mind_bus_start_live_ticker_pid_without_daemons(tmp_path: Path) -> None:
@@ -387,6 +393,12 @@ def test_mind_bus_start_live_ticker_pid_without_daemons(tmp_path: Path) -> None:
         assert pid_file.is_file(), blob
         pid = int(pid_file.read_text(encoding="utf-8").strip().split()[0])
         os.kill(pid, 0)
+        time.sleep(0.4)
+        # Mind-only stay-up must not ACP_PING leftover GROW seats (dispatch
+        # would fallback-p those lines). Only the opted-in mind seat.
+        assert (state / "floor" / "inbox.jsonl").is_file(), blob
+        assert not (state / "studio-ops" / "inbox.jsonl").exists()
+        assert not (state / "ops" / "inbox.jsonl").exists()
     finally:
         subprocess.run(
             ["bash", str(BUS_SH), "stop"],
