@@ -29,7 +29,7 @@ launch-cloud-extra-high.sh → @cursor/sdk Agent.create
                            → spawn-waiter.sh → wait-notify.ts (run.wait)
                            → A2A ping owning seat (FLEET_DONE / PR_READY)
 
-fleet-shepherd.py = orphan-only safety net (no live waiter_pid)
+fleet-shepherd.py = orphan-only safety net (no live waiter_pid; dead waiter_pid is evicted)
 webhook_receiver.py = optional signed completion path
 ```
 
@@ -62,9 +62,9 @@ See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / 
 |---|---|
 | Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`) |
 | Webhook | `GCS_WEBHOOK_SECRET` set and `webhook-harness.sh serve` |
-| Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook) |
+| Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook). Dead `waiter_pid` is evicted on `fleet.jsonl` before notify-once. |
 
-Do not double-notify a live waiter.
+Do not double-notify a live waiter. A leftover `waiter_pid` number is not liveness.
 
 ## Prompts
 
