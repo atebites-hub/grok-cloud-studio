@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run Grok Cloud Studio @cursor/sdk CLIs: launch|list|status|watch|followup|result|wait-notify
+# Run Grok Cloud Studio @cursor/sdk CLIs: launch|list|occupancy|status|watch|followup|result|wait-notify
 # Exit 75 if Node >= 22.13 or npm deps cannot be prepared (bash wrappers may REST-fallback).
 set -euo pipefail
 
@@ -11,17 +11,18 @@ shift || true
 case "$CMD" in
   launch|launch.ts) SCRIPT="launch.ts" ;;
   list|list.ts) SCRIPT="list.ts" ;;
+  occupancy|occupancy.ts) SCRIPT="occupancy.ts" ;;
   status|status.ts) SCRIPT="status.ts" ;;
   watch|watch.ts) SCRIPT="watch.ts" ;;
   followup|followup.ts) SCRIPT="followup.ts" ;;
   result|result.ts) SCRIPT="result.ts" ;;
   wait-notify|wait-notify.ts) SCRIPT="wait-notify.ts" ;;
   -h|--help|help|"")
-    echo "usage: run.sh <launch|list|status|watch|followup|result|wait-notify> [args...]" >&2
+    echo "usage: run.sh <launch|list|occupancy|status|watch|followup|result|wait-notify> [args...]" >&2
     exit 2
     ;;
   *)
-    echo "usage: run.sh <launch|list|status|watch|followup|result|wait-notify> [args...]" >&2
+    echo "usage: run.sh <launch|list|occupancy|status|watch|followup|result|wait-notify> [args...]" >&2
     exit 2
     ;;
 esac
