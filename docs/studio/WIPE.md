@@ -56,7 +56,9 @@ advances only on runner exit 0.
 
 - Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio
   `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust`
-  of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok
+  of grok-bot-like `plugins/studio-mind`, `plugins/a2a`, and
+  `plugins/cursor-cloud` (`install_mind_grok_plugins` stamps
+  `GROK_HOME/gcs-root`). Grok-home Higgsfield is grok-only, for when grok
   usage is back.
 - Cursor CLI catalog: repo `.cursor/mcp.json` wrapping
   `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no

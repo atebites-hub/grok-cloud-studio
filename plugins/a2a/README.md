@@ -11,7 +11,7 @@ From the Grok Cloud Studio repo root:
 
 ```bash
 # Cursor local plugin (this folder)
-# or Grok CLI:
+# or Grok CLI (grok plugin.json, not Hermes plugin.yaml):
 grok plugin install ./plugins/a2a --trust
 ```
 

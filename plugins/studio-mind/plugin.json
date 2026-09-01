@@ -2,6 +2,6 @@
   "name": "studio-mind",
   "displayName": "Grok Cloud Studio mind tools",
   "version": "1.0.0",
-  "description": "Seat GROK_HOME MCP for ticket, a2a_send, and cloud_launch. Installed with grok plugin install --trust. Not ACP inject.",
+  "description": "Seat GROK_HOME MCP for ticket, a2a_send, and cloud_launch. Installed with grok plugin install --trust. Not Hermes plugin.yaml. Not ACP inject.",
   "mcpServers": "./mcp.json"
 }

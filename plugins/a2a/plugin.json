@@ -1,0 +1,7 @@
+{
+  "name": "gcs-a2a",
+  "displayName": "Grok Cloud Studio A2A",
+  "version": "1.0.0",
+  "description": "Seat GROK_HOME MCP for a2a_list_seats and a2a_send. Installed with grok plugin install --trust. Not Hermes plugin.yaml. Not ACP inject.",
+  "mcpServers": "./mcp.json"
+}

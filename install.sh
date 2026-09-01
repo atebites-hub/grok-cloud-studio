@@ -42,6 +42,7 @@ chmod +x \
   "$ROOT/health_check.sh" \
   "$ROOT/recover.sh" \
   "$ROOT"/scripts/*.sh \
+  "$ROOT"/scripts/ci/*.sh \
   "$ROOT"/scripts/a2a/*.sh \
   "$ROOT"/scripts/cloud/*.sh \
   "$ROOT"/scripts/cloud/sdk/*.sh \
@@ -53,7 +54,7 @@ chmod +x \
 
 chmod +x "$ROOT/scripts/a2a/bot-bridge.py" "$ROOT/scripts/a2a/bind-bot-agent.sh" \
   "$ROOT/scripts/a2a/wake-daemon.py" "$ROOT/scripts/a2a/host-ticker.py" \
-  "$ROOT/scripts/directors/mind.py" 2>/dev/null || true
+  "$ROOT/scripts/a2a/mind_bot_like.py" "$ROOT/scripts/directors/mind.py" 2>/dev/null || true
 mkdir -p "$ROOT/.a2a-state"
 python3 "$ROOT/scripts/a2a/lib.py" ensure-prompts >/dev/null || true
 

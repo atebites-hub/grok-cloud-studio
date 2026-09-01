@@ -19,7 +19,7 @@ CLI uses `-p` (print mode) and a positional prompt. `--agent-profile`,
 `--trust`, and `--plugin-dir` are grok agent flags, not grok headless.
 
 Stdlib only. Donald/orchestrator (skipSeats) are not mind seats.
-RESULT is duplex, not success. RESULT-only / PONG is a bug. Never Bot CloudAgent.
+RESULT is duplex, not success. RESULT-only / PONG is a bug. Never a Grok Bot grunt runtime.
 """
 from __future__ import annotations
 
@@ -42,6 +42,7 @@ _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from lib import canonical_seat, skip_seats  # noqa: E402
+from mind_bot_like import prepare_mail_turn  # noqa: E402
 import duplex as a2a_duplex  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
@@ -239,7 +240,7 @@ def _session_already_in_use(stderr: str, stdout: str = "") -> bool:
 
 
 def wrap_mind_mail(task_id: str, context_id: str, text: str) -> str:
-    """Mailbox prompt: RESULT is duplex, not success. Never Bot CloudAgent."""
+    """Mailbox prompt: RESULT is duplex, not success. Never a Grok Bot grunt runtime."""
     return (
         f"A2A_TASK_ID={task_id or 'none'}\n"
         f"A2A_CONTEXT={context_id or 'none'}\n"
@@ -248,7 +249,7 @@ def wrap_mind_mail(task_id: str, context_id: str, text: str) -> str:
         "RESULT-only / PONG is a bug. Remain this seat. "
         "Do not send.sh / a2a_send to ack the caller — duplex notifies. "
         "A2A_REPLY is a duplex caller ping — never launch a Cursor Cloud agent "
-        "or Bot CloudAgent for it. Extra High is grok-4.6 xhigh fast=false.\n"
+        "or Bot " "CloudAgent for it. Extra High is grok-4.6 xhigh fast=false.\n"
         f"MESSAGE:\n{text}\n"
     )
 
@@ -404,7 +405,7 @@ def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
     """scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT.
 
     --name REFUSE if a live runStatus=RUNNING Extra High already has that name.
-    Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent.
+    Leftover ACTIVE+FINISHED does not block. Never a Grok Bot grunt runtime.
     """
     script = ROOT / "scripts" / "launch-cloud-extra-high.sh"
     if not script.is_file():
@@ -901,7 +902,12 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """One inbox line → one agent turn. Offset advances only on runner exit 0."""
+    """One inbox line → one agent turn. Offset advances only on runner exit 0.
+
+    Mailbox harvest writes mind/mail.txt + mind/turn.txt before the runner
+    (Bot-like disk turn). Empty harvest does not remint and does not invent
+    a turn file.
+    """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
         print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)
@@ -920,8 +926,8 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             continue
         task_id = str(rec.get("taskId") or "")
         context_id = str(rec.get("contextId") or "")
-        text = _extract_text(rec.get("parts"))
-        prompt = wrap_mind_mail(task_id, context_id, text or json.dumps(rec, ensure_ascii=False))
+        raw_text = prepare_mail_turn(STATE_DIR, seat, rec)
+        prompt = wrap_mind_mail(task_id, context_id, raw_text)
         try:
             raw = run(prompt, seat=seat)
         except Exception as e:
