@@ -37,6 +37,7 @@ import signal
 import subprocess
 import sys
 import time
+import tomllib
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -121,18 +122,31 @@ def grok_home_dir(seat: str) -> Path:
     return d
 
 
+def _linear_headers_ok(headers: Any) -> bool:
+    if not isinstance(headers, dict):
+        return False
+    auth = str(headers.get("Authorization") or headers.get("authorization") or "")
+    return "Bearer" in auth and "${LINEAR_API_KEY}" in auth
+
+
 def grok_catalog_has_linear(grok_home: Path) -> bool:
     """True when seat GROK_HOME/config.toml registers Living Sky Linear HTTP."""
     cfg = grok_home / "config.toml"
     if not cfg.is_file():
         return False
     try:
-        text = cfg.read_text(encoding="utf-8")
-    except OSError:
+        data = tomllib.loads(cfg.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
         return False
-    if "[mcp_servers.linear]" not in text or LINEAR_MCP_URL not in text:
+    servers = data.get("mcp_servers")
+    if not isinstance(servers, dict):
         return False
-    return True
+    linear = servers.get("linear")
+    if not isinstance(linear, dict):
+        return False
+    if str(linear.get("url") or "") != LINEAR_MCP_URL:
+        return False
+    return _linear_headers_ok(linear.get("headers"))
 
 
 def cursor_catalog_has_linear(root: Path) -> bool:
@@ -150,7 +164,9 @@ def cursor_catalog_has_linear(root: Path) -> bool:
     linear = servers.get("linear")
     if not isinstance(linear, dict):
         return False
-    return str(linear.get("url") or "") == LINEAR_MCP_URL
+    if str(linear.get("url") or "") != LINEAR_MCP_URL:
+        return False
+    return _linear_headers_ok(linear.get("headers"))
 
 
 def _missing_linear_catalog_result(backend: str) -> dict[str, Any]:
@@ -1246,6 +1262,14 @@ def wait_for_inbox(seat: str, timeout: float = 30.0) -> None:
         time.sleep(0.25)
 
 
+def should_backoff_failed_turn(result: dict[str, Any]) -> bool:
+    """Unconsumed runner/catalog failures must not tight-loop run_forever."""
+    if result.get("consumed"):
+        return False
+    reason = str(result.get("reason") or "")
+    return reason in {"runner-fail", MISSING_LINEAR_CATALOG}
+
+
 def run_forever(seat: str) -> int:
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
@@ -1266,7 +1290,7 @@ def run_forever(seat: str) -> int:
         result = process_once(seat)
         if result.get("consumed"):
             continue
-        if result.get("reason") == "runner-fail":
+        if should_backoff_failed_turn(result):
             end = time.time() + 2.0
             while not stopping and time.time() < end:
                 time.sleep(0.25)

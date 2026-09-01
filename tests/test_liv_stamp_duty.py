@@ -245,6 +245,7 @@ def test_wrap_mind_mail_requires_linear_stamp_not_extra_high_product() -> None:
     assert "living sky" in low
     assert "liv" in low
     assert "real evidence" in low
+    assert "every mind turn" in low
     assert "black swan" in low
     assert "STATUS ping" in wrap
     assert CANONICAL_RESULT.split(" notes=")[0] in wrap or "bc-id=" in wrap
@@ -264,10 +265,8 @@ def test_grok_mind_turn_does_not_complete_without_linear_in_catalog(
     _append_inbox(state, "floor", "task-nolinear", "STATUS: stamp LIV-82 after evidence")
     result = mind.process_once("floor")
     assert result["consumed"] == 0, result
-    reason = str(result.get("reason") or "")
-    blob = reason + str(result.get("returncode") or "")
-    assert "linear" in reason.lower() or result.get("returncode") not in (None, 0)
-    assert "missing-linear" in reason.lower() or "linear" in blob.lower() or reason == "runner-fail"
+    assert result.get("reason") == "missing-linear-catalog", result
+    assert result.get("returncode") == 2
     assert _argv_log(log) == []
     offset = state / "floor" / "mind" / "offset"
     assert not offset.is_file() or int(offset.read_text(encoding="utf-8").strip() or "0") == 0
@@ -301,8 +300,8 @@ def test_cursor_mind_turn_does_not_complete_without_linear_in_catalog(
     _append_inbox(state, "floor", "task-cur-nolinear", "STATUS: cursor stamp")
     result = mind.process_once("floor")
     assert result["consumed"] == 0, result
-    reason = str(result.get("reason") or "")
-    assert "linear" in reason.lower() or result.get("returncode") not in (None, 0)
+    assert result.get("reason") == "missing-linear-catalog", result
+    assert result.get("returncode") == 2
     assert _argv_log(log) == []
 
 
@@ -322,4 +321,36 @@ def test_grok_mind_turn_completes_when_linear_is_in_catalog(
     assert _argv_log(log), "grok must run when Linear is in GROK_HOME"
     wrap = (state / "floor" / "mind" / "mail.txt").read_text(encoding="utf-8")
     assert "save_comment" in wrap.lower()
+    assert "every mind turn" in wrap.lower()
     assert "FLEET_DONE stamp LIV-82" in wrap
+
+
+def test_url_only_linear_table_is_not_a_linear_catalog(tmp_path: Path) -> None:
+    mind = _load(MIND_PY, "gcs_url_only_linear")
+    gh = tmp_path / "grok-home"
+    gh.mkdir(parents=True)
+    (gh / "config.toml").write_text(
+        "[mcp_servers.linear]\n"
+        f'url = "{LINEAR_MCP_URL}"\n',
+        encoding="utf-8",
+    )
+    assert mind.grok_catalog_has_linear(gh) is False
+    cursor_root = tmp_path / "cursor-root"
+    mcp = cursor_root / ".cursor"
+    mcp.mkdir(parents=True)
+    (mcp / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"linear": {"url": LINEAR_MCP_URL}}}),
+        encoding="utf-8",
+    )
+    assert mind.cursor_catalog_has_linear(cursor_root) is False
+
+
+def test_missing_linear_catalog_backoffs_like_runner_fail() -> None:
+    mind = _load(MIND_PY, "gcs_backoff_linear")
+    assert mind.should_backoff_failed_turn({"consumed": 0, "reason": "missing-linear-catalog"}) is True
+    assert mind.should_backoff_failed_turn({"consumed": 0, "reason": "runner-fail"}) is True
+    assert mind.should_backoff_failed_turn({"consumed": 0, "reason": "empty"}) is False
+    assert mind.should_backoff_failed_turn({"consumed": 1, "reason": "ok"}) is False
+    src = MIND_PY.read_text(encoding="utf-8")
+    forever = src.split("def run_forever", 1)[1]
+    assert "should_backoff_failed_turn" in forever
