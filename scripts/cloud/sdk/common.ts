@@ -22,6 +22,14 @@ function envFirst(...names: string[]): string {
   return "";
 }
 
+export function requirePinnedCloudModelEnv(): void {
+  const raw = (process.env.CURSOR_CLOUD_MODEL || "").trim();
+  if (!raw) return;
+  if (raw !== EXTRA_HIGH_MODEL_ID) {
+    throw new Error(`CLOUD_BLOCKED: CURSOR_CLOUD_MODEL=${raw} is not grok-4.6`);
+  }
+}
+
 export function extraHighModel(): ModelSelection {
   return {
     id: EXTRA_HIGH_MODEL_ID,
@@ -47,6 +55,7 @@ export async function sendPinned(agent: PinnedSender, prompt: string): Promise<R
   if (typeof agent.send !== "function") {
     throw new Error("CLOUD_BLOCKED: agent.send missing; refusing unpinned run");
   }
+  requirePinnedCloudModelEnv();
   const model = extraHighModel();
   if (model.id !== EXTRA_HIGH_MODEL_ID) {
     throw new Error("CLOUD_BLOCKED: extraHighModel pin missing");

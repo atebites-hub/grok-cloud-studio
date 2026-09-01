@@ -14,6 +14,7 @@ from test_cloud_launch import (
     CLOUD,
     EXAMPLE_REPO,
     FAKE_KEY,
+    NON_GROK_CURSOR_CLOUD_MODELS,
     MockCursorAPI,
     _run,
     _script_env,
@@ -203,6 +204,34 @@ def test_extra_high_model_accepts_grok_and_rejects_auto() -> None:
     params = {(p["id"], p["value"]) for p in pin["params"]}
     assert ("effort", "xhigh") in params
     assert ("fast", "false") in params
+
+
+def test_cursor_cloud_model_env_rejects_non_grok_and_pin_stays_hardcoded(
+    monkeypatch,
+) -> None:
+    mod = _load(EXTRA_HIGH, "gcs_extra_high_env")
+    monkeypatch.delenv("CURSOR_CLOUD_MODEL", raising=False)
+    ok, found = mod.cursor_cloud_model_env_ok()
+    assert ok is True
+    assert found == ""
+    monkeypatch.setenv("CURSOR_CLOUD_MODEL", "grok-4.6")
+    ok, found = mod.cursor_cloud_model_env_ok()
+    assert ok is True
+    assert found == "grok-4.6"
+    for model_id in NON_GROK_CURSOR_CLOUD_MODELS:
+        monkeypatch.setenv("CURSOR_CLOUD_MODEL", model_id)
+        ok, found = mod.cursor_cloud_model_env_ok()
+        assert ok is False, model_id
+        assert found == model_id
+        pin = mod.extra_high_model_object()
+        assert pin["id"] == "grok-4.6", model_id
+        try:
+            mod.require_cursor_cloud_model_env()
+        except ValueError as err:
+            assert "CURSOR_CLOUD_MODEL" in str(err)
+            assert model_id in str(err)
+        else:
+            raise AssertionError(f"expected reject for {model_id}")
 
 
 def test_count_running_ignores_leftover_active_and_other_repos() -> None:
