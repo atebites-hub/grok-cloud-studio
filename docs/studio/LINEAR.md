@@ -62,8 +62,10 @@ desktop-only; cloud snapshots need `LINEAR_API_KEY` in Secrets.
 
 ## Ship gate
 
-GitHub Actions `.github/workflows/ship-gate.yml` runs `pytest -q` and
-`python3 scripts/secret_scan.py`. Empty CI is not merge.
+GitHub Actions `.github/workflows/ship-gate.yml` runs
+`scripts/ci/ship-gate.sh` (`.venv/bin/pytest -q` and
+`python3 scripts/secret_scan.py`, N passed required). Empty CI is not merge.
+This is the same workflow as PR #92 — not a second YAML.
 
 ## Out of scope
 

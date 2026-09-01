@@ -1,8 +1,5 @@
-# Minimal GitHub Actions ship-gate for this public control plane.
-# Empty CI is not merge. Main has no workflows; this file is the gate:
-#   python3 -m pytest -q
-#   python3 scripts/secret_scan.py
-# Does not remint #64 MCP catalogs / footers / SOUL.
+# PR ship gate: .venv/bin/pytest -q AND python3 scripts/secret_scan.py
+# via scripts/ci/ship-gate.sh (requires N passed, N>=1).
 name: ship-gate
 
 on:
@@ -18,6 +15,8 @@ jobs:
   ship-gate:
     name: pytest -q and secret_scan
     runs-on: ubuntu-latest
+    env:
+      GCS_BOT_BIND_OPTIONAL: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,11 +30,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install pytest
-        run: python3 -m pip install -r requirements.txt
+      - name: Bootstrap venv
+        run: bash ./install.sh
 
-      - name: pytest -q
-        run: python3 -m pytest -q
-
-      - name: secret_scan
-        run: python3 scripts/secret_scan.py
+      - name: Ship gate
+        run: bash scripts/ci/ship-gate.sh
