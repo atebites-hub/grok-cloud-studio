@@ -1,5 +1,4 @@
-# PR ship gate: .venv/bin/pytest -q AND python3 scripts/secret_scan.py
-# via scripts/ci/ship-gate.sh (requires N passed, N>=1).
+# PR ship gate: pytest -q and python3 scripts/secret_scan.py
 name: ship-gate
 
 on:
@@ -33,5 +32,8 @@ jobs:
       - name: Bootstrap venv
         run: bash ./install.sh
 
-      - name: Ship gate
-        run: bash scripts/ci/ship-gate.sh
+      - name: pytest -q
+        run: .venv/bin/pytest -q
+
+      - name: secret_scan
+        run: python3 scripts/secret_scan.py

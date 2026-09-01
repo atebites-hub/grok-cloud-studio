@@ -107,8 +107,6 @@ Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_resu
 python3 scripts/secret_scan.py
 ```
 
-GitHub Actions [`.github/workflows/ship-gate.yml`](.github/workflows/ship-gate.yml) runs `scripts/ci/ship-gate.sh` on pull requests (requires `N passed`, N≥1, then `secret_scan=clean`). Empty checks are not merge evidence.
-
 The secret scan fails closed on credentials, private-key blocks, and product lore that does not belong in this public control plane.
 
 ## License
