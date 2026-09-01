@@ -1,7 +1,7 @@
 # Cursor Cloud Extra High control plane
 
 **Audience:** Grok Cloud Studio Directors (and QA for rebase-only Extra High)  
-**Auth:** `CURSOR_API_KEY` via env or `~/.config/cursor/agent.env` (never print)  
+**Auth:** `CURSOR_API_KEY` via env or `~/.config/cursor/agent.env` (never print, including `bash -x` and agent.env dumps)  
 **Canonical:** `@cursor/sdk` in `scripts/cloud/sdk/` (Node **>= 22.13**)  
 **REST:** `https://api.cursor.com/v1/agents` curl is **fallback only**  
 **Model default (create):** `grok-4.6` + `effort=xhigh` via `scripts/launch-cloud-extra-high.sh`
@@ -32,7 +32,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 
 Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|result|wait-notify> …`
 
-`_common.sh` loads `auth.sh`, dispatches the SDK CLI, and falls back to REST curl. `auth.sh` is the shared HTTP helper (Basic auth, `CURSOR_API_BASE`, redaction).
+`_common.sh` loads `auth.sh`, dispatches the SDK CLI, and falls back to REST curl. `auth.sh` is the shared HTTP helper (Basic auth, `CURSOR_API_BASE`, redaction). `cloud_load_auth` keeps `set +x` until after the key presence check so `bash -x` cannot dump `CURSOR_API_KEY`. `cloud_redact_stream` redacts the live key value and `agent.env` assignment dumps (`export CURSOR_API_KEY=…`) even when the env var is unset.
 
 ## Launch contract
 
