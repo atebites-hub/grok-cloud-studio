@@ -31,6 +31,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from lib import append_inbox_record
+
 HOST = os.environ.get("GCS_A2A_HOST", "127.0.0.1")
 PORT = int(os.environ.get("GCS_A2A_PORT", "8732"))
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
@@ -85,8 +87,7 @@ def _save_tasks(seat: str, tasks: dict[str, Any]) -> None:
 
 
 def _append_inbox(seat: str, record: dict[str, Any]) -> None:
-    with _inbox_path(seat).open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    append_inbox_record(_seat_dir(seat), record)
 
 
 def _load_card(seat: str) -> dict[str, Any] | None:

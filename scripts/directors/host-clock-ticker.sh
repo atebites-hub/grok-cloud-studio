@@ -35,12 +35,14 @@ enqueue_continue() {
   token="tick-${seat}-${now}"
   inbox="$STATE_DIR/$seat/inbox.jsonl"
   mkdir -p "$STATE_DIR/$seat"
-  python3 - "$inbox" "$seat" "$token" "$now" <<'PY'
-import json
+  python3 - "$inbox" "$seat" "$token" "$now" "$ROOT" <<'PY'
 import sys
 from pathlib import Path
 
-inbox, seat, token, now = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+inbox, seat, token, now, root = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+sys.path.insert(0, str(Path(root) / "scripts" / "a2a"))
+from lib import append_inbox_record
+
 text = (
     f"ACP_PING STATUS/CONTINUE seat={seat} token={token}. "
     "Keep-alive turn: do work, do not idle. Quote token in STATUS. "
@@ -54,10 +56,7 @@ rec = {
     "contextId": "host-clock",
     "parts": [{"kind": "text", "text": text}],
 }
-path = Path(inbox)
-path.parent.mkdir(parents=True, exist_ok=True)
-with path.open("a", encoding="utf-8") as fh:
-    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+append_inbox_record(Path(inbox).parent, rec)
 print(f"HOST_CLOCK_ENQUEUE seat={seat} token={token} ts={now}", flush=True)
 PY
 }

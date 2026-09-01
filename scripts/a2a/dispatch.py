@@ -40,6 +40,7 @@ from lib import grow_seats as _grow_seats_fn  # noqa: E402
 from lib import mind_seats as _mind_seats_fn  # noqa: E402
 from lib import repo_root as _repo_root  # noqa: E402
 from lib import state_root as _state_root  # noqa: E402
+from lib import inbox_dropped, physical_inbox_offset, rotate_inbox  # noqa: E402
 
 ROOT = _repo_root()
 STATE_DIR = _state_root(ROOT)
@@ -448,18 +449,30 @@ def _discover_seats(filter_seats: set[str] | None) -> list[str]:
     return seats
 
 
-def _read_new_records(seat: str) -> tuple[list[tuple[int, dict[str, Any]]], int]:
-    """Return (list of (end_offset, record), current_file_size).
+def _commit_offset(seat: str, end_offset: int, dropped_at_start: int) -> None:
+    _write_offset(
+        seat,
+        physical_inbox_offset(end_offset, dropped_at_start, _seat_dir(seat)),
+    )
+
+
+def _read_new_records(seat: str) -> tuple[list[tuple[int, dict[str, Any]]], int, int]:
+    """Return (list of (end_offset, record), current_file_size, dropped_at_start).
 
     end_offset is the byte position after each complete line.
     """
+    seat_dir = _seat_dir(seat)
+    rotate_inbox(seat_dir)
+    dropped_at_start = inbox_dropped(seat_dir)
     path = _inbox_path(seat)
     if not path.is_file():
-        return [], 0
+        return [], 0, dropped_at_start
     size = path.stat().st_size
     offset = _read_offset(seat)
     if offset > size:
-        # Truncated/rotated inbox — restart from beginning
+        # Compacted inbox: offsets were rewritten. A stale larger offset
+        # must not reread the unread tail as if it were a brand-new file
+        # of consumed mail — start at 0 of the compacted file (unread only).
         offset = 0
     records: list[tuple[int, dict[str, Any]]] = []
     with path.open("rb") as f:
@@ -488,7 +501,7 @@ def _read_new_records(seat: str) -> tuple[list[tuple[int, dict[str, Any]]], int]
                 records.append((end, {"__corrupt__": True, "taskId": f"corrupt-{end}"}))
                 continue
             records.append((end, rec))
-    return records, size
+    return records, size, dropped_at_start
 
 
 def _daemon_pid_path(seat: str) -> Path:
@@ -636,7 +649,10 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
     loop (wake.offset / local ACP session/prompt into grok agent serve).
     Mind seats and any seat with a live mind/pid are owned by mind.py.
     Do not ACP-inject peer mail and do not advance dispatch.offset there.
+    Still rotate a huge inbox on skip so leftover harvest cannot later
+    reread a megabyte consumed prefix (wake.offset / mind/offset stay).
     """
+    rotate_inbox(_seat_dir(seat))
     if _wake_owns_inbox(seat):
         print(f"DISPATCH_SKIP seat={seat} reason=wake-owns-inbox", flush=True)
         return 0
@@ -644,7 +660,7 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
         print(f"DISPATCH_SKIP seat={seat} reason=mind-owns-inbox", flush=True)
         return 0
 
-    records, _size = _read_new_records(seat)
+    records, _size, dropped_at_start = _read_new_records(seat)
     if not records:
         return 0
 
@@ -652,7 +668,7 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
     for end_offset, rec in records:
         if rec.get("__corrupt__"):
             if not dry_run:
-                _write_offset(seat, end_offset)
+                _commit_offset(seat, end_offset, dropped_at_start)
             continue
 
         task_id = str(rec.get("taskId") or "")
@@ -664,19 +680,19 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
         if seat in _skip_seats():
             print(f"DISPATCH_SKIP seat={seat} reason=skip-seat task={task_id}")
             if not dry_run:
-                _write_offset(seat, end_offset)
+                _commit_offset(seat, end_offset, dropped_at_start)
             continue
 
         if seat not in _launch_seats():
             print(f"DISPATCH_SKIP seat={seat} reason=not-in-launch-map task={task_id}")
             if not dry_run:
-                _write_offset(seat, end_offset)
+                _commit_offset(seat, end_offset, dropped_at_start)
             continue
 
         if not text:
             print(f"DISPATCH_SKIP seat={seat} reason=empty task={task_id}")
             if not dry_run:
-                _write_offset(seat, end_offset)
+                _commit_offset(seat, end_offset, dropped_at_start)
             continue
 
         if _seat_locked(seat):
@@ -776,7 +792,7 @@ def _process_seat(seat: str, *, dry_run: bool) -> int:
             proc,
             {"record": rec, "log_path": str(log_path), "task_id": task_id},
         )
-        _write_offset(seat, end_offset)
+        _commit_offset(seat, end_offset, dropped_at_start)
         _append_seat_log(
             seat,
             f"{_now()} LAUNCH seat={seat} task={task_id} mode={mode} pid={proc.pid} log={log_path}",

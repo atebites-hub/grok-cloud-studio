@@ -12,7 +12,6 @@ Stdlib only.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import signal
 import subprocess
@@ -29,7 +28,7 @@ INTERVAL_SEC = float(os.environ.get("GCS_TICKER_SEC", "600"))
 _LIB_DIR = Path(__file__).resolve().parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
-from lib import known_seat  # noqa: E402
+from lib import append_inbox_record, known_seat  # noqa: E402
 from mind_bot_like import default_tick_seats  # noqa: E402
 
 
@@ -79,8 +78,6 @@ def tick_once(seats: Iterable[str] | None = None, now: float | None = None) -> i
                 continue
         ts = int(now if now is not None else _now_ts())
         token = f"tick-{seat}-{ts}"
-        inbox = STATE_DIR / seat / "inbox.jsonl"
-        inbox.parent.mkdir(parents=True, exist_ok=True)
         rec = {
             "kind": "message",
             "role": "user",
@@ -88,8 +85,7 @@ def tick_once(seats: Iterable[str] | None = None, now: float | None = None) -> i
             "contextId": "host-clock",
             "parts": [{"kind": "text", "text": _tick_text(seat, token)}],
         }
-        with inbox.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        append_inbox_record(STATE_DIR / seat, rec)
         written += 1
         print(f"TICKER_ENQUEUE seat={seat} task={token}", flush=True)
     return written

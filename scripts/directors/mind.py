@@ -48,6 +48,7 @@ if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from duplex import set_task_state  # noqa: E402
 from lib import canonical_seat, skip_seats  # noqa: E402
+from lib import inbox_dropped, physical_inbox_offset, rotate_inbox  # noqa: E402
 from mind_bot_like import prepare_mail_turn  # noqa: E402
 import duplex as a2a_duplex  # noqa: E402
 
@@ -295,14 +296,23 @@ def _extract_text(parts: Any) -> str:
     return "\n".join(bits).strip()
 
 
-def _read_new_records(seat: str) -> list[tuple[int, dict[str, Any]]]:
-    path = STATE_DIR / seat / "inbox.jsonl"
+def _commit_offset(seat: str, end_offset: int, dropped_at_start: int) -> None:
+    seat_dir = STATE_DIR / seat
+    _write_offset(seat, physical_inbox_offset(end_offset, dropped_at_start, seat_dir))
+
+
+def _read_new_records(seat: str) -> tuple[list[tuple[int, dict[str, Any]]], int]:
+    seat_dir = STATE_DIR / seat
+    rotate_inbox(seat_dir)
+    dropped_at_start = inbox_dropped(seat_dir)
+    path = seat_dir / "inbox.jsonl"
     if not path.is_file():
-        return []
+        return [], dropped_at_start
     size = path.stat().st_size
     offset = _read_offset(seat)
     if offset > size:
-        offset = size
+        # Compacted or truncated file — do not clamp to EOF (that drops unread).
+        offset = 0
     records: list[tuple[int, dict[str, Any]]] = []
     with path.open("rb") as fh:
         fh.seek(offset)
@@ -327,7 +337,7 @@ def _read_new_records(seat: str) -> list[tuple[int, dict[str, Any]]]:
                 records.append((end, {"__corrupt__": True}))
                 continue
             records.append((end, rec))
-    return records
+    return records, dropped_at_start
 
 
 def _argv_list(arguments: dict[str, Any]) -> list[str]:
@@ -1055,14 +1065,14 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
 
     mind_dir(seat)
     grok_home_dir(seat)
-    records = _read_new_records(seat)
+    records, dropped_at_start = _read_new_records(seat)
     if not records:
         return {"consumed": 0, "reason": "empty", "offset": _read_offset(seat)}
 
     run = runner if runner is not None else DEFAULT_RUNNER
     for end_offset, rec in records:
         if rec.get("__corrupt__"):
-            _write_offset(seat, end_offset)
+            _commit_offset(seat, end_offset, dropped_at_start)
             continue
         task_id = str(rec.get("taskId") or "")
         context_id = str(rec.get("contextId") or "")
@@ -1124,7 +1134,7 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
                 "format": "json",
             },
         )
-        _write_offset(seat, end_offset)
+        _commit_offset(seat, end_offset, dropped_at_start)
         if task_id:
             set_task_state(
                 STATE_DIR,
@@ -1149,10 +1159,10 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
 
 def wait_for_inbox(seat: str, timeout: float = 30.0) -> None:
     inbox = STATE_DIR / seat / "inbox.jsonl"
-    offset = _read_offset(seat)
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
+            offset = _read_offset(seat)
             if inbox.is_file() and inbox.stat().st_size > offset:
                 return
         except OSError:

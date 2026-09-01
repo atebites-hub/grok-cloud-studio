@@ -7,11 +7,14 @@ control plane is not bound to any one product repo.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
+import shutil
 import sys
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 HUB_PORT = int(os.environ.get("GCS_A2A_PORT", "8732"))
 GROK_DEFAULT_ACP_PORT = 2419
@@ -407,6 +410,164 @@ def resolve_director_prompt(seat: str, root: Path | None = None) -> Path | None:
             if candidate.is_file():
                 return candidate
     return None
+
+
+INBOX_NAME = "inbox.jsonl"
+INBOX_LOCK_NAME = "inbox.lock"
+INBOX_DROPPED_NAME = "inbox.dropped"
+INBOX_MAX_BYTES_DEFAULT = 1_048_576
+INBOX_OFFSET_RELPATHS = (
+    "wake.offset",
+    "dispatch.offset",
+    "bot-bridge.offset",
+    "mind/offset",
+)
+
+
+def inbox_max_bytes() -> int:
+    """Size trigger for compacting a seat inbox. GCS_INBOX_MAX_BYTES, default 1 MiB."""
+    raw = env_first("GCS_INBOX_MAX_BYTES")
+    if not raw:
+        return INBOX_MAX_BYTES_DEFAULT
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return INBOX_MAX_BYTES_DEFAULT
+
+
+def _read_int_file(path: Path) -> int | None:
+    if not path.is_file():
+        return None
+    try:
+        return max(0, int(path.read_text(encoding="utf-8").strip() or "0"))
+    except (ValueError, OSError):
+        return None
+
+
+def write_inbox_offset(path: Path, offset: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(str(int(offset)) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def inbox_offset_map(seat_dir: Path) -> dict[str, int]:
+    """Existing consumer offsets. Missing files are omitted, not treated as 0."""
+    out: dict[str, int] = {}
+    for rel in INBOX_OFFSET_RELPATHS:
+        val = _read_int_file(seat_dir / rel)
+        if val is not None:
+            out[rel] = val
+    return out
+
+
+def inbox_dropped(seat_dir: Path) -> int:
+    val = _read_int_file(seat_dir / INBOX_DROPPED_NAME)
+    return 0 if val is None else val
+
+
+def physical_inbox_offset(end_offset: int, dropped_at_start: int, seat_dir: Path) -> int:
+    """Map a harvest end offset into post-rotate coordinates."""
+    delta = inbox_dropped(seat_dir) - int(dropped_at_start)
+    return max(0, int(end_offset) - delta)
+
+
+@contextmanager
+def inbox_locked(seat_dir: Path) -> Iterator[None]:
+    """Exclusive lock for inbox append + rotate. Same inode as inbox.lock."""
+    seat_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = seat_dir / INBOX_LOCK_NAME
+    fh = lock_path.open("a+b")
+    try:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        fh.close()
+
+
+def append_inbox_record(seat_dir: Path, record: dict[str, Any]) -> None:
+    """Append one JSONL record under inbox.lock so rotate cannot drop it."""
+    line = json.dumps(record, ensure_ascii=False) + "\n"
+    with inbox_locked(seat_dir):
+        path = seat_dir / INBOX_NAME
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(line)
+
+
+def rotate_inbox(seat_dir: Path, *, max_bytes: int | None = None) -> dict[str, Any]:
+    """Drop the consumed prefix of inbox.jsonl. Never drop unread lines.
+
+    Cut is min(existing wake.offset, mind/offset, dispatch.offset,
+    bot-bridge.offset). Missing files are omitted so leftover dispatch.offset
+    staying absent on GROW/mind seats does not pin the cut at 0.
+    Offsets are rewritten by the same cut. inbox.dropped accumulates cut so
+    an in-flight harvest can still commit a physical offset.
+    """
+    limit = inbox_max_bytes() if max_bytes is None else max(1, int(max_bytes))
+    seat_dir.mkdir(parents=True, exist_ok=True)
+    inbox = seat_dir / INBOX_NAME
+    with inbox_locked(seat_dir):
+        if not inbox.is_file():
+            return {"rotated": False, "reason": "missing", "cut": 0}
+        try:
+            size = inbox.stat().st_size
+        except OSError:
+            return {"rotated": False, "reason": "missing", "cut": 0}
+        if size <= limit:
+            return {"rotated": False, "reason": "under-max", "cut": 0, "size": size}
+        offsets = inbox_offset_map(seat_dir)
+        if not offsets:
+            return {"rotated": False, "reason": "no-offsets", "cut": 0, "size": size}
+        cut = min(offsets.values())
+        if cut <= 0:
+            return {"rotated": False, "reason": "unread-at-head", "cut": 0, "size": size}
+        if cut > size:
+            return {
+                "rotated": False,
+                "reason": "cut-beyond-size",
+                "cut": cut,
+                "size": size,
+            }
+        tmp = seat_dir / "inbox.jsonl.rot"
+        try:
+            if cut == size:
+                tmp.write_bytes(b"")
+            else:
+                with inbox.open("rb") as src, tmp.open("wb") as dst:
+                    src.seek(cut)
+                    shutil.copyfileobj(src, dst, length=1024 * 1024)
+            tmp.replace(inbox)
+        except OSError:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            return {"rotated": False, "reason": "io-error", "cut": cut, "size": size}
+        try:
+            size_after = inbox.stat().st_size
+        except OSError:
+            size_after = 0
+        for rel, old in offsets.items():
+            write_inbox_offset(seat_dir / rel, max(0, old - cut))
+        dropped = inbox_dropped(seat_dir) + cut
+        write_inbox_offset(seat_dir / INBOX_DROPPED_NAME, dropped)
+        print(
+            f"INBOX_ROTATE seat={seat_dir.name} cut={cut} kept={size_after} "
+            f"dropped_total={dropped}",
+            flush=True,
+        )
+        return {
+            "rotated": True,
+            "reason": "ok",
+            "cut": cut,
+            "size_before": size,
+            "size_after": size_after,
+            "dropped_total": dropped,
+        }
 
 
 def ensure_prompt_links(root: Path | None = None) -> list[Path]:
