@@ -1,12 +1,13 @@
 # PR ship gate: .venv/bin/pytest -q AND python3 scripts/secret_scan.py
 # via scripts/ci/ship-gate.sh (requires N passed, N>=1).
+# Same job as atebites-hub/grok-cloud-studio#92. push is unfiltered so a PR
+# that adds this file after open still gets a check (pull_request did not
+# queue here). Do not remint a second workflow.
 name: ship-gate
 
 on:
   pull_request:
   push:
-    branches:
-      - main
 
 permissions:
   contents: read
