@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -25,6 +26,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+_LIB_DIR = Path(__file__).resolve().parent
+if str(_LIB_DIR) not in sys.path:
+    sys.path.insert(0, str(_LIB_DIR))
+from lib import canonical_seat as _canonical_seat  # noqa: E402
 
 HOST = os.environ.get("GCS_A2A_HOST", "127.0.0.1")
 PORT = int(os.environ.get("GCS_A2A_PORT", "8732"))
@@ -89,6 +95,16 @@ def _load_card(seat: str) -> dict[str, Any] | None:
     if not path.is_file():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _resolve_seat(seat: str) -> str | None:
+    """Map CCGS lead aliases onto first-class hive seats with cards."""
+    key = _canonical_seat(seat, ROOT)
+    if _load_card(key) is not None:
+        return key
+    if key != seat and _load_card(seat) is not None:
+        return seat
+    return None
 
 
 def _load_registry() -> dict[str, Any]:
@@ -169,6 +185,13 @@ class A2AHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         seat, action, task_id, _ = _parse_path(self.path)
+        if seat:
+            resolved = _resolve_seat(seat)
+            if resolved is not None:
+                seat = resolved
+            elif action in {"agent-card", "tasks-list"}:
+                _json_response(self, 404, {"error": f"unknown seat: {seat}"})
+                return
         if action == "health":
             _json_response(
                 self,
@@ -194,9 +217,6 @@ class A2AHandler(BaseHTTPRequestHandler):
             _json_response(self, 200, card)
             return
         if action == "tasks-list" and seat:
-            if _load_card(seat) is None:
-                _json_response(self, 404, {"error": f"unknown seat: {seat}"})
-                return
             with _lock:
                 tasks = list(_load_tasks(seat).values())
             _json_response(self, 200, {"tasks": tasks})
@@ -215,9 +235,11 @@ class A2AHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         seat, action, task_id, _ = _parse_path(self.path)
         if action == "message-send" and seat:
-            if _load_card(seat) is None:
+            resolved = _resolve_seat(seat)
+            if resolved is None:
                 _json_response(self, 404, {"error": f"unknown seat: {seat}"})
                 return
+            seat = resolved
             try:
                 body = _read_json(self)
             except json.JSONDecodeError as e:

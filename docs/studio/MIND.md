@@ -195,3 +195,5 @@ specialists only via `scripts/launch-cloud-extra-high.sh`.
 | audio | `audio` (first-class) |
 | narrative | `narrative` (first-class) |
 
+Leftover launch map (`hive_seats`) keeps those first-class seats even when `GCS_ACP_SEATS` is the crash-safe serve cap. Mind remains opt-in via `GCS_MIND_SEATS`.
+

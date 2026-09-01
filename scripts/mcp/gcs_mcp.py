@@ -152,7 +152,7 @@ def _text_result(text: str, is_error: bool = False) -> dict[str, Any]:
 
 def call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     if name == "a2a_list_seats":
-        seats = list(lib.launch_seats(ROOT))
+        seats = list(lib.hive_seats(ROOT))
         skipped = sorted(lib.skip_seats(ROOT))
         return _text_result(json.dumps({"seats": seats, "skipSeats": skipped}, indent=2))
     if name == "a2a_send":

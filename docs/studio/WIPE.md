@@ -210,6 +210,8 @@ python3 scripts/secret_scan.py
 `skipSeats`: `orchestrator`, `donald`. Generic extract still ships `ops` and
 `cloud`. ACP/GROW cap stays crash-safe (`GCS_ACP_SEATS` default
 `floor,studio-ops` unless `studio.env` overlays the Palemon list).
+Leftover launch map (`hive_seats`) keeps first-class `audio` and `narrative`
+in the hive kit even when that ACP cap is set.
 
 CCGS lead map (aliases in `scripts/a2a/lib.py`): producer=`floor-ops`,
 creative=`floor`, technical=`systems`, game-designer=`content`,

@@ -172,9 +172,19 @@ def skip_seats(root: Path | None = None) -> frozenset[str]:
     return frozenset(n for n in names if n)
 
 
-def launch_seats(root: Path | None = None) -> tuple[str, ...]:
+def hive_seats(root: Path | None = None) -> tuple[str, ...]:
+    """Leftover launch map: first-class registry seats minus skipSeats.
+
+    Independent of GCS_ACP_SEATS (crash-safe grok agent serve cap). Audio and
+    narrative stay here as first-class CCGS leads. Do not mint the
+    49-specialist roster.
+    """
     skipped = skip_seats(root)
-    ordered = tuple(name for name in _seat_entries(root) if name not in skipped)
+    return tuple(name for name in _seat_entries(root) if name not in skipped)
+
+
+def launch_seats(root: Path | None = None) -> tuple[str, ...]:
+    ordered = hive_seats(root)
     env_list = env_first("GCS_ACP_SEATS")
     if env_list:
         wanted = [canonical_seat(s, root) for s in env_list.split(",") if s.strip()]
@@ -296,7 +306,7 @@ def message_text(record: dict) -> str:
 
 
 def default_poll_seats(root: Path | None = None) -> list[str]:
-    seats = list(launch_seats(root))
+    seats = list(hive_seats(root))
     for skipped in sorted(skip_seats(root)):
         if skipped not in seats:
             seats.append(skipped)
@@ -415,8 +425,8 @@ def ensure_prompt_links(root: Path | None = None) -> list[Path]:
 def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print(
-            "usage: lib.py <launch-seats|skip-seats|grow-seats|mind-seats|port SEAT|"
-            "normalize SEAT|canonical SEAT|root|state|registry|cloud-repo|"
+            "usage: lib.py <launch-seats|hive-seats|skip-seats|grow-seats|mind-seats|"
+            "port SEAT|normalize SEAT|canonical SEAT|root|state|registry|cloud-repo|"
             "cloud-ref|prompts-dir|prompt-file SEAT|ensure-prompts>",
             file=sys.stderr,
         )
@@ -424,6 +434,9 @@ def main(argv: list[str]) -> int:
     cmd = argv[0]
     if cmd == "launch-seats":
         print("\n".join(launch_seats()))
+        return 0
+    if cmd == "hive-seats":
+        print("\n".join(hive_seats()))
         return 0
     if cmd == "skip-seats":
         print("\n".join(sorted(skip_seats())))

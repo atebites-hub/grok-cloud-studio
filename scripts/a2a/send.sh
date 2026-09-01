@@ -36,11 +36,14 @@ DATA_JSON="${3:-}"
 HUB="${GCS_A2A_HUB:-http://127.0.0.1:8732}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${GCS_ROOT:-$SCRIPT_DIR/../..}" && pwd)"
+if [[ -n "$SEAT" ]]; then
+  SEAT="$(python3 "$ROOT/scripts/a2a/lib.py" canonical "$SEAT" 2>/dev/null || echo "$SEAT")"
+fi
 
 if [[ -z "$SEAT" || -z "$TEXT" ]]; then
   echo "usage: $0 [--from SEAT] <seat> \"<text>\" [optional-data-json]" >&2
   echo "seats:" >&2
-  python3 "$ROOT/scripts/a2a/lib.py" launch-seats >&2 || true
+  python3 "$ROOT/scripts/a2a/lib.py" hive-seats >&2 || true
   exit 2
 fi
 

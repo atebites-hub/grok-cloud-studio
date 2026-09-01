@@ -120,3 +120,36 @@ def test_hub_send_from_seat(hub: dict) -> None:
     assert data_parts
     assert data_parts[0]["data"]["from"] == "ops"
     assert record.get("from") == "ops"
+
+
+def test_hub_send_canonicalizes_producer_and_accepts_audio(hub: dict) -> None:
+    """CCGS aliases and first-class audio stay hive-real on leftover send."""
+    producer = subprocess.run(
+        ["bash", str(SEND), "producer", "unstick floor-ops via CCGS alias"],
+        cwd=str(ROOT),
+        env=hub["env"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert producer.returncode == 0, producer.stdout + producer.stderr
+    assert "A2A_SEND_OK" in producer.stdout
+    inbox = Path(hub["state"]) / "floor-ops" / "inbox.jsonl"
+    assert inbox.is_file()
+    record = json.loads(inbox.read_text(encoding="utf-8").splitlines()[-1])
+    assert record["parts"][0]["text"] == "unstick floor-ops via CCGS alias"
+    assert not (Path(hub["state"]) / "producer" / "inbox.jsonl").exists()
+
+    audio = subprocess.run(
+        ["bash", str(SEND), "audio", "mix pass via first-class seat"],
+        cwd=str(ROOT),
+        env=hub["env"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert audio.returncode == 0, audio.stdout + audio.stderr
+    audio_inbox = Path(hub["state"]) / "audio" / "inbox.jsonl"
+    assert audio_inbox.is_file()
+    arec = json.loads(audio_inbox.read_text(encoding="utf-8").splitlines()[-1])
+    assert arec["parts"][0]["text"] == "mix pass via first-class seat"

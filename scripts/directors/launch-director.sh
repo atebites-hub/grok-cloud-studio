@@ -18,7 +18,7 @@ source "$SCRIPT_DIR/prompt-dir.sh"
 
 usage() {
   local seats
-  seats="$(python3 "$LIB_PY" launch-seats | tr '\n' ' ')"
+  seats="$(python3 "$LIB_PY" hive-seats | tr '\n' ' ')"
   cat <<USAGE
 Usage: $(basename "$0") [--dry-run] <seat> [extra prompt...]
 
@@ -54,8 +54,8 @@ fi
 shift || true
 EXTRA="${*:-}"
 
-SEAT="$(python3 "$LIB_PY" normalize "$SEAT_RAW")"
-if ! python3 "$LIB_PY" launch-seats | grep -qx "$SEAT"; then
+SEAT="$(python3 "$LIB_PY" canonical "$SEAT_RAW")"
+if ! python3 "$LIB_PY" hive-seats | grep -qx "$SEAT"; then
   if python3 "$LIB_PY" skip-seats | grep -qx "$SEAT"; then
     echo "seat $SEAT is in skipSeats — not launchable via this script." >&2
     exit 2

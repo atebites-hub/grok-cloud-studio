@@ -44,3 +44,33 @@ def test_a2a_list_seats_tool() -> None:
     payload = json.loads(text)
     assert "floor" in payload["seats"]
     assert "ops" in payload["seats"]
+
+
+def test_a2a_list_seats_keeps_audio_narrative_under_acp_cap() -> None:
+    """Hive kit seats stay listable when GCS_ACP_SEATS is the serve cap."""
+    msg = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {"name": "a2a_list_seats", "arguments": {}},
+    }
+    env = {**os.environ, "GCS_ROOT": str(ROOT), "GCS_MCP_NDJSON": "1", "GCS_ACP_SEATS": "floor,studio-ops"}
+    env.pop("GCS_SKIP_SEATS", None)
+    proc = subprocess.run(
+        ["python3", str(MCP), "--plane", "a2a", "--ndjson"],
+        cwd=str(ROOT),
+        input=json.dumps(msg) + "\n",
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    reply = json.loads(proc.stdout.splitlines()[0])
+    payload = json.loads(reply["result"]["content"][0]["text"])
+    seats = payload["seats"]
+    assert "audio" in seats
+    assert "narrative" in seats
+    assert "floor-ops" in seats
+    assert "composer" not in seats
+    assert "donald" in payload["skipSeats"]

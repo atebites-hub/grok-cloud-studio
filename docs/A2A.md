@@ -95,4 +95,6 @@ Directors and leads spawn specialists only via `scripts/launch-cloud-extra-high.
 
 `audio` and `narrative` are first-class registry seats. The other titles are aliases (`scripts/a2a/lib.py` `CCGS_LEAD_ALIASES`).
 
+Leftover launch map (`lib.hive_seats` / `lib.py hive-seats`) is the hive kit: every first-class registry seat minus `skipSeats`. It stays independent of `GCS_ACP_SEATS` (crash-safe `grok agent serve` cap, default `floor,studio-ops`). Leftover dispatch, leftover `launch-director.sh`, and `a2a_list_seats` use that map so `audio` / `narrative` do not drop out when the ACP cap is set. Opt-in mind: `GCS_MIND_SEATS` may include `audio,narrative` (and CCGS aliases, which fold). Do not mint 49 specialist seats.
+
 Board is **tcarac/taskboard** (ticket CLI + HTTP `/mcp`). See `docs/studio/TASKBOARD.md`. Agent Kanban was removed; do not reconnect `ak`. The local HTML dashboard under `scripts/studio/dashboard/` is LEGACY.

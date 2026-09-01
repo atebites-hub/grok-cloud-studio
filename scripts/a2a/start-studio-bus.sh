@@ -121,11 +121,12 @@ read_pid() {
 acp_seats() {
   local raw="${GCS_ACP_SEATS:-$DEFAULT_ACP_SEATS}"
   local s known
-  known="$(python3 "$LIB_PY" launch-seats 2>/dev/null || true)"
+  known="$(python3 "$LIB_PY" hive-seats 2>/dev/null || true)"
   IFS=',' read -r -a parts <<<"$raw"
   for s in "${parts[@]}"; do
     s="$(echo "$s" | tr -d '[:space:]')"
     [[ -n "$s" ]] || continue
+    s="$(python3 "$LIB_PY" canonical "$s" 2>/dev/null || echo "$s")"
     if printf '%s\n' "$known" | grep -qx "$s"; then
       echo "$s"
     elif [[ "$s" == "studio-ops" ]] && printf '%s\n' "$known" | grep -qx "ops"; then
@@ -138,11 +139,12 @@ wake_seats() {
   local raw="${GCS_WAKE_SEATS:-${GCS_GROW_SEATS:-}}"
   if [[ -n "$raw" ]]; then
     local s known
-    known="$(python3 "$LIB_PY" launch-seats 2>/dev/null || true)"
+    known="$(python3 "$LIB_PY" hive-seats 2>/dev/null || true)"
     IFS=',' read -r -a parts <<<"$raw"
     for s in "${parts[@]}"; do
       s="$(echo "$s" | tr -d '[:space:]')"
       [[ -n "$s" ]] || continue
+      s="$(python3 "$LIB_PY" canonical "$s" 2>/dev/null || echo "$s")"
       if printf '%s\n' "$known" | grep -qx "$s"; then
         echo "$s"
       elif [[ "$s" == "studio-ops" ]] && printf '%s\n' "$known" | grep -qx "ops"; then

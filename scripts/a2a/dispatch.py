@@ -9,7 +9,9 @@ This process must not ACP-inject peer mail for those seats (or any seat
 with a live wake.pid) and must not advance dispatch.offset there.
 
 Non-GROW seats may still use leftover `grok agent serve` + acp_inject.py.
-STATUS / FLEET_* / A2A_REPLY never launch (A2A_REPLY is a duplex caller ping).
+Leftover launch map is `hive_seats` (first-class registry minus skipSeats),
+not `GCS_ACP_SEATS`. STATUS / FLEET_* / A2A_REPLY never launch
+(A2A_REPLY is a duplex caller ping).
 
 Hub TASK_STATE_COMPLETED is a receipt, not proof the Director acted.
 Local studio only. Stdlib only.
@@ -32,7 +34,7 @@ from typing import Any
 _LIB_DIR = Path(__file__).resolve().parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
-from lib import launch_seats as _launch_seats_fn  # noqa: E402
+from lib import hive_seats as _hive_seats_fn  # noqa: E402
 from lib import skip_seats as _skip_seats_fn  # noqa: E402
 from lib import grow_seats as _grow_seats_fn  # noqa: E402
 from lib import mind_seats as _mind_seats_fn  # noqa: E402
@@ -78,7 +80,8 @@ GROW_SEATS = _grow_seats_fn(ROOT)
 
 
 def _launch_seats() -> frozenset[str]:
-    return frozenset(_launch_seats_fn(ROOT))
+    """Leftover launch map: first-class hive seats, not the ACP serve cap."""
+    return frozenset(_hive_seats_fn(ROOT))
 
 
 def _skip_seats() -> frozenset[str]:
