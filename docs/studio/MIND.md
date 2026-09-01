@@ -23,7 +23,7 @@ scripts/a2a/start-studio-bus.sh start
 
 ### Two-runtime mind law
 
-Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/offset` + pin (`mind/session` grok UUID, `mind/cursor-session` Cursor chat id). Grok runner and Cursor CLI runner **share** that mailbox. Offset advances only on runner exit 0.
+Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/offset` + pin (`mind/session` grok UUID, `mind/cursor-session` Cursor chat id). Grok runner and Cursor CLI runner **share** that mailbox. Offset advances on runner exit 0, and when skipping a duplicate identical `FLEET_DONE` line (waiter+shepherd double ping) without a second grok turn.
 
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
@@ -46,8 +46,9 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 | `session.minted` | Written after the first grok exit 0 (later grok turns `--resume`) |
 | `cursor-session` | Pinned Cursor chat id (from `agent create-chat`; not the grok UUID) |
 | `mail.txt` | Current inbox line (grok `--prompt-file`; Cursor positional prompt) |
+| `last-fleet-done` | Exact last consumed `FLEET_DONE` mail text (mailbox skip of identical twins) |
 | `transcript.jsonl` | Agent json stdout plus the user mail row |
-| `offset` | Byte offset into that seat’s `inbox.jsonl` (advanced only on runner exit 0) |
+| `offset` | Byte offset into that seat’s `inbox.jsonl` (runner exit 0, or duplicate `FLEET_DONE` skip) |
 | `pid` | Live mind process |
 | `runner` | Persisted `grok` or `cursor` for `GCS_MIND_RUNNER=auto`. Missing file means grok. Forced env does not rewrite this file. |
 
@@ -76,7 +77,8 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - If grok says the session is already in use, treat it as minted and `--resume` the same UUID. Do not mint a new UUID.
 - Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty. Do not remint because the runner switched.
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
-- Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after the effective runner exits 0.
+- Persist grok json stdout onto `transcript.jsonl`. Bump `offset` after the effective runner exits 0.
+- Duplicate identical `FLEET_DONE` lines (waiter+shepherd double ping, same text, distinct taskIds) are **not** a second grok turn. Advance `offset`, log `MIND_SKIP reason=duplicate-fleet-done`, keep the pinned UUID. Do not remint fleet-ledger `notify_owner` idempotency (that is PR #34). Distinct `FLEET_DONE` texts (different bc-id) still get a turn. Identical non-`FLEET_DONE` mail still gets a turn.
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
 
 No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.
@@ -99,7 +101,9 @@ Forced `GCS_MIND_RUNNER=grok` or `GCS_MIND_RUNNER=cursor` does **not** flip
 (and does not rewrite `mind/runner`). Missing `mind/runner` under auto starts
 as grok; a successful auto turn writes the runner that won.
 
-Do not consume/advance `offset` unless the effective runner exits 0. If the
+Do not consume/advance `offset` unless the effective runner exits 0, except
+duplicate identical `FLEET_DONE` mailbox skips (`MIND_SKIP reason=duplicate-fleet-done`).
+If the
 retry also fails, keep today’s `MIND_FAIL` / 2s runner-fail sleep (do not
 tight-loop faster). Do not fork sessions. Do not become a 45s assigner. Do
 not set `GROK_BIN=cursor-grok`. Do not reuse `mind/session` (that UUID is

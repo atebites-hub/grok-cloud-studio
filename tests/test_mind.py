@@ -1599,3 +1599,153 @@ def test_cursor_runner_sources_agent_env_without_printing_key(
     transcript = (state / "floor" / "mind" / "transcript.jsonl").read_text(encoding="utf-8")
     assert key not in transcript
 
+
+_FLEET_DONE_BC1 = (
+    "FLEET_DONE / PR_READY: Extra High bc-dup (dup-run) "
+    "runStatus=FINISHED pr=https://github.com/org/repo/pull/1 "
+    "url=https://cursor.com/agents/bc-dup. "
+    "Collect via scripts/cloud/result-cloud-agent.sh bc-dup. "
+    "If pr is a URL: ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST; "
+    "do not launch a twin. RESULT with bc-id + pr."
+)
+_FLEET_DONE_BC2 = (
+    "FLEET_DONE: Extra High bc-other (other-run) "
+    "runStatus=ERROR pr=none url=https://cursor.com/agents/bc-other. "
+    "Inspect with scripts/cloud/result-cloud-agent.sh bc-other; "
+    "follow-up or close; do not ignore. RESULT."
+)
+
+
+def test_duplicate_identical_fleet_done_does_not_burn_second_grok_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Waiter+shepherd double ping: identical FLEET_DONE text, distinct taskIds.
+
+    Mailbox skip. Do not remint fleet_ledger notify_owner (#34).
+    """
+    log = tmp_path / "grok.argv.json"
+    grok = _write_fake_grok(tmp_path, log)
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="dupfleet", grok=grok)
+    _append_inbox(state, "floor", "task-waiter", _FLEET_DONE_BC1)
+    _append_inbox(state, "floor", "task-shepherd", _FLEET_DONE_BC1)
+    first = mind.process_once("floor")
+    assert first["consumed"] == 1
+    assert first.get("reason") == "ok"
+    assert len(_argv_log(log)) == 1
+    sid = _session_id(state, "floor")
+    uuid.UUID(sid)
+    off1 = _offset(state, "floor")
+    assert off1 > 0
+    inbox_size = (state / "floor" / "inbox.jsonl").stat().st_size
+    assert off1 < inbox_size
+    user_rows = [r for r in _transcript_rows(state, "floor") if r.get("role") == "user"]
+    assert len(user_rows) == 1
+
+    second = mind.process_once("floor")
+    captured = capsys.readouterr()
+    skip_blob = captured.out + captured.err
+    assert second["consumed"] == 0
+    assert second.get("reason") == "duplicate-fleet-done"
+    assert len(_argv_log(log)) == 1, "second identical FLEET_DONE must not invoke grok"
+    assert _offset(state, "floor") == inbox_size
+    assert _session_id(state, "floor") == sid
+    assert "MIND_SKIP" in skip_blob
+    assert "reason=duplicate-fleet-done" in skip_blob
+    user_rows2 = [r for r in _transcript_rows(state, "floor") if r.get("role") == "user"]
+    assert len(user_rows2) == 1
+    empty = mind.process_once("floor")
+    assert empty["consumed"] == 0
+    assert empty.get("reason") == "empty"
+    assert len(_argv_log(log)) == 1
+    assert _session_id(state, "floor") == sid
+
+
+def test_distinct_fleet_done_lines_each_get_a_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "grok.argv.json"
+    grok = _write_fake_grok(tmp_path, log)
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="twofleet", grok=grok)
+    _append_inbox(state, "floor", "task-bc1", _FLEET_DONE_BC1)
+    _append_inbox(state, "floor", "task-bc2", _FLEET_DONE_BC2)
+    first = mind.process_once("floor")
+    assert first["consumed"] == 1
+    rows1 = _argv_log(log)
+    assert len(rows1) == 1
+    mail1 = Path(_flag_value(rows1[0]["argv"], "--prompt-file")).read_text(encoding="utf-8")
+    assert _FLEET_DONE_BC1 in mail1
+    sid = _session_id(state, "floor")
+    second = mind.process_once("floor")
+    assert second["consumed"] == 1
+    assert second.get("reason") == "ok"
+    rows = _argv_log(log)
+    assert len(rows) == 2
+    mail2 = Path(_flag_value(rows[1]["argv"], "--prompt-file")).read_text(encoding="utf-8")
+    assert _FLEET_DONE_BC2 in mail2
+    assert "--resume" in rows[1]["argv"]
+    assert _flag_value(rows[1]["argv"], "--resume") == sid
+
+
+def test_identical_non_fleet_done_mail_still_runs_both_turns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "grok.argv.json"
+    grok = _write_fake_grok(tmp_path, log)
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="dupping", grok=grok)
+    ping = "Keep-alive received. Scanning A2A inboxes, fleet ledgers"
+    _append_inbox(state, "floor", "task-ka-1", ping)
+    _append_inbox(state, "floor", "task-ka-2", ping)
+    first = mind.process_once("floor")
+    second = mind.process_once("floor")
+    assert first["consumed"] == 1
+    assert second["consumed"] == 1
+    assert len(_argv_log(log)) == 2
+
+
+def test_duplicate_fleet_done_then_real_mail_processes_real(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Skip the shepherd twin in the same harvest, then take the next real line."""
+    log = tmp_path / "grok.argv.json"
+    grok = _write_fake_grok(tmp_path, log)
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="dupthen", grok=grok)
+    _append_inbox(state, "floor", "task-waiter", _FLEET_DONE_BC1)
+    first = mind.process_once("floor")
+    assert first["consumed"] == 1
+    assert len(_argv_log(log)) == 1
+    _append_inbox(state, "floor", "task-shepherd", _FLEET_DONE_BC1)
+    _append_inbox(state, "floor", "task-real", "please collect the PR")
+    second = mind.process_once("floor")
+    captured = capsys.readouterr()
+    assert second["consumed"] == 1
+    assert second.get("reason") == "ok"
+    assert second.get("task_id") == "task-real"
+    rows = _argv_log(log)
+    assert len(rows) == 2
+    mail2 = Path(_flag_value(rows[1]["argv"], "--prompt-file")).read_text(encoding="utf-8")
+    assert "please collect the PR" in mail2
+    assert _FLEET_DONE_BC1 not in mail2
+    skip_blob = captured.out + captured.err
+    assert "reason=duplicate-fleet-done" in skip_blob
+    assert "MIND_TURN" in skip_blob
+    user_rows = [r for r in _transcript_rows(state, "floor") if r.get("role") == "user"]
+    assert len(user_rows) == 2
+    assert "please collect the PR" in str(user_rows[-1].get("content", ""))
+
+
+def test_mind_docs_and_source_skip_duplicate_fleet_done() -> None:
+    src = MIND_PY.read_text(encoding="utf-8")
+    doc = MIND_DOC.read_text(encoding="utf-8")
+    ledger = (REPO / "scripts" / "cloud" / "fleet_ledger.py").read_text(encoding="utf-8")
+    assert "duplicate-fleet-done" in src
+    assert "last-fleet-done" in src or "last_fleet_done" in src
+    assert "FLEET_DONE" in src
+    assert "duplicate" in doc.lower()
+    assert "FLEET_DONE" in doc
+    assert "waiter" in doc.lower() and "shepherd" in doc.lower()
+    assert "duplicate identical FLEET_DONE" in doc or "duplicate-fleet-done" in doc
+    assert "without burning" in doc.lower() or "without a second" in doc.lower()
+    # Mailbox skip is not a remint of PR #34 notify_owner idempotency.
+    assert "_already_notified_by_waiter" not in src
+    assert "def notify_owner" in ledger
+

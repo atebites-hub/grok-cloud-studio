@@ -8,7 +8,10 @@ the agent for that turn (its own tool loop, `--max-turns 40`). Default
 `cursor`). Each mail line uses that file. On quota / HTTP 402, flip the file
 and retry that same mail line once on the other runner (`MIND_SWITCH`). Forced
 `GCS_MIND_RUNNER=grok|cursor` does not flip. Never remint the grok UUID because
-harvest was empty or because the runner switched.
+harvest was empty or because the runner switched. Skip duplicate identical
+FLEET_DONE mailbox lines (waiter+shepherd double ping) without a second grok
+turn (`MIND_SKIP reason=duplicate-fleet-done`); do not remint fleet-ledger
+notify_owner idempotency.
 
 Do not parse grok stdout for function calls. Do not run a second tool-calling
 loop. Do not use grok agent serve or leftover ACP inject on opted-in mind
@@ -231,6 +234,40 @@ def yaml_agent_file(path: str | Path | None) -> str | None:
 def _session_already_in_use(stderr: str, stdout: str = "") -> bool:
     blob = f"{stderr}\n{stdout}"
     return bool(_SESSION_IN_USE_RE.search(blob))
+
+
+def last_fleet_done_file(seat: str) -> Path:
+    return mind_dir(seat) / "last-fleet-done"
+
+
+def is_fleet_done_mail(text: str) -> bool:
+    """Waiter/shepherd/webhook notify lines start with FLEET_DONE."""
+    return (text or "").lstrip().startswith("FLEET_DONE")
+
+
+def load_last_fleet_done(seat: str) -> str:
+    path = last_fleet_done_file(seat)
+    if not path.is_file():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def save_last_fleet_done(seat: str, text: str) -> None:
+    path = last_fleet_done_file(seat)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+def is_duplicate_fleet_done(seat: str, prompt: str) -> bool:
+    """True when this FLEET_DONE text already consumed a grok turn."""
+    if not is_fleet_done_mail(prompt):
+        return False
+    last = load_last_fleet_done(seat)
+    return bool(last) and last == prompt
 
 
 def _extract_text(parts: Any) -> str:
@@ -855,7 +892,11 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """One inbox line → one agent turn. Offset advances only on runner exit 0."""
+    """One inbox line → one agent turn. Offset advances on runner exit 0.
+
+    Duplicate identical FLEET_DONE lines (waiter+shepherd double ping) advance
+    offset without a grok turn (`reason=duplicate-fleet-done`).
+    """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
         print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)
@@ -868,6 +909,7 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
         return {"consumed": 0, "reason": "empty", "offset": _read_offset(seat)}
 
     run = runner if runner is not None else DEFAULT_RUNNER
+    skipped_dup = False
     for end_offset, rec in records:
         if rec.get("__corrupt__"):
             _write_offset(seat, end_offset)
@@ -876,6 +918,14 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
         context_id = str(rec.get("contextId") or "")
         text = _extract_text(rec.get("parts"))
         prompt = text or json.dumps(rec, ensure_ascii=False)
+        if is_duplicate_fleet_done(seat, prompt):
+            _write_offset(seat, end_offset)
+            skipped_dup = True
+            print(
+                f"MIND_SKIP seat={seat} task={task_id} reason=duplicate-fleet-done",
+                flush=True,
+            )
+            continue
         try:
             raw = run(prompt, seat=seat)
         except Exception as e:
@@ -922,6 +972,8 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
                 "format": "json",
             },
         )
+        if is_fleet_done_mail(prompt):
+            save_last_fleet_done(seat, prompt)
         _write_offset(seat, end_offset)
         print(
             f"MIND_TURN seat={seat} task={task_id} offset={end_offset}",
@@ -934,6 +986,12 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             "offset": end_offset,
         }
 
+    if skipped_dup:
+        return {
+            "consumed": 0,
+            "reason": "duplicate-fleet-done",
+            "offset": _read_offset(seat),
+        }
     return {"consumed": 0, "reason": "no-actionable", "offset": _read_offset(seat)}
 
 

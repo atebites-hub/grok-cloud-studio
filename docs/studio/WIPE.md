@@ -49,7 +49,8 @@ A wipe clone of grok-cloud-studio can keep `GCS_ROOT` as the checkout and set
 Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` +
 `mind/offset` + pin (`mind/session` grok UUID, `mind/cursor-session` Cursor
 chat id). Grok runner and Cursor CLI runner **share** that mailbox. Offset
-advances only on runner exit 0.
+advances on runner exit 0, and when skipping a duplicate identical
+`FLEET_DONE` line (waiter+shepherd double ping) without a second grok turn.
 
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
