@@ -28,7 +28,6 @@ from test_cloud_launch import (
     _script_env,
 )
 
-REPO = Path(__file__).resolve().parents[1]
 LAUNCH_TS = CLOUD / "sdk" / "launch.ts"
 FOLLOWUP_TS = CLOUD / "sdk" / "followup.ts"
 COMMON_TS = CLOUD / "sdk" / "common.ts"
