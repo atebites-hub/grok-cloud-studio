@@ -95,7 +95,7 @@ else
   echo "WARN tailscale missing"
 fi
 
-if apply_py="$(gcs_apply_log_py)" && apply_out="$(python3 "$apply_py" check)"; then
+if apply_out="$(gcs_health_apply_log_ok)"; then
   echo "$apply_out"
 else
   echo "${apply_out:-APPLY_LOG missing}"

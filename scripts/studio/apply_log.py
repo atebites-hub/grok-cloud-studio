@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Hive law (LIV-71): one Manning apply-log line per 10-minute studio-ops beat.
 
-Cite a model *title* from the allowlist and the IaC/Palemon change.
-Never paste copyrighted book text. Stdlib only.
+Cite a model *title* from the allowlist and a real IaC/Palemon change
+(existing kit path). Never paste copyrighted book text. Stdlib only.
+Living Sky only. Never Bot CloudAgent.
 """
 from __future__ import annotations
 
@@ -31,6 +32,18 @@ APPLY_RE = re.compile(
     r"change=(?P<change>.+)\s*$"
 )
 BEAT_FMT = "%Y-%m-%dT%H:%MZ"
+IAC_PATH_TOKEN_RE = re.compile(
+    r"(?:^|[\s:=;,])"
+    r"((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.(?:sh|py|md|example))"
+)
+IAC_BASENAME_DIRS: tuple[tuple[str, ...], ...] = (
+    (),
+    ("scripts", "studio"),
+    ("scripts", "directors"),
+    ("scripts", "a2a"),
+    ("scripts", "cloud"),
+    ("docs", "studio"),
+)
 
 
 def beat_interval_sec() -> int:
@@ -80,6 +93,45 @@ def canonical_seat(seat: str) -> str:
     return raw
 
 
+def kit_root() -> Path:
+    root = os.environ.get("GCS_ROOT", "").strip()
+    if root:
+        return Path(root)
+    return Path(__file__).resolve().parents[2]
+
+
+def iter_iac_path_tokens(change: str) -> list[str]:
+    return IAC_PATH_TOKEN_RE.findall(change)
+
+
+def resolve_iac_path(token: str) -> Path | None:
+    """Return the kit file for a change= token, or None if it is not real IaC."""
+    raw = token.strip()
+    if not raw:
+        return None
+    root = kit_root()
+    rel = Path(raw)
+    candidates: list[Path] = [rel] if rel.is_absolute() else [root / rel]
+    name = rel.name
+    for parts in IAC_BASENAME_DIRS:
+        candidates.append(root.joinpath(*parts, name) if parts else root / name)
+    seen: set[Path] = set()
+    for cand in candidates:
+        try:
+            resolved = cand.resolve()
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        try:
+            if cand.is_file():
+                return cand
+        except OSError:
+            continue
+    return None
+
+
 def state_root() -> Path:
     env = os.environ.get("GCS_A2A_STATE", "").strip()
     if env:
@@ -121,6 +173,12 @@ def validate_change(change: str) -> str:
         raise ValueError(f"change longer than {CHANGE_MAX} chars")
     if "IaC" not in text or "Palemon" not in text:
         raise ValueError("change must cite the IaC/Palemon change")
+    tokens = iter_iac_path_tokens(text)
+    if not any(resolve_iac_path(tok) is not None for tok in tokens):
+        raise ValueError(
+            "change must cite a real IaC path "
+            "(health_check.sh, apply_log.py, setup.sh, …)"
+        )
     return text
 
 
@@ -169,8 +227,8 @@ def append_apply(
     """Append one APPLY line. Returns (status, line). Idempotent per beat."""
     resolved_beat = beat or beat_id()
     resolved_seat = canonical_seat(seat)
-    resolved_change = validate_change(change)
     resolved_model = validate_model(model or rotate_model(resolved_beat))
+    resolved_change = validate_change(change)
     line = format_apply_line(
         resolved_beat, resolved_seat, resolved_model, resolved_change
     )
