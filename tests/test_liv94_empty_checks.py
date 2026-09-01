@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -39,7 +40,12 @@ MERGE_READY = "ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST"
 FEATURE = ROOT / "tests" / "features" / "liv94_empty_checks_not_evidence.feature"
 WAIT_TS = ROOT / "scripts" / "cloud" / "sdk" / "wait-notify.ts"
 PR_CHECKS_TS = ROOT / "scripts" / "cloud" / "sdk" / "pr-checks.ts"
+COLLECT_TS = ROOT / "scripts" / "cloud" / "sdk" / "collect.ts"
+RESULT_TS = ROOT / "scripts" / "cloud" / "sdk" / "result.ts"
+RESULT_SH = ROOT / "scripts" / "cloud" / "result-cloud-agent.sh"
+LIST_TS = ROOT / "scripts" / "cloud" / "sdk" / "list.ts"
 FAKE_TOKEN = "ghs_liv94_must_never_print_this_token"
+FAKE_CURSOR_KEY = "test-cursor-api-key-liv94"
 
 
 def _empty_mergeable(*, pr: str = GCS41) -> ShipGateSnapshot:
@@ -358,9 +364,141 @@ def test_qa_and_footer_empty_checks_are_not_merge_evidence() -> None:
     footer = (ROOT / "scripts" / "directors" / "common_footer.txt").read_text(encoding="utf-8")
     assert "check_runs=0" in footer or "empty GitHub checks" in footer.lower()
     assert "MERGE_REQUEST" in footer
+    assert "result-cloud-agent.sh" in footer
     for seat in ("qa-a", "qa-b"):
         soul = (ROOT / "docs" / "studio" / "directors" / "souls" / seat / "SOUL.md").read_text(
             encoding="utf-8"
         )
         assert "empty" in soul.lower() or "check_runs" in soul
         assert "Bot CloudAgent" not in soul
+
+
+class _CursorResultAPI:
+    """Minimal Cursor Agents API for result-cloud-agent.sh REST."""
+
+    def __init__(self, *, pr_url: str, agent_id: str = "bc-liv94", run_id: str = "run-liv94") -> None:
+        self.pr_url = pr_url
+        self.agent_id = agent_id
+        self.run_id = run_id
+        self._httpd: ThreadingHTTPServer | None = None
+        self._thread: threading.Thread | None = None
+        self.base = ""
+
+    def __enter__(self) -> "_CursorResultAPI":
+        api = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, fmt: str, *args: object) -> None:
+                return
+
+            def do_GET(self) -> None:
+                parsed = urlparse(self.path)
+                parts = [p for p in parsed.path.split("/") if p]
+                if parts == ["v1", "agents", api.agent_id]:
+                    body = {
+                        "id": api.agent_id,
+                        "name": "liv94-empty-checks",
+                        "status": "ACTIVE",
+                        "url": f"https://cursor.com/agents/{api.agent_id}",
+                        "latestRunId": api.run_id,
+                    }
+                elif parts == ["v1", "agents", api.agent_id, "runs", api.run_id]:
+                    body = {
+                        "id": api.run_id,
+                        "agentId": api.agent_id,
+                        "status": "FINISHED",
+                        "git": {
+                            "branches": [
+                                {"branch": "cursor/liv-94-empty-checks-30f8", "prUrl": api.pr_url}
+                            ]
+                        },
+                        "result": "opened a PR",
+                    }
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                blob = json.dumps(body).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(blob)))
+                self.end_headers()
+                self.wfile.write(blob)
+
+        self._httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.base = f"http://127.0.0.1:{self._httpd.server_address[1]}"
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._httpd is not None:
+            self._httpd.shutdown()
+            self._httpd.server_close()
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+
+
+def test_feature_file_states_collect_json_is_evidence_path() -> None:
+    text = FEATURE.read_text(encoding="utf-8")
+    assert "result-cloud-agent.sh" in text
+    assert "emptyChecks" in text
+    assert "collect.ts" in text
+
+
+def test_collect_and_result_source_attach_ship_gate() -> None:
+    """LIV-96 remaining mechanic: collect JSON, not only waiter A2A ping."""
+    collect = COLLECT_TS.read_text(encoding="utf-8")
+    result_ts = RESULT_TS.read_text(encoding="utf-8")
+    result_sh = RESULT_SH.read_text(encoding="utf-8")
+    helper = PR_CHECKS_TS.read_text(encoding="utf-8")
+    waiter = WAIT_TS.read_text(encoding="utf-8")
+    assert "attachShipGate" in collect or "githubPrShipGate" in collect
+    assert "attachShipGate" in helper
+    assert "collectResult" in result_ts
+    assert "resolve_ship_gate" in result_sh
+    assert "attachShipGate" in waiter
+    assert "Bot CloudAgent" not in collect
+    list_ts = LIST_TS.read_text(encoding="utf-8")
+    assert "RUNNING per repo" not in list_ts
+    assert "leftover ACTIVE+FINISHED" not in collect
+
+
+def test_result_cloud_agent_rest_flags_empty_github_checks(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Director collect on MERGEABLE+#41 shape must print emptyChecks, not a bare prUrl."""
+    monkeypatch.setenv("GCS_ROOT", str(ROOT))
+    with _GitHubChecksAPI(mergeable_state="clean", check_runs=[], statuses_total=0) as github:
+        with _CursorResultAPI(pr_url=GCS41) as cursor:
+            env = {
+                **os.environ,
+                "HOME": str(tmp_path),
+                "CURSOR_API_BASE": cursor.base,
+                "CURSOR_API_KEY": FAKE_CURSOR_KEY,
+                "GITHUB_API_BASE": github.base,
+                "CLOUD_FORCE_REST": "1",
+                "GCS_CLOUD_BACKEND": "rest",
+            }
+            env.pop("GH_TOKEN", None)
+            env.pop("GITHUB_TOKEN", None)
+            proc = subprocess.run(
+                ["bash", str(RESULT_SH), "bc-liv94"],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=20,
+            )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    payload = json.loads(proc.stdout)
+    assert payload.get("prUrl") == GCS41
+    assert payload.get("runStatus") == "FINISHED" or payload.get("status") == "FINISHED"
+    assert payload.get("emptyChecks") is True
+    assert payload.get("shipGateOk") is False
+    assert payload.get("checkRuns") == 0
+    assert payload.get("mergeableState") == "clean"
+    assert FAKE_TOKEN not in proc.stdout
+    assert FAKE_CURSOR_KEY not in proc.stdout
+    assert FAKE_CURSOR_KEY not in proc.stderr
+    assert MERGE_READY not in proc.stdout
