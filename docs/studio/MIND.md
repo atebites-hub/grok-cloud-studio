@@ -79,6 +79,24 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after the effective runner exits 0.
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
 
+### RESULT is duplex, not success
+
+Mailbox consume is runner exit 0, not a RESULT line. After a successful turn,
+`duplex_after_mind` writes a Director RESULT onto the A2A task (`scripts/a2a/duplex.py`)
+and may ping the caller (`A2A_REPLY`). Hub `TASK_STATE_COMPLETED` / send.sh ACK is a
+protocol receipt (not this mechanic).
+
+Directors print:
+
+```text
+RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>
+```
+
+`wrap_mind_mail` prepends that law plus `A2A_TASK_ID` / `A2A_CONTEXT`. RESULT-only /
+PONG is a bug. PONG is not a RESULT line. A2A_REPLY is a duplex caller ping — never
+launch a Cursor Cloud agent or Bot CloudAgent for it. Extra High stays **grok-4.6
+xhigh**, `fast=false`.
+
 No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.
 
 ### Mind runner SWITCH (`GCS_MIND_RUNNER=auto`)
