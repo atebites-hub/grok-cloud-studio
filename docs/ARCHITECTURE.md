@@ -67,6 +67,9 @@ See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / 
 | Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook). Dead `waiter_pid` is evicted on `fleet.jsonl` before notify-once. |
 
 Do not double-notify a live waiter. A leftover `waiter_pid` number is not liveness.
+`notify_owner` is idempotent: a second notify on a row already
+`notified_by=waiter` does not A2A-ping again. Palemon Linear is Living Sky
+(`LIV`), not Black Swan. Never Bot CloudAgent.
 
 ## Prompts
 
