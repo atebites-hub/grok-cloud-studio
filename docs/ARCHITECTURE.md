@@ -70,4 +70,4 @@ Do not double-notify a live waiter.
 
 Generic seat prompts ship in `prompts/`. Product floors keep `*_director_prompt.txt` under `docs/studio/directors/`. `GCS_PROMPT_DIR` / `PROMPTS_DIR` override the default directory. When `$ROOT/prompts` is missing or has no `*_director_prompt.txt` files, daemons default to `$ROOT/docs/studio/directors`. `write_agent_profile` / `launch-director.sh` resolve `${seat}_director_prompt.txt` from either layout (including `floor_ops_director_prompt.txt`) so remint does not fail when only the docs tree is populated. `install.sh` links docs files into `prompts/` when missing.
 
-Common Director footer: `scripts/directors/common_footer.txt`.
+Common Director footer: `scripts/directors/common_footer.txt`. Every mind turn MUST stamp a Living Sky Linear issue (`LIV-*`). Palemon Linear is Living Sky (`linear.app/livingsky`, team Livingsky / `LIV`). NEVER Black Swan.
