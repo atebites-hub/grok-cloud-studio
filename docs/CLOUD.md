@@ -19,3 +19,8 @@ scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
+
+After `CLOUD_LAUNCH_OK`, hive stamps Living Sky `LIV-*` when the prompt or
+`--name` carries an identifier (`scripts/directors/liv_evidence_stamp.py`).
+Unset `LINEAR_API_KEY` fails closed. Hub receipts never stamp. See
+`docs/studio/LINEAR.md`.

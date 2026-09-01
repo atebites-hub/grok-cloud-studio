@@ -162,6 +162,12 @@ run_id="$(cloud_json_get "$CLOUD_HTTP_BODY" run.id)"
 [[ -n "$id" ]] && printf 'id=%s\n' "$id"
 [[ -n "$url" ]] && printf 'url=%s\n' "$url"
 [[ -n "$run_id" ]] && printf 'run_id=%s\n' "$run_id"
+python3 "${SCRIPT_DIR}/directors/liv_evidence_stamp.py" \
+  --kind cloud-launch \
+  --seat "${GCS_DIRECTOR_SEAT:-${CLOUD_OWNER_SEAT:-floor}}" \
+  --bc-id "${id}" \
+  --name "${name}" \
+  --text "${prompt}" || true
 if [[ -n "$id" ]]; then
   bash "${SCRIPT_DIR}/cloud/spawn-waiter.sh" --id "$id" ${run_id:+--run "$run_id"} ${name:+--name "$name"} || true
 fi

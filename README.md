@@ -70,6 +70,7 @@ See `.env.example`. Prefix is **`GCS_*`**. Important:
 - `GCS_SPAWN_WAITER=0` — disable the detached waiter (tests)
 - `GCS_WEBHOOK_SECRET` — enable signed webhook receiver
 - `CURSOR_API_KEY` — never print; never commit
+- `LINEAR_API_KEY` — Living Sky GraphQL for hive `LIV-*` stamps after real mind turns / Extra High launches. Unset fails closed (no fake stamps). Never Black Swan. Never print; never commit.
 
 ## Grok Bot orchestrator (A2A)
 

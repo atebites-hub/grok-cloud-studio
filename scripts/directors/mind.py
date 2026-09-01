@@ -38,15 +38,18 @@ from pathlib import Path
 from typing import Any, Callable
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
-if str(_LIB_DIR) not in sys.path:
-    sys.path.insert(0, str(_LIB_DIR))
+_DIRECTORS_DIR = Path(__file__).resolve().parent
+for _p in (_LIB_DIR, _DIRECTORS_DIR):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 from lib import canonical_seat, skip_seats  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 
 _SECRET_ASSIGN_RE = re.compile(
-    r"(?i)\b(CURSOR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
+    r"(?i)\b(CURSOR_API_KEY|LINEAR_API_KEY|GCS_LINEAR_API_KEY|"
+    r"GCS_WEBHOOK_SECRET|Authorization|Bearer|"
     r"server-key|ACP_SECRET|api[_-]?key)\s*[=:]\s*\S+"
 )
 _SESSION_IN_USE_RE = re.compile(
@@ -854,6 +857,34 @@ def _is_skip_seat(seat: str) -> bool:
     return key in skipped or seat.strip().lower() in skipped
 
 
+def after_mind_turn_stamp(
+    *,
+    seat: str,
+    mail: str,
+    turn: str = "",
+    task_id: str = "",
+) -> dict[str, Any]:
+    """Hive Living Sky stamp after a real mind turn. Never on hub receipts.
+
+    Missing LINEAR_API_KEY fails closed inside liv_evidence_stamp. Stamp
+    failure does not roll back the mind offset — the turn already happened.
+    """
+    try:
+        import liv_evidence_stamp as _liv_stamp
+
+        return _liv_stamp.after_mind_turn(
+            seat=seat, mail=mail, turn=turn, task_id=task_id
+        )
+    except Exception as exc:
+        print(
+            f"LINEAR_STAMP_FAIL seat={seat} reason=hook-error "
+            f"err={stderr_log_snippet(str(exc))}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return {"ok": False, "posted": False, "reason": "hook-error"}
+
+
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
     """One inbox line → one agent turn. Offset advances only on runner exit 0."""
     seat = canonical_seat(seat, ROOT)
@@ -926,6 +957,9 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
         print(
             f"MIND_TURN seat={seat} task={task_id} offset={end_offset}",
             flush=True,
+        )
+        after_mind_turn_stamp(
+            seat=seat, mail=prompt, turn=assistant_text, task_id=task_id
         )
         return {
             "consumed": 1,

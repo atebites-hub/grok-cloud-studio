@@ -78,6 +78,7 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
 - Persist grok json stdout onto `transcript.jsonl`. Bump `offset` only after the effective runner exits 0.
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
+- After `MIND_TURN`, hive stamps Living Sky `LIV-*` when the mail/turn has an identifier (`liv_evidence_stamp.py`). Hub `TASK_STATE_COMPLETED` is not that trigger. Unset `LINEAR_API_KEY` fails closed; do not fake stamps. Never Black Swan. See `docs/studio/LINEAR.md`.
 
 No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.
 

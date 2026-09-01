@@ -43,6 +43,8 @@ Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 
 `CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, or missing auth prints `CLOUD_LAUNCH_ERR` and exits non-zero.
 
+After `CLOUD_LAUNCH_OK`, hive stamps Living Sky `LIV-*` when the prompt or `--name` has an identifier (`scripts/directors/liv_evidence_stamp.py`). Hub `TASK_STATE_COMPLETED` is not that trigger. Unset `LINEAR_API_KEY` is fail closed. See `docs/studio/LINEAR.md`.
+
 **v1 metadata:** do not send `Agent.create({ cloud: { metadata } })` by default. API v1 returns `feature_unavailable: "API v1 agent metadata is not enabled."` Metadata is gated behind `CLOUD_SDK_METADATA=1` (default off; key `gcs`). Retryable/unavailable SDK create failures exit **75** so `_common.sh` still REST-falls-back.
 
 ## Waiter + orphan shepherd

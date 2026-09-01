@@ -56,6 +56,13 @@ Grok Bot orchestrator seats (`docs/a2a/bot-agents.json`, default seat `orchestra
 
 See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / `CLOUD_REPO_URL`. Auth is `CURSOR_API_KEY` (never printed). SDK-first; REST curl when `CURSOR_API_BASE` is set, `CLOUD_FORCE_REST=1`, or SDK bootstrap exits 75.
 
+## Living Sky Linear
+
+Hive comments `LIV-*` only after a real mind turn or Extra High
+`CLOUD_LAUNCH_OK` (`scripts/directors/liv_evidence_stamp.py`). Hub
+`TASK_STATE_COMPLETED` is a receipt, not evidence. Unset `LINEAR_API_KEY`
+fails closed. Living Sky only — never Black Swan. See `docs/studio/LINEAR.md`.
+
 ## Completion paths
 
 | Path | When |

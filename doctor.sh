@@ -27,12 +27,14 @@ for p in \
   scripts/directors/seat-prompt-acp.sh \
   scripts/directors/seat-wake-loop.sh \
   scripts/directors/mind.py \
+  scripts/directors/liv_evidence_stamp.py \
   scripts/directors/seat-mind-loop.sh \
   scripts/directors/start-seat-daemon.sh \
   scripts/directors/prompt-dir.sh \
   scripts/directors/fleet-shepherd.py \
   docs/studio/TASKBOARD.md \
   docs/studio/MIND.md \
+  docs/studio/LINEAR.md \
   docs/studio/WIPE.md \
   studio.env.example \
   setup.sh \

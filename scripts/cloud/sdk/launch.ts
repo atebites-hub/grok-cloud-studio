@@ -57,6 +57,25 @@ async function main(): Promise<void> {
     process.stdout.write(
       `CLOUD_LAUNCH_OK id=${agent.agentId} run=${run.id} url=${url} name=${name}\n`,
     );
+    const here = dirname(fileURLToPath(import.meta.url));
+    const stamp = spawn(
+      "python3",
+      [
+        resolve(here, "..", "..", "directors", "liv_evidence_stamp.py"),
+        "--kind",
+        "cloud-launch",
+        "--seat",
+        process.env.GCS_DIRECTOR_SEAT || process.env.CLOUD_OWNER_SEAT || "floor",
+        "--bc-id",
+        agent.agentId,
+        "--name",
+        name,
+        "--text",
+        prompt,
+      ],
+      { stdio: "inherit", env: process.env },
+    );
+    stamp.on("error", () => {});
     spawnWaiter(agent.agentId, run.id, name);
   } catch (err) {
     // Create already succeeded; REST fallback would double-create.
