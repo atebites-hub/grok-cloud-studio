@@ -100,7 +100,8 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    ```
 
    `start-studio-bus.sh` sources `$GCS_A2A_STATE/studio.env`. Do not commit
-   `studio.env`.
+   `studio.env`. Linear closed-issue purge (Living Sky cap):
+   `docs/studio/LINEAR.md`.
 
 3. Install grok CLI and log in (BYO). Never commit `~/.grok/auth.json`.
 
