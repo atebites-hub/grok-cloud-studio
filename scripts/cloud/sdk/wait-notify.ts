@@ -9,7 +9,7 @@ import {
   mapRunStatus,
   safeError,
 } from "./common.ts";
-import { githubPrShipGate } from "./pr-checks.ts";
+import { attachShipGate } from "./pr-checks.ts";
 
 const TERMINAL = new Set(["FINISHED", "ERROR", "CANCELLED", "EXPIRED"]);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -181,21 +181,7 @@ async function sdkWait(agentId: string, runId: string, apiKey: string): Promise<
   throw new Error(`CLOUD_WAITER_TIMEOUT id=${agentId} lastStatus=${last}`);
 }
 
-type WaiterPayload = DirectorResult & {
-  emptyChecks?: boolean;
-  checkRuns?: number;
-  mergeableState?: string | null;
-  shipGateOk?: boolean;
-};
-
-async function withShipGateFlag(payload: DirectorResult): Promise<WaiterPayload> {
-  // One-shot GitHub check-run lookup. Do not reuse Extra High waiter 429 backoff.
-  const snap = await githubPrShipGate(payload.prUrl);
-  if (snap === null) return payload;
-  return { ...payload, ...snap };
-}
-
-function ledgerNotify(agentId: string, payload: WaiterPayload): void {
+function ledgerNotify(agentId: string, payload: DirectorResult): void {
   const proc = spawnSync(
     "python3",
     [LEDGER, "notify", "--id", agentId, "--notified-by", "waiter"],
@@ -221,7 +207,7 @@ async function main(): Promise<void> {
   const apiKey = loadApiKey();
   process.stdout.write(`CLOUD_WAITER_START id=${agentId} run=${runId || "latest"}\n`);
   try {
-    const payload = await withShipGateFlag(
+    const payload = await attachShipGate(
       preferRest() ? await restPoll(agentId, runId, apiKey) : await sdkWait(agentId, runId, apiKey),
     );
     ledgerNotify(agentId, payload);

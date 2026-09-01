@@ -100,6 +100,8 @@ scripts/cloud/status-cloud-agent.sh bc-…
 
 # 3) On FLEET_DONE / PR_READY
 scripts/cloud/result-cloud-agent.sh bc-…
+# JSON includes emptyChecks / shipGateOk / checkRuns when prUrl is a GitHub pull.
+# emptyChecks=true is not MERGE_REQUEST evidence (MERGEABLE is not a substitute).
 
 # 4) Follow-up if needed (agent idle)
 scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check."
