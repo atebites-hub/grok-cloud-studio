@@ -3,7 +3,11 @@
 
 The per-launch waiter (scripts/cloud/sdk/wait-notify.ts) is the primary path.
 This process only notifies when a ledger row has no live waiter_pid and was
-never closed by waiter/webhook. Local studio. Stdlib + existing cloud scripts.
+never closed by waiter/webhook. Skip leftover shells: notified closed rows
+and agents whose latest run is already FINISHED. Do not get_agent_run those;
+Cloud membership stays ACTIVE until archive, so probing leftovers burns the
+hourly cap and looks like spinning workers. Local studio. Stdlib + existing
+cloud scripts.
 """
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ _CLOUD = Path(__file__).resolve().parents[1] / "cloud"
 if str(_CLOUD) not in sys.path:
     sys.path.insert(0, str(_CLOUD))
 from fleet_ledger import (
+    is_leftover_shell,
     is_orphan,
     load_entries,
     notify_owner,
@@ -33,6 +38,15 @@ POLL_SEC = float(os.environ.get("GCS_FLEET_POLL_SEC", "45"))
 LOG = STATE_DIR / "fleet-shepherd.log"
 PID_FILE = STATE_DIR / "fleet-shepherd.pid"
 TERMINAL = frozenset({"FINISHED", "ERROR", "CANCELLED", "EXPIRED"})
+_PROBE_FIELDS = (
+    "last_probe",
+    "probe_empty",
+    "run_status",
+    "agent_status",
+    "pr_url",
+    "notify_fail_at",
+    "notify_fail",
+)
 
 
 def _now() -> str:
@@ -96,13 +110,22 @@ def _cycle() -> int:
             continue
         dirty = False
         for e in entries:
+            if is_leftover_shell(e):
+                if is_orphan(e):
+                    _log(
+                        "SHEPHERD_SKIP leftover "
+                        f"seat={seat_dir.name} id={e.get('bc_id') or ''} "
+                        f"runStatus={e.get('run_status') or ''} "
+                        f"agentStatus={e.get('agent_status') or ''}"
+                    )
+                continue
             if not is_orphan(e):
                 continue
             bc_id = str(e.get("bc_id") or "")
             if not bc_id:
                 continue
             fresh = _reload_entry(seat_dir.name, bc_id)
-            if fresh is None or not is_orphan(fresh):
+            if fresh is None or not is_orphan(fresh) or is_leftover_shell(fresh):
                 continue
             payload = _probe(bc_id)
             if not payload:
@@ -113,6 +136,7 @@ def _cycle() -> int:
                 continue
             run_status = str(payload.get("runStatus") or payload.get("status") or "")
             e["run_status"] = run_status
+            e["agent_status"] = payload.get("agentStatus")
             e["pr_url"] = payload.get("prUrl")
             e["last_probe"] = _now()
             dirty = True
@@ -141,7 +165,7 @@ def _cycle() -> int:
                 if live.get("status") == "closed":
                     merged.append(live)
                     continue
-                merged.append({**live, **{k: e[k] for k in e if k in ("last_probe", "probe_empty", "run_status", "pr_url", "notify_fail_at", "notify_fail") and k in e}})
+                merged.append({**live, **{k: e[k] for k in _PROBE_FIELDS if k in e}})
             write_entries(fleet_path, merged)
     return notified
 

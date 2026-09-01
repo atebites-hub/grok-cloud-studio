@@ -6,7 +6,10 @@ Each owning seat keeps `.a2a-state/<seat>/fleet.jsonl` rows:
   {bc_id, seat, run_id, name, status, notified, waiter_pid, notified_by, ...}
 
 The per-launch waiter is the primary completion path. fleet-shepherd is an
-orphan-only safety net (no live waiter_pid, never notified_by=waiter).
+orphan-only safety net (no live waiter_pid, never notified_by=waiter). It
+skips leftover shells: notified closed rows, and agents whose latest run is
+already FINISHED (Cursor Cloud membership stays ACTIVE until archive).
+Probing those with get_agent_run burns the hourly cap and looks like spinning.
 """
 from __future__ import annotations
 
@@ -139,6 +142,26 @@ def is_orphan(entry: dict[str, Any]) -> bool:
     if waiter_alive(entry):
         return False
     return True
+
+
+def is_leftover_shell(
+    entry: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+) -> bool:
+    """Skip ACTIVE+FINISHED leftover Cloud membership, not a live worker.
+
+    Agent ``status`` stays ACTIVE until archive. A notified closed ledger
+    row, or a row whose latest run is already FINISHED, must not be probed
+    with get_agent_run (hourly cap + looks like spinning workers).
+    """
+    if entry.get("notified") and entry.get("status") == "closed":
+        return True
+    run_status = ""
+    if payload is not None:
+        run_status = str(payload.get("runStatus") or "").strip()
+    if not run_status:
+        run_status = str(entry.get("run_status") or "").strip()
+    return run_status.upper() == "FINISHED"
 
 
 def ping_seat(seat: str, text: str) -> bool:
