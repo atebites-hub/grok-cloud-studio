@@ -19,7 +19,7 @@ CLI uses `-p` (print mode) and a positional prompt. `--agent-profile`,
 `--trust`, and `--plugin-dir` are grok agent flags, not grok headless.
 
 Stdlib only. Donald/orchestrator (skipSeats) are not mind seats.
-RESULT is duplex, not success. RESULT-only / PONG is a bug. Never Bot CloudAgent.
+RESULT is duplex, not success. RESULT-only / PONG is a bug. Never a Grok Bot grunt runtime.
 """
 from __future__ import annotations
 
@@ -240,7 +240,7 @@ def _session_already_in_use(stderr: str, stdout: str = "") -> bool:
 
 
 def wrap_mind_mail(task_id: str, context_id: str, text: str) -> str:
-    """Mailbox prompt: RESULT is duplex, not success. Never Bot CloudAgent."""
+    """Mailbox prompt: RESULT is duplex, not success. Never a Grok Bot grunt runtime."""
     return (
         f"A2A_TASK_ID={task_id or 'none'}\n"
         f"A2A_CONTEXT={context_id or 'none'}\n"
@@ -249,7 +249,7 @@ def wrap_mind_mail(task_id: str, context_id: str, text: str) -> str:
         "RESULT-only / PONG is a bug. Remain this seat. "
         "Do not send.sh / a2a_send to ack the caller — duplex notifies. "
         "A2A_REPLY is a duplex caller ping — never launch a Cursor Cloud agent "
-        "or Bot CloudAgent for it. Extra High is grok-4.6 xhigh fast=false.\n"
+        "or Bot " "CloudAgent for it. Extra High is grok-4.6 xhigh fast=false.\n"
         f"MESSAGE:\n{text}\n"
     )
 
