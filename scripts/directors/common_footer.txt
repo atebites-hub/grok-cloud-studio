@@ -24,7 +24,7 @@ Hard rules:
 - Board: own your tickets through tcarac/taskboard (ticket CLI + HTTP /mcp). Agent Kanban was removed. Do not reconnect `ak`.
 - Prefer gh CLI for GitHub PR ops; CURSOR_API_KEY comes from ~/.config/cursor/agent.env for the cloud launcher.
 
-RESULT is optional duplex, not a hang-up. If you print one, use exactly:
+RESULT is duplex, not success (optional; not a hang-up). If you print one, use exactly:
   RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>
   QA_A_RESULT merged=<csv or none> skipped=<csv or none> conflicts=<csv or none> notes=<one line>
   QA_B_RESULT merged=<csv or none> skipped=<csv or none> conflicts=<csv or none> notes=<one line>
