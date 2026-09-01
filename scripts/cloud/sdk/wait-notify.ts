@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { Agent, type Run } from "@cursor/sdk";
 import { collectResult, type DirectorResult } from "./collect.ts";
 import {
+  boundRepoUrl,
+  boundRepos,
   die,
   loadApiKey,
   mapRunStatus,
@@ -129,6 +131,8 @@ function directorResultFromRest(
     summary: null,
     result: resultText,
     error: null,
+    repoUrl: boundRepoUrl(agentRaw, runRaw),
+    repos: boundRepos(agentRaw),
   };
 }
 
@@ -314,7 +318,7 @@ async function main(): Promise<void> {
     const mergeTag = payload.mergeable ? ` mergeable=${payload.mergeable}` : "";
     const ctx = (payload.result || payload.summary || "").replace(/\s+/g, " ").trim().slice(0, 240);
     process.stdout.write(
-      `CLOUD_WAITER_DONE id=${agentId} run=${payload.runId || "none"} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"}${checkTag}${gateTag}${mergeTag}${ctx ? ` context=${ctx}` : ""}\n`,
+      `CLOUD_WAITER_DONE id=${agentId} run=${payload.runId || "none"} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"} repo=${payload.repoUrl || "none"}${checkTag}${gateTag}${mergeTag}${ctx ? ` context=${ctx}` : ""}\n`,
     );
   } catch (err) {
     console.error(`CLOUD_WAITER_ERR id=${agentId} ${safeError(err)}`);

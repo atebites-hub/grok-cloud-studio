@@ -73,9 +73,23 @@ Launch `--name` **REFUSE**s when a live `runStatus=RUNNING` Extra High already h
 
 Follow-up **REFUSE**s when the latest `runStatus` is `RUNNING` (do not stack a second run on a live Extra High). Leftover `ACTIVE`+`FINISHED` shells may be followed up. Never Bot CloudAgent.
 
-Palemon Linear is Living Sky (`LIV`).
+Palemon Linear is Living Sky (`LIV`), not Black Swan.
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
+
+## Game vs studio targeting
+
+`result-cloud-agent.sh` / SDK `collect.ts` JSON includes the bound Extra High
+`repos[0].url` as `repoUrl` (and the `repos` array) so Directors can tell which
+git remote the grunt opened a PR against:
+
+- **Studio** (`grok-cloud-studio`): this control-plane repo. GitHub issues on GCS.
+- **Palemon game**: the private game repo via `GCS_CLOUD_REPO`. Palemon Linear is
+  **Living Sky** (team key `LIV`), not Black Swan.
+
+Never launch a Grok Bot CloudAgent as the grunt. Specialists are Cursor Cloud
+Extra High only (`scripts/launch-cloud-extra-high.sh`). Compact status also
+prints `repoUrl`.
 
 Per-invocation `GCS_CLOUD_REPO` wins over a process-global `CURSOR_CLOUD_REPO` and over `agent.env`. Prefix the var on that command only; the launcher does not export it, so the next launch keeps the original default (studio vs Palemon). Specialists are Cursor Cloud Extra High, not a Grok Bot grunt.
 
@@ -142,7 +156,7 @@ Palemon Linear is **Living Sky** (`LIV`), never Black Swan.
 
 Helper: `scripts/cloud/directors_spawn.py` (`cloud_mind_spawn_if_required`).
 
-`status.sh` / `status-cloud-agent.sh` take multiple bc-ids or `--ids a,b,c` and print **`runStatus`** on the same line as `id=` (latest run, not leftover agent `ACTIVE`). Fetches run in parallel so capacity beats do not serial-timeout `get_agent_run`. Does not remint `list.sh` (runStatus already on main). Never Bot CloudAgent.
+`status.sh` / `status-cloud-agent.sh` take multiple bc-ids or `--ids a,b,c` and print **`runStatus`** on the same line as `id=` (latest run, not leftover agent `ACTIVE`). Compact line includes bound `repoUrl`. Fetches run in parallel so capacity beats do not serial-timeout `get_agent_run`. Does not remint `list.sh` (runStatus already on main). Never Bot CloudAgent.
 
 Fleet floor check (distinct from occupancy catalog #125/#132/#154):
 `scripts/cloud/running-count.sh` prints list `runStatus` rows then

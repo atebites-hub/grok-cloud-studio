@@ -109,6 +109,8 @@ class MockCursorAPI:
     posts: list[dict[str, Any]] = field(default_factory=list)
     gets: list[str] = field(default_factory=list)
     auth_users: list[str] = field(default_factory=list)
+    agent_repos: list[dict[str, Any]] | None = None
+    run_git: dict[str, Any] | None = None
     _run_i: int = 0
     _httpd: ThreadingHTTPServer | None = None
     _thread: threading.Thread | None = None
@@ -176,17 +178,17 @@ class MockCursorAPI:
                         latest = listed.get("detailLatestRunId") or ""
                     else:
                         latest = ""
-                    self._send(
-                        200,
-                        {
-                            "id": agent_id,
-                            "name": (listed or {}).get("name") or "mock-agent",
-                            "status": (listed or {}).get("status") or "ACTIVE",
-                            "url": (listed or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": latest,
-                            "repos": (listed or {}).get("repos") or [],
-                        },
-                    )
+                    agent: dict[str, Any] = {
+                        "id": agent_id,
+                        "name": (listed or {}).get("name") or "mock-agent",
+                        "status": (listed or {}).get("status") or "ACTIVE",
+                        "url": (listed or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
+                        "latestRunId": latest,
+                        "repos": (listed or {}).get("repos") or [],
+                    }
+                    if api.agent_repos is not None:
+                        agent["repos"] = api.agent_repos
+                    self._send(200, agent)
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
                     run_id = parts[4]
@@ -219,6 +221,8 @@ class MockCursorAPI:
                     )
                     if listed is not None and listed.get("runGit") is not None:
                         run["git"] = listed["runGit"]
+                    if api.run_git is not None:
+                        run["git"] = api.run_git
                     self._send(200, run)
                     return
                 self._send(404, {"error": "not_found"})

@@ -4,7 +4,7 @@ import { die, safeError } from "./common.ts";
 function compactLine(result: DirectorResult): void {
   const latest = result.runId || "";
   process.stdout.write(
-    `id=${result.agentId} agentStatus=${result.agentStatus || "unknown"} runStatus=${result.runStatus || "none"} url=${result.url} latestRunId=${latest}\n`,
+    `id=${result.agentId} agentStatus=${result.agentStatus || "unknown"} runStatus=${result.runStatus || "none"} repoUrl=${result.repoUrl || "none"} url=${result.url} latestRunId=${latest}\n`,
   );
 }
 

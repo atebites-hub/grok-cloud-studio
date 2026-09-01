@@ -135,7 +135,8 @@ def cloud_tools() -> list[dict[str, Any]]:
             "name": "cloud_result",
             "description": (
                 "Non-blocking result/context JSON for a Cursor Cloud agent bc-id "
-                "(prUrl, runStatus, summary, result). Directors must not watch."
+                "(repoUrl / repos[0].url, prUrl, runStatus, summary, result). "
+                "Directors must not watch."
             ),
             "inputSchema": {
                 "type": "object",

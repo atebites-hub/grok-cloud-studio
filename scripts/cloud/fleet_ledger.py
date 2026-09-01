@@ -492,6 +492,7 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
     pr = payload.get("prUrl") or "none"
     name = payload.get("name") or ""
     url = payload.get("url") or f"https://cursor.com/agents/{bc_id}"
+    repo = payload.get("repoUrl") or "none"
     ctx = context_snippet(payload)
     extra = f" context={ctx}" if ctx else ""
     mergeable = payload_mergeable(payload)
@@ -500,7 +501,7 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
         # Latest run aborted. prUrl may still exist from git.branches — not merge-ready.
         return (
             f"FLEET_DONE / INSPECT: Extra High {bc_id} ({name}) "
-            f"runStatus=CANCELLED pr={pr} url={url}.{extra} "
+            f"runStatus=CANCELLED pr={pr} repo={repo} url={url}.{extra} "
             f"Inspect with scripts/cloud/result-cloud-agent.sh {bc_id}; "
             f"follow-up-or-close; do not ignore. RESULT."
         )
@@ -508,7 +509,7 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
         if mergeable == "CONFLICTING":
             return (
                 f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
-                f"runStatus=FINISHED pr={pr}{merge_tag} url={url}.{extra} "
+                f"runStatus=FINISHED pr={pr} repo={repo}{merge_tag} url={url}.{extra} "
                 f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
                 f"GitHub PR is CONFLICTING: QA HOLD squash; do not ping QA MERGE_REQUEST; "
                 f"Extra High rebase only. RESULT with bc-id + pr."
@@ -535,7 +536,7 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
                 )
             return (
                 f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
-                f"runStatus=FINISHED pr={pr} check_runs={check_runs} "
+                f"runStatus=FINISHED pr={pr} repo={repo} check_runs={check_runs} "
                 f"mergeable={mergeable} url={url}.{extra} "
                 f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
                 f"HOLD MERGE_REQUEST: {reason}"
@@ -549,7 +550,7 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
         if pr_is_url and not has_paste_evidence(paste):
             return (
                 f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
-                f"runStatus=FINISHED pr={pr}{merge_tag} url={url}.{extra} "
+                f"runStatus=FINISHED pr={pr} repo={repo}{merge_tag} url={url}.{extra} "
                 f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
                 f"HOLD MERGE_REQUEST: empty GitHub leftover-green is not a "
                 f"ship-gate. Paste .venv/bin/pytest -q (N passed, N>=1) and "
@@ -558,7 +559,7 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
             )
         return (
             f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
-            f"runStatus=FINISHED pr={pr}{merge_tag} url={url}.{extra} "
+            f"runStatus=FINISHED pr={pr} repo={repo}{merge_tag} url={url}.{extra} "
             f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
             f"If pr is a URL: {MERGE_READY}; "
             f"do not launch a twin. RESULT with bc-id + pr."
@@ -570,7 +571,7 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
     )
     return (
         f"FLEET_DONE: Extra High {bc_id} ({name}) "
-        f"runStatus={run_status} pr={pr}{merge_tag} url={url}.{extra} "
+        f"runStatus={run_status} pr={pr} repo={repo}{merge_tag} url={url}.{extra} "
         f"Inspect with scripts/cloud/result-cloud-agent.sh {bc_id}; "
         f"follow-up or close; do not ignore.{hold} RESULT."
     )
