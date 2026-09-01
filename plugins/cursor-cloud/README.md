@@ -10,6 +10,9 @@ Target git repo is **required** via `GCS_CLOUD_REPO` or `CLOUD_REPO_URL`. Auth i
 
 ## Install
 
+Grok `plugin.json` (not Hermes `plugin.yaml`). Seat mind also installs this
+via `install_mind_grok_plugins`. Never Bot CloudAgent.
+
 ```bash
 grok plugin install ./plugins/cursor-cloud --trust
 ```

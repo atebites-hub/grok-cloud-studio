@@ -7,7 +7,8 @@ MCP tools for the local A2A hub:
 
 ## Install
 
-From the Grok Cloud Studio repo root:
+From the Grok Cloud Studio repo root. Grok `plugin.json` (not Hermes
+`plugin.yaml`). Seat mind also installs this via `install_mind_grok_plugins`.
 
 ```bash
 # Cursor local plugin (this folder)
