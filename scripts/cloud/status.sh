@@ -1,38 +1,94 @@
 #!/usr/bin/env bash
-# Show one Cursor Cloud agent and its latest run. SDK-first; REST fallback.
-# Usage: status.sh AGENT_ID [--json]
-# Never prints API keys.
+# Show Cursor Cloud agent(s) and latest-run runStatus. SDK-first; REST fallback.
+# Usage: status.sh AGENT_ID [AGENT_ID...] [--ids ID,ID] [--json]
+# Multiple ids are fetched in parallel so capacity beats do not serial-timeout
+# get_agent_run. Prints runStatus per id. Never prints API keys.
+# Do not remint list.sh runStatus (GCS #29).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=_common.sh
 source "${HERE}/_common.sh"
 
-if [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]]; then
-  echo "Usage: scripts/cloud/status.sh AGENT_ID [--json]"
-  [[ $# -ge 1 && ( "$1" == "-h" || "$1" == "--help" ) ]] && exit 0
+usage() {
+  echo "Usage: scripts/cloud/status.sh AGENT_ID [AGENT_ID...] [--ids ID,ID] [--json]"
+  echo "       scripts/cloud/status-cloud-agent.sh --ids bc-1,bc-2,bc-3"
+  echo "Prints runStatus (latest run) on the same line as id=. Parallel REST/SDK."
+}
+
+append_ids() {
+  local raw="$1"
+  local part
+  IFS=',' read -r -a _status_parts <<< "$raw"
+  for part in "${_status_parts[@]}"; do
+    part="${part//[[:space:]]/}"
+    if [[ -n "$part" ]]; then
+      STATUS_IDS+=("$part")
+    fi
+  done
+}
+
+if [[ $# -lt 1 ]]; then
+  usage >&2
   exit 1
 fi
 
 json=0
-agent_id=""
-for arg in "$@"; do
-  case "$arg" in
-    --json) json=1 ;;
+STATUS_IDS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --json)
+      json=1
+      shift
+      ;;
+    --ids)
+      if [[ $# -lt 2 ]]; then
+        echo "error: --ids requires ID,ID" >&2
+        exit 1
+      fi
+      append_ids "$2"
+      shift 2
+      ;;
+    --ids=*)
+      append_ids "${1#--ids=}"
+      shift
+      ;;
+    --)
+      shift
+      while [[ $# -gt 0 ]]; do
+        append_ids "$1"
+        shift
+      done
+      break
+      ;;
     -*)
-      echo "error: unknown option $arg" >&2
+      echo "error: unknown option $1" >&2
       exit 1
       ;;
     *)
-      if [[ -z "$agent_id" ]]; then
-        agent_id="$arg"
-      fi
+      append_ids "$1"
+      shift
       ;;
   esac
 done
 
-if [[ -z "$agent_id" ]]; then
-  echo "Usage: scripts/cloud/status.sh AGENT_ID [--json]" >&2
+deduped=()
+seen="|"
+for id in "${STATUS_IDS[@]+"${STATUS_IDS[@]}"}"; do
+  case "$seen" in
+    *"|$id|"*) continue ;;
+  esac
+  deduped+=("$id")
+  seen+="${id}|"
+done
+STATUS_IDS=("${deduped[@]+"${deduped[@]}"}")
+
+if [[ ${#STATUS_IDS[@]} -lt 1 ]]; then
+  usage >&2
   exit 1
 fi
 
@@ -41,44 +97,21 @@ if ! cloud_load_auth; then
   exit 1
 fi
 
-if cloud_sdk_exec status "$@"; then
+sdk_args=()
+if [[ "$json" -eq 1 ]]; then
+  sdk_args+=(--json)
+fi
+sdk_args+=("${STATUS_IDS[@]}")
+if cloud_sdk_exec status "${sdk_args[@]}"; then
   exit "$CLOUD_SDK_RC"
 fi
 
+if [[ "$json" -eq 1 && ${#STATUS_IDS[@]} -eq 1 ]]; then
+  exec "${HERE}/result-cloud-agent.sh" "${STATUS_IDS[0]}"
+fi
+
+fetch_args=()
 if [[ "$json" -eq 1 ]]; then
-  exec "${HERE}/result-cloud-agent.sh" "$agent_id"
+  fetch_args+=(--json)
 fi
-
-if ! cloud_http_request GET "/v1/agents/${agent_id}"; then
-  echo "error: curl failed http=${CLOUD_HTTP_CODE:-000}" >&2
-  exit 1
-fi
-if ! cloud_http_is_2xx; then
-  echo "error: status failed http=${CLOUD_HTTP_CODE}" >&2
-  cloud_redact_stream <"$CLOUD_HTTP_BODY" >&2 || true
-  exit 1
-fi
-
-name="$(cloud_json_get "$CLOUD_HTTP_BODY" name)"
-agent_status="$(cloud_json_get "$CLOUD_HTTP_BODY" status)"
-url="$(cloud_json_get "$CLOUD_HTTP_BODY" url)"
-run_id="$(cloud_json_get "$CLOUD_HTTP_BODY" latestRunId)"
-printf 'id=%s\n' "$agent_id"
-printf 'name=%s\n' "$name"
-printf 'agent_status=%s\n' "$agent_status"
-printf 'url=%s\n' "$url"
-printf 'latest_run_id=%s\n' "$run_id"
-
-if [[ -n "$run_id" ]]; then
-  if ! cloud_http_request GET "/v1/agents/${agent_id}/runs/${run_id}"; then
-    echo "error: curl failed fetching run http=${CLOUD_HTTP_CODE:-000}" >&2
-    exit 1
-  fi
-  if ! cloud_http_is_2xx; then
-    echo "error: run status failed http=${CLOUD_HTTP_CODE}" >&2
-    cloud_redact_stream <"$CLOUD_HTTP_BODY" >&2 || true
-    exit 1
-  fi
-  run_status="$(cloud_json_get "$CLOUD_HTTP_BODY" status)"
-  printf 'run_status=%s\n' "$run_status"
-fi
+python3 "${HERE}/status_fetch.py" "${fetch_args[@]+"${fetch_args[@]}"}" -- "${STATUS_IDS[@]}"

@@ -21,7 +21,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
-| `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
+| `status.sh` / `status-cloud-agent.sh <bc-id> [<bc-id>…] [--ids id,id]` | Compact **runStatus** per id (parallel; not leftover ACTIVE) |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
 | `result-cloud-agent.sh <bc-id>` | Result/context JSON |
@@ -95,8 +95,10 @@ scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." 
 # → CLOUD_LAUNCH_OK id=bc-… run=run-… url=…
 # waiter pings this seat when the run is terminal — do not block on watch
 
-# 2) Optional status
+# 2) Optional status (batch ids — do not serial-timeout 10 get_agent_run calls)
 scripts/cloud/status-cloud-agent.sh bc-…
+scripts/cloud/status-cloud-agent.sh --ids bc-a,bc-b,bc-c
+# → id=bc-a agentStatus=ACTIVE runStatus=RUNNING …
 
 # 3) On FLEET_DONE / PR_READY
 scripts/cloud/result-cloud-agent.sh bc-…

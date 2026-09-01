@@ -19,7 +19,7 @@ python3 plugins/a2a/server.py
 | Tool | Action |
 |---|---|
 | `cloud_launch` | `scripts/launch-cloud-extra-high.sh` |
-| `cloud_status` | `scripts/cloud/status-cloud-agent.sh` |
+| `cloud_status` | `scripts/cloud/status-cloud-agent.sh` (id / ids; runStatus per id) |
 | `cloud_result` | `scripts/cloud/result-cloud-agent.sh` |
 
 ```bash

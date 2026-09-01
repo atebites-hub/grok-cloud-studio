@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import threading
+import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -42,7 +43,13 @@ def _script_env(home: Path, base: str, **extra: str) -> dict[str, str]:
     return env
 
 
-def _run(path: Path, args: list[str], env: dict[str, str], stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+def _run(
+    path: Path,
+    args: list[str],
+    env: dict[str, str],
+    stdin: str | None = None,
+    timeout: float = 20,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(path), *args],
         cwd=str(REPO),
@@ -50,7 +57,7 @@ def _run(path: Path, args: list[str], env: dict[str, str], stdin: str | None = N
         text=True,
         env=env,
         input=stdin,
-        timeout=20,
+        timeout=timeout,
     )
 
 
@@ -67,6 +74,9 @@ class MockCursorAPI:
     create_body: dict[str, Any] | None = None
     list_items: list[dict[str, Any]] = field(default_factory=list)
     run_statuses: list[str] = field(default_factory=lambda: ["FINISHED"])
+    run_status_by_id: dict[str, str] = field(default_factory=dict)
+    run_delay_sec: float = 0.0
+    gets: list[str] = field(default_factory=list)
     followup_http: int = 201
     posts: list[dict[str, Any]] = field(default_factory=list)
     auth_users: list[str] = field(default_factory=list)
@@ -100,26 +110,37 @@ class MockCursorAPI:
             def do_GET(self) -> None:
                 api.auth_users.append(_basic_user(self.headers.get("Authorization")))
                 parsed = urlparse(self.path)
+                api.gets.append(parsed.path)
                 parts = [p for p in parsed.path.split("/") if p]
                 if parts == ["v1", "agents"]:
                     self._send(200, {"items": api.list_items})
                     return
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
+                    found = next(
+                        (item for item in api.list_items if str(item.get("id")) == agent_id),
+                        None,
+                    )
                     self._send(
                         200,
                         {
                             "id": agent_id,
-                            "name": "mock-agent",
-                            "status": "ACTIVE",
-                            "url": f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": "run-mock",
+                            "name": (found or {}).get("name") or "mock-agent",
+                            "status": (found or {}).get("status") or "ACTIVE",
+                            "url": (found or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
+                            "latestRunId": (found or {}).get("latestRunId") or "run-mock",
+                            "repos": (found or {}).get("repos") or [],
                         },
                     )
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
+                    if api.run_delay_sec > 0:
+                        time.sleep(api.run_delay_sec)
+                    run_id = parts[4]
                     seq = api.run_statuses or ["RUNNING"]
-                    if api._run_i < len(seq):
+                    if run_id in api.run_status_by_id:
+                        status = api.run_status_by_id[run_id]
+                    elif api._run_i < len(seq):
                         status = seq[api._run_i]
                         api._run_i += 1
                     else:
@@ -127,7 +148,7 @@ class MockCursorAPI:
                     self._send(
                         200,
                         {
-                            "id": parts[4],
+                            "id": run_id,
                             "agentId": parts[2],
                             "status": status,
                         },
