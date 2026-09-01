@@ -87,6 +87,8 @@ not enough. The probe does not start the board, skip leftover shells,
 install seat stdio MCP, or reconnect Agent Kanban.
 
 Do not double-notify a live waiter. A leftover `waiter_pid` number is not liveness.
+`notify_owner` is idempotent: a second notify on a row already `notified_by=waiter`
+does not A2A-ping again.
 
 `python3 scripts/cloud/fleet_ledger.py prune` drops leftover `fleet.jsonl` rows that are already closed (`notified`, `status=closed`, latest run `FINISHED|ERROR|CANCELLED|EXPIRED`). Open leftover shells stay. Ledger-only; no Cloud probe.
 

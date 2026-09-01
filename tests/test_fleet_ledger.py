@@ -1,4 +1,4 @@
-"""Fleet ledger orphan predicate and closed-leftover prune."""
+"""Fleet ledger orphan predicate, closed-leftover prune, and notify idempotency."""
 from __future__ import annotations
 
 import json
@@ -18,6 +18,7 @@ from fleet_ledger import (  # noqa: E402
     is_closed_leftover,
     is_orphan,
     load_entries,
+    notify_owner,
     prune_closed_leftovers,
     register,
     waiter_alive,
@@ -406,3 +407,94 @@ def test_prune_unknown_seat_exits_nonzero(
     assert out["pruned_count"] == 0
     assert out["error"] == "unknown seat=nope"
 
+
+def _notify_env(tmp_path: Path, monkeypatch) -> None:
+    """Owner==REPORT_TO so first waiter notify pings the owning seat once."""
+    _ledger_env(tmp_path, monkeypatch)
+    monkeypatch.setenv("REPORT_TO", "ops")
+
+
+def _finished_payload(bc_id: str, name: str = "dup-run") -> dict:
+    return {
+        "runStatus": "FINISHED",
+        "name": name,
+        "prUrl": "https://example.test/pr/1",
+        "url": f"https://cursor.com/agents/{bc_id}",
+    }
+
+
+def test_first_waiter_notify_pings_once(tmp_path: Path, monkeypatch) -> None:
+    _notify_env(tmp_path, monkeypatch)
+    pings: list[tuple[str, str]] = []
+
+    def fake_ping(seat: str, text: str) -> bool:
+        pings.append((seat, text))
+        return True
+
+    monkeypatch.setattr(fleet_ledger, "ping_seat", fake_ping)
+    register("bc-first", seat="ops", name="dup-run")
+    row = notify_owner(
+        "bc-first",
+        _finished_payload("bc-first"),
+        notified_by="waiter",
+        seat="ops",
+    )
+    assert len(pings) == 1
+    assert pings[0][0] == "ops"
+    assert "FLEET_DONE" in pings[0][1]
+    assert "bc-first" in pings[0][1]
+    assert row["notified"] is True
+    assert row["notified_by"] == "waiter"
+    assert row["status"] == "closed"
+
+
+def test_second_notify_on_waiter_row_does_not_ping(tmp_path: Path, monkeypatch) -> None:
+    """Waiter then shepherd must not double-fire FLEET_DONE for the same bc-id."""
+    _notify_env(tmp_path, monkeypatch)
+    pings: list[tuple[str, str]] = []
+
+    def fake_ping(seat: str, text: str) -> bool:
+        pings.append((seat, text))
+        return True
+
+    monkeypatch.setattr(fleet_ledger, "ping_seat", fake_ping)
+    register("bc-dup", seat="ops", name="dup-run")
+    payload = _finished_payload("bc-dup")
+    first = notify_owner("bc-dup", payload, notified_by="waiter", seat="ops")
+    assert first["notified_by"] == "waiter"
+    assert len(pings) == 1
+
+    second = notify_owner("bc-dup", payload, notified_by="shepherd", seat="ops")
+    assert len(pings) == 1
+    assert second["notified_by"] == "waiter"
+    assert second["notified"] is True
+    assert second["status"] == "closed"
+
+
+def test_notify_skips_ping_when_row_already_complete_by_waiter(
+    tmp_path: Path, monkeypatch
+) -> None:
+    _notify_env(tmp_path, monkeypatch)
+    pings: list[str] = []
+
+    def fake_ping(seat: str, text: str) -> bool:
+        pings.append(text)
+        return True
+
+    monkeypatch.setattr(fleet_ledger, "ping_seat", fake_ping)
+    register("bc-done", seat="ops")
+    complete(
+        "bc-done",
+        {"runStatus": "FINISHED"},
+        notified_by="waiter",
+        seat="ops",
+    )
+    row = notify_owner(
+        "bc-done",
+        {"runStatus": "FINISHED"},
+        notified_by="shepherd",
+        seat="ops",
+    )
+    assert pings == []
+    assert row["notified_by"] == "waiter"
+    assert row["notified"] is True
