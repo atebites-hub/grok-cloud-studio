@@ -23,7 +23,7 @@ scripts/a2a/start-studio-bus.sh start
 
 ### Two-runtime mind law
 
-Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/offset` + pin (`mind/session` grok UUID, `mind/cursor-session` Cursor chat id). Grok runner and Cursor CLI runner **share** that mailbox. Offset advances only on runner exit 0. When `inbox.jsonl` exceeds `GCS_INBOX_MAX_BYTES` (default 1 MiB), rotate drops the consumed prefix and rewrites `mind/offset` (and `wake.offset` when present). Unread lines are never dropped. Leftover dispatch may compact on skip using those offsets but must not steal `mind/offset`.
+Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/offset` + pin (`mind/session` grok UUID, `mind/cursor-session` Cursor chat id). Grok runner and Cursor CLI runner **share** that mailbox. Offset advances on runner exit 0, and when skipping a duplicate identical `FLEET_DONE` line (waiter+shepherd double ping) without a second grok turn. When `inbox.jsonl` exceeds `GCS_INBOX_MAX_BYTES` (default 1 MiB), rotate drops the consumed prefix and rewrites `mind/offset` (and `wake.offset` when present). Unread lines are never dropped. Leftover dispatch may compact on skip using those offsets but must not steal `mind/offset`.
 
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
@@ -50,8 +50,9 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 | `mail.txt` | Current inbox line (grok `--prompt-file`; Cursor positional prompt) |
 | `turn.txt` | Latest harvested mail turn (Bot `bot-wake.txt` analog). Written **before** the runner. |
 | `turn.jsonl` | Append log of harvested turns (Bot `bot-wake.jsonl` analog) |
+| `last-fleet-done` | Exact last consumed `FLEET_DONE` mail text (mailbox skip of identical twins) |
 | `transcript.jsonl` | Agent json stdout plus the user mail row |
-| `offset` | Byte offset into that seat’s `inbox.jsonl` (advanced only on runner exit 0) |
+| `offset` | Byte offset into that seat’s `inbox.jsonl` (runner exit 0, or duplicate `FLEET_DONE` skip) |
 | `pid` | Live mind process |
 | `runner` | Persisted `grok` or `cursor` for `GCS_MIND_RUNNER=auto`. Missing file means grok. Forced env does not rewrite this file. |
 
@@ -108,7 +109,8 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - If grok says the session is already in use, treat it as minted and `--resume` the same UUID. Do not mint a new UUID.
 - Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty. Do not remint because the runner switched.
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
-- Offset advances only after the effective runner exits 0. That same success marks the hub task `TASK_STATE_COMPLETED`. `send.sh` / hub enqueue is `TASK_STATE_SUBMITTED`. Hub `TASK_STATE_COMPLETED` / A2A ACK is a **receipt, not mind-turn done**. Do not treat send.sh `kind=receipt` as `MIND_TURN`. Mail is consumed only after grok/cursor runner exit 0. A runner that did not run is not success. A failed runner leaves mail queued (offset unchanged, task not completed).
+- Offset advances after the effective runner exits 0. That same success marks the hub task `TASK_STATE_COMPLETED`. `send.sh` / hub enqueue is `TASK_STATE_SUBMITTED`. Hub `TASK_STATE_COMPLETED` / A2A ACK is a **receipt, not mind-turn done**. Do not treat send.sh `kind=receipt` as `MIND_TURN`. Mail is consumed after grok/cursor runner exit 0. A runner that did not run is not success. A failed runner leaves mail queued (offset unchanged, task not completed).
+- Duplicate identical `FLEET_DONE` lines (waiter+shepherd double ping, same text, distinct taskIds) are **not** a second grok turn. Advance `offset`, log `MIND_SKIP reason=duplicate-fleet-done`, keep the pinned UUID. Do not remint fleet-ledger `notify_owner` idempotency (that is PR #34). Distinct `FLEET_DONE` texts (different bc-id) still get a turn. Identical non-`FLEET_DONE` mail still gets a turn.
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
 
 ### RESULT is duplex, not success
@@ -153,7 +155,8 @@ Forced `GCS_MIND_RUNNER=grok` or `GCS_MIND_RUNNER=cursor` does **not** flip
 (and does not rewrite `mind/runner`). Missing `mind/runner` under auto starts
 as grok; a successful auto turn writes the runner that won.
 
-Do not consume/advance `offset` unless the effective runner exits 0. Hub
+Do not consume/advance `offset` unless the effective runner exits 0, except
+duplicate identical `FLEET_DONE` mailbox skips (`MIND_SKIP reason=duplicate-fleet-done`). Hub
 COMPLETE / A2A ACK is a receipt, not that success. If the
 retry also fails, keep today’s `MIND_FAIL` / 2s runner-fail sleep (do not
 tight-loop faster). Do not fork sessions. Do not become a 45s assigner. Do
