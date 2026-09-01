@@ -26,7 +26,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `occupancy-count.sh` | Paginated occupancy catalog (`Agent.list` / `GET /v1/agents` via `nextCursor`, page size 100). Prints `CLOUD_OCCUPANCY running= leftover_active= creating= listed= pages=`. Fail-closed `CLOUD_OCCUPANCY_ERR reason=page` if a page errors — never fake `running=0`. |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` (`reason=director-no-block-wait`) unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
-| `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
+| `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run. **REFUSE** if latest `runStatus=RUNNING` (do not stack a second live Extra High). Leftover `ACTIVE`+`FINISHED` may follow up. Never Bot CloudAgent. |
 | `result-cloud-agent.sh <bc-id>` | Non-blocking result/context JSON |
 | `pr_evidence.py judge` | MERGE_REQUEST paste gate: leftover-green empty GitHub checks are not ship-gate; require pasted `pytest -q` (`N passed`) + `secret_scan=clean`. CONFLICTING/DIRTY never squash. Verdict JSON only (never prints tokens). |
 | `webhook-harness.sh serve \| simulate` | Signed webhook receiver / local POST |
@@ -126,7 +126,9 @@ scripts/cloud/result-cloud-agent.sh bc-…
 # (secret_scan=clean). Empty GitHub leftover-green is not a ship-gate.
 # python3 scripts/cloud/pr_evidence.py judge
 
-# 4) Follow-up if needed (agent idle)
+# 4) Follow-up if the latest run is idle (leftover ACTIVE+FINISHED).
+#    REFUSE if runStatus=RUNNING — do not stack a second run on a live Extra High.
+#    Never Bot CloudAgent (orchestrator/donald is send.sh).
 scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check."
 ```
 
