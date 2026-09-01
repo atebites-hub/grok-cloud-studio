@@ -18,4 +18,6 @@ scripts/cloud/watch-cloud-agent.sh bc-...
 scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
+`--name` **REFUSE**s when a live Extra High already has that name and latest `runStatus` is `RUNNING` (do not remint a twin). Leftover `ACTIVE`+`FINISHED` shells do not block. Never Bot CloudAgent.
+
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.

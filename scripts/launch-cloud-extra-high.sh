@@ -2,6 +2,8 @@
 # Launch a Cursor Cloud Extra High grunt (grok-4.6, effort=xhigh, fast=false)
 # against GCS_CLOUD_REPO / CLOUD_REPO_URL (required) from GCS_CLOUD_REF (default main)
 # with autoCreatePR. Canonical: @cursor/sdk (scripts/cloud/sdk/launch.ts). REST curl is fallback.
+# --name REFUSE if a live runStatus=RUNNING agent already has that name (no twin remint).
+# ACTIVE+FINISHED leftovers do not block. Never Bot CloudAgent.
 # Prints CLOUD_LAUNCH_OK only on HTTP 200/201 (REST) or SDK create success.
 # Otherwise CLOUD_LAUNCH_ERR. Never prints API keys.
 set -euo pipefail
@@ -22,6 +24,10 @@ Creates a Cursor Cloud Extra High agent (SDK-first):
   startingRef from GCS_CLOUD_REF (default main)
   autoCreatePR=true
 
+--name REFUSE when a live runStatus=RUNNING agent already has NAME
+(prevent twin remint). Leftover ACTIVE+FINISHED shells do not block.
+Never Bot CloudAgent (orchestrator/donald is send.sh).
+
 REST fallback (CLOUD_FORCE_REST=1, GCS_CLOUD_BACKEND=rest,
 SDK bootstrap fail, or CURSOR_API_BASE set): POST /v1/agents
 
@@ -37,6 +43,84 @@ fail_launch() {
     printf '%s\n' "$*" >&2
   fi
   exit 1
+}
+
+# Refuse line must include runStatus= so Directors see why create was blocked.
+refuse_live_named() {
+  local rs="${1:-RUNNING}"
+  local existing="${2:-}"
+  printf '%s\n' "CLOUD_LAUNCH_ERR runStatus=${rs}"
+  if [[ -n "$existing" ]]; then
+    printf '%s\n' "error: refuse same-name Extra High runStatus=${rs} id=${existing}; do not remint a twin" >&2
+  else
+    printf '%s\n' "error: refuse same-name Extra High runStatus=${rs}; do not remint a twin" >&2
+  fi
+  exit 1
+}
+
+# List agents and probe latest runs for NAME. Refuse only runStatus=RUNNING.
+# Leftover ACTIVE+FINISHED (and missing/404 runs) do not block.
+probe_same_name_running() {
+  local want="$1"
+  local limit="${CLOUD_NAME_SCAN_LIMIT:-50}"
+  local list_body match_file id run_id rs rs_uc
+  if ! cloud_http_request GET "/v1/agents?limit=${limit}"; then
+    fail_launch "error: curl failed listing agents for name check http=${CLOUD_HTTP_CODE:-000}"
+  fi
+  if ! cloud_http_is_2xx; then
+    echo "http=${CLOUD_HTTP_CODE}" >&2
+    if [[ -n "${CLOUD_HTTP_BODY:-}" && -f "$CLOUD_HTTP_BODY" ]]; then
+      cloud_redact_stream <"$CLOUD_HTTP_BODY" >&2 || true
+    fi
+    fail_launch "error: name collision list failed http=${CLOUD_HTTP_CODE}"
+  fi
+  list_body="$(mktemp "${TMPDIR:-/tmp}/cloud-name-list.XXXXXX")"
+  match_file="$(mktemp "${TMPDIR:-/tmp}/cloud-name-match.XXXXXX")"
+  cp "$CLOUD_HTTP_BODY" "$list_body"
+  if ! CLOUD_AGENT_NAME="$want" python3 -c '
+import json, os, sys
+want = os.environ.get("CLOUD_AGENT_NAME") or ""
+with open(sys.argv[1], encoding="utf-8") as fh:
+    data = json.load(fh)
+items = data.get("items") or []
+if not isinstance(items, list):
+    raise SystemExit(0)
+for item in items:
+    if not isinstance(item, dict):
+        continue
+    if str(item.get("name") or "") != want:
+        continue
+    print("\t".join([str(item.get("id") or ""), str(item.get("latestRunId") or "")]))
+' "$list_body" >"$match_file"; then
+    rm -f "$list_body" "$match_file"
+    fail_launch "error: name collision list JSON unreadable"
+  fi
+  while IFS=$'\t' read -r id run_id || [[ -n "${id:-}" ]]; do
+    [[ -n "${id:-}" ]] || continue
+    [[ -n "${run_id:-}" ]] || continue
+    if ! cloud_http_request GET "/v1/agents/${id}/runs/${run_id}"; then
+      rm -f "$list_body" "$match_file"
+      fail_launch "error: curl failed probing run for name check http=${CLOUD_HTTP_CODE:-000}"
+    fi
+    if [[ "${CLOUD_HTTP_CODE}" == "404" ]]; then
+      continue
+    fi
+    if ! cloud_http_is_2xx; then
+      echo "http=${CLOUD_HTTP_CODE}" >&2
+      if [[ -n "${CLOUD_HTTP_BODY:-}" && -f "$CLOUD_HTTP_BODY" ]]; then
+        cloud_redact_stream <"$CLOUD_HTTP_BODY" >&2 || true
+      fi
+      rm -f "$list_body" "$match_file"
+      fail_launch "error: name collision run probe failed http=${CLOUD_HTTP_CODE}"
+    fi
+    rs="$(cloud_json_get "$CLOUD_HTTP_BODY" status)"
+    rs_uc="$(printf '%s' "$rs" | tr '[:lower:]' '[:upper:]')"
+    if [[ "$rs_uc" == "RUNNING" ]]; then
+      rm -f "$list_body" "$match_file"
+      refuse_live_named "RUNNING" "$id"
+    fi
+  done <"$match_file"
+  rm -f "$list_body" "$match_file"
 }
 
 name=""
@@ -92,6 +176,11 @@ if [[ -z "${prompt//[$'\t\n\r ']/}" ]]; then
   fail_launch "error: prompt is required"
 fi
 
+# SDK create also slices name to 100; keep the collision key identical.
+if [[ -n "$name" ]]; then
+  name="${name:0:100}"
+fi
+
 if ! cloud_load_auth; then
   fail_launch "error: CURSOR_API_KEY is not set (export it or add it to ~/.config/cursor/agent.env)"
 fi
@@ -102,6 +191,17 @@ export GCS_CLOUD_REPO="$CLOUD_REPO"
 export GCS_CLOUD_REF="$CLOUD_REF"
 export CURSOR_CLOUD_REPO="${CURSOR_CLOUD_REPO:-$CLOUD_REPO}"
 export CURSOR_CLOUD_REF="${CURSOR_CLOUD_REF:-$CLOUD_REF}"
+
+# Never launch the Grok Bot orchestrator as an Extra High CloudAgent.
+if [[ -n "${GCS_BOT_AGENT_ID:-}" && -n "$name" && "$name" == "$GCS_BOT_AGENT_ID" ]]; then
+  printf '%s\n' "CLOUD_LAUNCH_ERR"
+  printf '%s\n' "error: never Bot CloudAgent (orchestrator/donald is send.sh)" >&2
+  exit 1
+fi
+
+if [[ -n "$name" ]]; then
+  probe_same_name_running "$name"
+fi
 
 if cloud_sdk_exec launch "$prompt" "$name"; then
   exit "$CLOUD_SDK_RC"

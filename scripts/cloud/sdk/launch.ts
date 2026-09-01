@@ -8,6 +8,7 @@ import {
   die,
   extraHighModel,
   loadApiKey,
+  mapRunStatus,
   safeError,
   sdkCreateFailExitCode,
 } from "./common.ts";
@@ -29,6 +30,39 @@ function spawnWaiter(agentId: string, runId: string, name: string): void {
   child.unref();
 }
 
+function refuseLiveNamed(name: string, agentId: string, runStatus: string): never {
+  process.stdout.write(`CLOUD_LAUNCH_ERR runStatus=${runStatus}\n`);
+  console.error(
+    `error: refuse same-name Extra High runStatus=${runStatus} id=${agentId} name=${name}; do not remint a twin`,
+  );
+  process.exit(1);
+}
+
+function nameScanLimit(): number {
+  const raw = Number(process.env.CLOUD_NAME_SCAN_LIMIT || "50");
+  if (!Number.isFinite(raw) || raw <= 0) return 50;
+  return Math.min(Math.floor(raw), 200);
+}
+
+/** REFUSE create when a live runStatus=RUNNING agent already has this name. */
+async function refuseIfSameNameRunning(apiKey: string, name: string): Promise<void> {
+  if (!name) return;
+  const { items } = await Agent.list({ runtime: "cloud", apiKey, limit: nameScanLimit() });
+  for (const agent of items ?? []) {
+    if ((agent.name || "") !== name) continue;
+    const agentId = agent.agentId || "";
+    if (!agentId) continue;
+    const listed = await Agent.listRuns(agentId, { runtime: "cloud", apiKey, limit: 20 });
+    const latest = (listed.items ?? [])
+      .slice()
+      .sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))[0];
+    const runStatus = mapRunStatus(latest?.status);
+    if (runStatus === "RUNNING") {
+      refuseLiveNamed(name, agentId, runStatus);
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const prompt = process.argv[2] || "";
   const name = (process.argv[3] || "").slice(0, 100);
@@ -36,7 +70,24 @@ async function main(): Promise<void> {
     die('usage: launch.ts "prompt" [name]', 2);
   }
 
+  const botId = (process.env.GCS_BOT_AGENT_ID || "").trim();
+  if (botId && name && name === botId) {
+    process.stdout.write("CLOUD_LAUNCH_ERR\n");
+    console.error("error: never Bot CloudAgent (orchestrator/donald is send.sh)");
+    process.exit(1);
+  }
+
   const apiKey = loadApiKey();
+  if (name) {
+    try {
+      await refuseIfSameNameRunning(apiKey, name);
+    } catch (err) {
+      process.stdout.write("CLOUD_LAUNCH_ERR\n");
+      console.error(safeError(err));
+      process.exit(1);
+    }
+  }
+
   let agent: Awaited<ReturnType<typeof Agent.create>> | undefined;
   try {
     try {

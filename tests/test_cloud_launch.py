@@ -1,4 +1,10 @@
-"""Extra High launch: mock REST, require GCS_CLOUD_REPO, never print keys."""
+"""Extra High launch: mock REST, require GCS_CLOUD_REPO, never print keys.
+
+--name REFUSE when a live runStatus=RUNNING agent already has that name
+(prevent twin remint). ACTIVE+FINISHED leftovers do not block. Never Bot
+CloudAgent. Model grok-4.6 effort=xhigh fast=false. Does not remint GCS
+#49 followup-refuse.
+"""
 from __future__ import annotations
 
 import base64
@@ -69,7 +75,9 @@ class MockCursorAPI:
     run_statuses: list[str] = field(default_factory=lambda: ["FINISHED"])
     followup_http: int = 201
     posts: list[dict[str, Any]] = field(default_factory=list)
+    gets: list[str] = field(default_factory=list)
     auth_users: list[str] = field(default_factory=list)
+    agents: dict[str, dict[str, Any]] = field(default_factory=dict)
     _run_i: int = 0
     _httpd: ThreadingHTTPServer | None = None
     _thread: threading.Thread | None = None
@@ -100,30 +108,51 @@ class MockCursorAPI:
             def do_GET(self) -> None:
                 api.auth_users.append(_basic_user(self.headers.get("Authorization")))
                 parsed = urlparse(self.path)
+                api.gets.append(parsed.path)
                 parts = [p for p in parsed.path.split("/") if p]
                 if parts == ["v1", "agents"]:
-                    self._send(200, {"items": api.list_items})
+                    items = list(api.list_items)
+                    seen = {str(item.get("id") or "") for item in items}
+                    for agent_id, cfg in api.agents.items():
+                        if agent_id in seen:
+                            continue
+                        items.append(
+                            {
+                                "id": agent_id,
+                                "name": cfg.get("name") or "mock-agent",
+                                "status": cfg.get("status") or "ACTIVE",
+                                "url": cfg.get("url") or f"https://cursor.com/agents/{agent_id}",
+                                "latestRunId": cfg["latestRunId"] if "latestRunId" in cfg else "run-mock",
+                            }
+                        )
+                    self._send(200, {"items": items})
                     return
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
+                    cfg = api.agents.get(agent_id) or {}
+                    latest = cfg["latestRunId"] if "latestRunId" in cfg else "run-mock"
                     self._send(
                         200,
                         {
                             "id": agent_id,
-                            "name": "mock-agent",
-                            "status": "ACTIVE",
-                            "url": f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": "run-mock",
+                            "name": cfg.get("name") or "mock-agent",
+                            "status": cfg.get("status") or "ACTIVE",
+                            "url": cfg.get("url") or f"https://cursor.com/agents/{agent_id}",
+                            "latestRunId": latest,
                         },
                     )
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
-                    seq = api.run_statuses or ["RUNNING"]
-                    if api._run_i < len(seq):
-                        status = seq[api._run_i]
-                        api._run_i += 1
+                    cfg = api.agents.get(parts[2]) or {}
+                    if "runStatus" in cfg:
+                        status = str(cfg["runStatus"])
                     else:
-                        status = seq[-1]
+                        seq = api.run_statuses or ["RUNNING"]
+                        if api._run_i < len(seq):
+                            status = seq[api._run_i]
+                            api._run_i += 1
+                        else:
+                            status = seq[-1]
                     self._send(
                         200,
                         {
@@ -263,3 +292,181 @@ def test_sdk_launch_does_not_hardcode_private_repo() -> None:
     assert banned not in common
     assert "cloudRepo()" in common
     assert "GCS_CLOUD_REPO" in common
+
+
+def _create_posts(api: MockCursorAPI) -> list[dict[str, Any]]:
+    return [p for p in api.posts if str(p.get("path") or "").rstrip("/") == "/v1/agents"]
+
+
+LIVE_NAME = "floor-iac"
+LAUNCH_NAME_ARGS = (
+    ["--name", LIVE_NAME, "Implement the assigned outcome. Open a PR."],
+    ["Implement the assigned outcome. Open a PR.", LIVE_NAME],
+)
+
+
+@pytest.mark.parametrize("args", LAUNCH_NAME_ARGS, ids=["flag", "positional"])
+def test_launch_refuses_same_name_when_runstatus_running(tmp_path: Path, args: list[str]) -> None:
+    """Live runStatus=RUNNING with the same --name must not remint a twin."""
+    with MockCursorAPI(
+        agents={
+            "bc-live": {
+                "status": "ACTIVE",
+                "latestRunId": "run-live",
+                "runStatus": "RUNNING",
+                "name": LIVE_NAME,
+            }
+        }
+    ) as api:
+        proc = _run(LAUNCH, args, _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY))
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0, combined
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    err_lines = [ln for ln in proc.stdout.splitlines() if ln.startswith("CLOUD_LAUNCH_ERR")]
+    assert err_lines, combined
+    refuse = err_lines[0]
+    assert "runStatus=RUNNING" in refuse, refuse
+    assert not _create_posts(api), api.posts
+    assert any("/runs/run-live" in path for path in api.gets), api.gets
+    assert FAKE_KEY not in combined
+
+
+def test_launch_allows_active_finished_leftover_same_name(tmp_path: Path) -> None:
+    """ACTIVE+FINISHED leftover with the same name is idle, not a live twin."""
+    with MockCursorAPI(
+        agents={
+            "bc-leftover": {
+                "status": "ACTIVE",
+                "latestRunId": "run-done",
+                "runStatus": "FINISHED",
+                "name": LIVE_NAME,
+            }
+        }
+    ) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", LIVE_NAME, "Implement the assigned outcome. Open a PR."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode == 0, combined
+    assert "CLOUD_LAUNCH_OK" in proc.stdout
+    assert "CLOUD_LAUNCH_ERR" not in proc.stdout
+    posts = _create_posts(api)
+    assert len(posts) == 1, api.posts
+    body = posts[0]["body"]
+    assert body["name"] == LIVE_NAME
+    assert body["model"]["id"] == "grok-4.6"
+    params = {(p["id"], p["value"]) for p in body["model"]["params"]}
+    assert ("effort", "xhigh") in params
+    assert ("fast", "false") in params
+    assert any("/runs/run-done" in path for path in api.gets), api.gets
+    assert FAKE_KEY not in combined
+
+
+def test_launch_refuses_lowercase_running_same_name(tmp_path: Path) -> None:
+    with MockCursorAPI(
+        agents={
+            "bc-running-lc": {
+                "status": "ACTIVE",
+                "latestRunId": "run-live",
+                "runStatus": "running",
+                "name": LIVE_NAME,
+            }
+        }
+    ) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", LIVE_NAME, "Do not remint a twin."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode != 0
+    refuse = [ln for ln in proc.stdout.splitlines() if ln.startswith("CLOUD_LAUNCH_ERR")][0]
+    assert "runStatus=RUNNING" in refuse
+    assert not _create_posts(api)
+
+
+def test_launch_allows_running_agent_with_different_name(tmp_path: Path) -> None:
+    """A live worker under another name is not a same-name twin."""
+    with MockCursorAPI(
+        agents={
+            "bc-other": {
+                "status": "ACTIVE",
+                "latestRunId": "run-other",
+                "runStatus": "RUNNING",
+                "name": "ops-other",
+            }
+        }
+    ) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", LIVE_NAME, "Implement the assigned outcome. Open a PR."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode == 0, combined
+    assert "CLOUD_LAUNCH_OK" in proc.stdout
+    assert len(_create_posts(api)) == 1
+    assert FAKE_KEY not in combined
+
+
+def test_launch_unnamed_does_not_collide_on_running_name(tmp_path: Path) -> None:
+    """No --name means no same-name twin check."""
+    with MockCursorAPI(
+        agents={
+            "bc-live": {
+                "status": "ACTIVE",
+                "latestRunId": "run-live",
+                "runStatus": "RUNNING",
+                "name": LIVE_NAME,
+            }
+        }
+    ) as api:
+        proc = _run(
+            LAUNCH,
+            ["Implement the assigned outcome. Open a PR."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode == 0, combined
+    assert "CLOUD_LAUNCH_OK" in proc.stdout
+    assert len(_create_posts(api)) == 1
+    posts = _create_posts(api)
+    assert "name" not in (posts[0]["body"] or {})
+
+
+def test_launch_refuses_bot_cloudagent_name(tmp_path: Path) -> None:
+    """Grok Bot orchestrator id is never an Extra High --name / CloudAgent."""
+    bot_id = "bot-orchestrator-not-a-cloud-agent"
+    with MockCursorAPI() as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", bot_id, "Do not treat Bot as Extra High."],
+            _script_env(
+                tmp_path,
+                api.base,
+                CURSOR_API_KEY=FAKE_KEY,
+                GCS_BOT_AGENT_ID=bot_id,
+            ),
+        )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0, combined
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    assert "Bot CloudAgent" in combined or "never Bot" in combined.lower()
+    assert not _create_posts(api), api.posts
+    assert FAKE_KEY not in combined
+
+
+def test_sdk_launch_refuses_running_same_name_before_create() -> None:
+    """Direct sdk/run.sh launch must check latest runStatus before Agent.create."""
+    src = (CLOUD / "sdk" / "launch.ts").read_text(encoding="utf-8")
+    running_at = src.find("RUNNING")
+    create_at = src.find("Agent.create")
+    assert running_at != -1
+    assert create_at != -1
+    assert running_at < create_at
+    assert "CLOUD_LAUNCH_ERR" in src
+    assert "runStatus" in src
+    assert "GCS_BOT_AGENT_ID" in src or "Bot CloudAgent" in src
+    assert "grok-4.6" in src or "extraHighModel" in src

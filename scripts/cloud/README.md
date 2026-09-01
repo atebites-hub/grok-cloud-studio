@@ -17,7 +17,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 
 | Script | Purpose |
 |---|---|
-| `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK` |
+| `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK`. **REFUSE** if a live `runStatus=RUNNING` agent already has `NAME` (no twin remint). Leftover `ACTIVE`+`FINISHED` do not block. Never Bot CloudAgent. |
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
@@ -42,6 +42,8 @@ Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 - `autoCreatePR = true`
 
 `CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, or missing auth prints `CLOUD_LAUNCH_ERR` and exits non-zero.
+
+**Same-name twin:** when `--name` (or the positional name) is set, launch lists existing agents and probes each matching name’s latest run. If `runStatus` is `RUNNING` (case-insensitive), it prints `CLOUD_LAUNCH_ERR runStatus=RUNNING` and does **not** `POST /v1/agents` / `Agent.create`. Leftover `ACTIVE`+`FINISHED` (and missing/404 runs) do not block. `GCS_BOT_AGENT_ID` as `--name` is refused (never Bot CloudAgent). Scan size: `CLOUD_NAME_SCAN_LIMIT` (default 50).
 
 **v1 metadata:** do not send `Agent.create({ cloud: { metadata } })` by default. API v1 returns `feature_unavailable: "API v1 agent metadata is not enabled."` Metadata is gated behind `CLOUD_SDK_METADATA=1` (default off; key `gcs`). Retryable/unavailable SDK create failures exit **75** so `_common.sh` still REST-falls-back.
 
@@ -91,6 +93,8 @@ Fallback may print `CLOUD_SDK_FALLBACK: …` on stderr. Directors should still o
 ```bash
 export GCS_CLOUD_REPO="https://github.com/example/your-repo"
 # 1) Launch grunt
+#    --name REFUSE if a live runStatus=RUNNING agent already has that name (no twin).
+#    Leftover ACTIVE+FINISHED do not block. Never Bot CloudAgent.
 scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." "seat-short-name"
 # → CLOUD_LAUNCH_OK id=bc-… run=run-… url=…
 # waiter pings this seat when the run is terminal — do not block on watch
