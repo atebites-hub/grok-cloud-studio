@@ -331,9 +331,12 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "--session-id" in src
     assert "--prompt-file" in src
     assert "install_studio_mind_plugin" in loop
+    assert "install_chrome_devtools_plugin" in loop
     assert "plugin install" in common
     assert "--trust" in common
     assert "studio-mind" in common
+    assert "chrome-devtools" in common
+    assert 'plugin install chrome-devtools' in common or '"chrome-devtools"' in common
     assert "def parse_tool_calls" not in src
     assert "Bot-equivalent" in doc or "bot-equivalent" in doc
     assert "leftover host os" in doc.lower() or "acp inject is leftover" in doc.lower()
@@ -379,6 +382,14 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "deliver_wake" in doc
     assert "fast=false" in doc
     assert "cursor cloud" in doc.lower()
+    assert "chrome-devtools" in doc
+    assert "chrome-devtools-mcp" in doc
+    assert "127.0.0.1:5173" in doc
+    assert "qa-a" in doc
+    assert "not cursor cli" in doc.lower() or "not cursor" in doc.lower()
+    assert "cloudagent" in doc.lower() or "bot cloudagent" in doc.lower() or "grok bot" in doc.lower()
+    cursor_mcp = json.loads((REPO / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+    assert "chrome-devtools" not in (cursor_mcp.get("mcpServers") or {})
 
 
 def test_fake_grok_mints_then_resumes_same_uuid(

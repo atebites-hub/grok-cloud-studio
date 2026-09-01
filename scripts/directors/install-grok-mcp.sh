@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Register tcarac/taskboard stdio MCP into each seat GROK_HOME/config.toml.
+# Register tcarac/taskboard stdio MCP and chrome-devtools (Grok catalog
+# browser MCP) into each seat GROK_HOME/config.toml.
 # PATH refresh only: does not start or remint a live serve.
+# Does not copy GROK_HOME into Cursor .cursor/mcp.json.
 #
 # Usage: install-grok-mcp.sh [seat ...]
 #   no args → every registry launch seat
@@ -20,7 +22,7 @@ fi
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   echo "Usage: $(basename "$0") [seat ...]" >&2
-  echo "Register taskboard stdio MCP (absolute --db) into seat GROK_HOME/config.toml." >&2
+  echo "Register taskboard + chrome-devtools stdio MCP into seat GROK_HOME/config.toml." >&2
   echo "Does not remint a live serve." >&2
   exit 0
 fi

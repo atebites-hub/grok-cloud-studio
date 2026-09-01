@@ -54,13 +54,17 @@ advances only on runner exit 0.
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
 - Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio
-  `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust`
-  of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok
-  usage is back.
+  `taskboard --db $GCS_TASKBOARD_DB mcp` plus chrome-devtools stdio
+  `npx -y chrome-devtools-mcp@latest`) plus `grok plugin install --trust`
+  of `plugins/studio-mind` and marketplace `chrome-devtools`. chrome-devtools
+  is the xAI Grok catalog browser plugin (live Chrome) so qa-a can visually
+  playtest `http://127.0.0.1:5173/`. Not Cursor CLI. Not Bot CloudAgent.
+  Grok-home Higgsfield is grok-only, for when grok usage is back.
 - Cursor CLI catalog: repo `.cursor/mcp.json` wrapping
   `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no
-  `GROK_HOME`). Higgsfield is Cursor catalog login when the runner is Cursor
-  CLI (Art generate). Grok Bot Higgsfield is a different catalog.
+  `GROK_HOME`, no chrome-devtools). Higgsfield is Cursor catalog login when
+  the runner is Cursor CLI (Art generate). Grok Bot Higgsfield is a
+  different catalog.
 
 Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`,
 `scripts/launch-cloud-extra-high.sh`.
@@ -103,6 +107,10 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    `studio.env`.
 
 3. Install grok CLI and log in (BYO). Never commit `~/.grok/auth.json`.
+   chrome-devtools (Grok catalog live Chrome) needs host **Node `npx`** and
+   **Google Chrome**. Seat `GROK_HOME` registers `npx -y chrome-devtools-mcp@latest`
+   and `grok plugin install chrome-devtools --trust`. qa-a playtests
+   `http://127.0.0.1:5173/` there. Do not copy that MCP into Cursor.
 
 4. Install Cursor Agent CLI so `agent` is on PATH:
 
