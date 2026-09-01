@@ -96,7 +96,15 @@ def test_studio_pointer_lists_forbidden_harvest_prs_closed_unmerged() -> None:
     low = text.lower()
     for number in FORBIDDEN_HARVEST_PRS:
         assert f"#{number}" in text, f"pointer must list forbidden harvest PR #{number}"
-    assert "closed unmerged" in low
+    table_rows = [
+        line
+        for line in text.splitlines()
+        if line.startswith("|")
+        and any(f"#{number}" in line for number in FORBIDDEN_HARVEST_PRS)
+    ]
+    assert len(table_rows) >= len(FORBIDDEN_HARVEST_PRS), table_rows
+    for line in table_rows:
+        assert "closed unmerged" in line.lower(), line
     assert "must not land" in low
     assert "#47" in text
     assert "liv-63" in low
