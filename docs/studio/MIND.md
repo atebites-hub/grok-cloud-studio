@@ -55,6 +55,11 @@ Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Pro
 
 ### Mail is a turn (grok)
 
+Executable BDD example (Living Sky **LIV-63**):
+[`tests/features/liv63_hermes_mail_as_turn.feature`](../../tests/features/liv63_hermes_mail_as_turn.feature).
+Hermes-like mail-as-a-turn is this grok mailbox, not ACP overlay, and not a
+vendored `hermes-agent` tree. Do not land harvest mailbox PRs #26 and #28.
+
 Each inbox line (`scripts/directors/mind.py` `grok_cli_argv`). Live clap (2026-08-21, #21):
 
 ```text
