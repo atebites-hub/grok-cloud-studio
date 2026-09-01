@@ -11,6 +11,7 @@ import {
   loadApiKey,
   safeError,
   sdkCreateFailExitCode,
+  sendPinned,
 } from "./common.ts";
 
 function spawnWaiter(agentId: string, runId: string, name: string): void {
@@ -64,11 +65,11 @@ async function main(): Promise<void> {
       console.error(`create model is ${createdReject}, want grok-4.6`);
       process.exit(1);
     }
-    const run = await agent.send(prompt);
+    const run = await sendPinned(agent, prompt);
     const runReject = createModelRejected(run.model);
     if (runReject) {
       process.stdout.write("CLOUD_LAUNCH_ERR\n");
-      console.error(`create model is ${runReject}, want grok-4.6`);
+      console.error(`send model is ${runReject}, want grok-4.6`);
       process.exit(1);
     }
     const url = agentUrl(agent.agentId);

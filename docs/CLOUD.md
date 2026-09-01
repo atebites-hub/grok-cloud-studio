@@ -20,9 +20,10 @@ scripts/cloud/result-cloud-agent.sh bc-...
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
 
-Never Grok Bot CloudAgent. If the create response exposes a model that is not
-`grok-4.6` (dashboard alias `cursor-grok-4.6-xhigh`), launch prints
-`CLOUD_LAUNCH_ERR` and does not count the agent as a worker.
+Never Grok Bot CloudAgent. Create **and** `agent.send` (first run and follow-up)
+pin grok-4.6 xhigh; there is no env override. If the create or send response
+exposes a model that is not `grok-4.6` (dashboard alias `cursor-grok-4.6-xhigh`),
+launch prints `CLOUD_LAUNCH_ERR` and does not count the agent as a worker.
 
 Set the Cursor dashboard Cloud Agent default to grok-4.6 xhigh so Auto cannot
 pick Sonnet or Gemini.

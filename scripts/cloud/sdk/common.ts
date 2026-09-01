@@ -32,6 +32,28 @@ export function extraHighModel(): ModelSelection {
   };
 }
 
+export type PinnedSender = {
+  send: (message: string, options: { model: ModelSelection }) => Promise<Run>;
+};
+
+/**
+ * Pin Extra High on the first run and every follow-up. Unpinned send() lets
+ * Auto pick Claude/Gemini. @cursor/sdk send is
+ * `send(message, options?: SendOptions)` and is compiled as `send(e)` that
+ * forwards `arguments` into `(e, t={})`, so Function.length is 1 even though
+ * the model option is accepted. Always pass extraHighModel(); never omit it.
+ */
+export async function sendPinned(agent: PinnedSender, prompt: string): Promise<Run> {
+  if (typeof agent.send !== "function") {
+    throw new Error("CLOUD_BLOCKED: agent.send missing; refusing unpinned run");
+  }
+  const model = extraHighModel();
+  if (model.id !== EXTRA_HIGH_MODEL_ID) {
+    throw new Error("CLOUD_BLOCKED: extraHighModel pin missing");
+  }
+  return agent.send(prompt, { model });
+}
+
 export function modelIdFrom(value: unknown): string {
   if (value === undefined || value === null) return "";
   if (typeof value === "string") return value.trim();

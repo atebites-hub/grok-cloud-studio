@@ -34,15 +34,16 @@ Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|res
 
 ## Launch contract
 
-Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
+Hard-wired Extra High create **and send** (SDK `Agent.create` + `agent.send` / REST `POST /v1/agents` and `POST /v1/agents/{id}/runs`):
 
-- `model.id = grok-4.6`
+- `model.id = grok-4.6` (not `CURSOR_CLOUD_MODEL` / `CURSOR_CLOUD_EFFORT`)
 - `model.params`: `effort=xhigh`, `fast=false`
+- SDK first run and follow-up call `sendPinned` → `agent.send(prompt, { model: extraHighModel() })`
 - `repos[0].url` from **`GCS_CLOUD_REPO` or `CLOUD_REPO_URL`** (required; fail closed)
 - `repos[0].startingRef` from `GCS_CLOUD_REF` / `CLOUD_REPO_REF` / `CURSOR_CLOUD_REF` (default `main`)
 - `autoCreatePR = true`
 
-`CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, missing auth, or a create response whose exposed model is not `grok-4.6` / `cursor-grok-4.6-xhigh` prints `CLOUD_LAUNCH_ERR` and exits non-zero. Wrong-model creates are not waitered and are not workers.
+`CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create/send failure, missing auth, or a create/send response whose exposed model is not `grok-4.6` / `cursor-grok-4.6-xhigh` prints `CLOUD_LAUNCH_ERR` and exits non-zero. Wrong-model creates are not waitered and are not workers.
 
 Set the Cursor dashboard Cloud Agent default to **grok-4.6 extra-high (xhigh)** so Auto cannot pick Sonnet or Gemini. Never launch a Grok Bot CloudAgent.
 

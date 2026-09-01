@@ -17,6 +17,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 LAUNCH = REPO / "scripts" / "launch-cloud-extra-high.sh"
 CLOUD = REPO / "scripts" / "cloud"
+FOLLOWUP = CLOUD / "followup.sh"
 FAKE_KEY = "test-cursor-api-key"
 EXAMPLE_REPO = "https://github.com/atebites-hub/grok-cloud-studio"
 
@@ -70,6 +71,7 @@ class MockCursorAPI:
     run_status_by_id: dict[str, str] = field(default_factory=dict)
     run_model_by_id: dict[str, Any] = field(default_factory=dict)
     followup_http: int = 201
+    followup_body: dict[str, Any] | None = None
     posts: list[dict[str, Any]] = field(default_factory=list)
     gets: list[str] = field(default_factory=list)
     run_not_found_ids: set[str] = field(default_factory=set)
@@ -172,16 +174,14 @@ class MockCursorAPI:
                     self._send(api.create_http, payload)
                     return
                 if len(parts) == 4 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
-                    self._send(
-                        api.followup_http,
-                        {
-                            "run": {
-                                "id": "run-followup",
-                                "agentId": parts[2],
-                                "status": "CREATING",
-                            }
-                        },
-                    )
+                    payload = api.followup_body or {
+                        "run": {
+                            "id": "run-followup",
+                            "agentId": parts[2],
+                            "status": "CREATING",
+                        }
+                    }
+                    self._send(api.followup_http, payload)
                     return
                 self._send(404, {"error": "not_found"})
 
@@ -282,16 +282,82 @@ def test_sdk_launch_does_not_hardcode_private_repo() -> None:
     assert "GCS_CLOUD_REPO" in common
 
 
+def _ts_fn_body(src: str, name: str) -> str:
+    token = f"export function {name}"
+    start = src.index(token)
+    nxt = src.find("\nexport function ", start + len(token))
+    return src[start : nxt if nxt != -1 else None]
+
+
 def test_extra_high_model_is_hard_pinned_not_env_overridable() -> None:
     common = (CLOUD / "sdk" / "common.ts").read_text(encoding="utf-8")
     launch = (CLOUD / "sdk" / "launch.ts").read_text(encoding="utf-8")
+    body = _ts_fn_body(common, "extraHighModel")
     assert "function extraHighModel" in common
     assert 'id: "grok-4.6"' in common or "id: EXTRA_HIGH_MODEL_ID" in common
     assert "CURSOR_CLOUD_MODEL" not in common
     assert "CURSOR_CLOUD_EFFORT" not in common
+    assert "process.env" not in body
+    assert "envFirst" not in body
+    assert "xhigh" in body
+    assert '"false"' in body or "value: \"false\"" in body
     assert "extraHighModel()" in launch
     assert "isExtraHighModelId" in common or "createModelRejected" in common
     assert "createModelRejected" in launch or "isExtraHighModelId" in launch
+
+
+def test_sdk_send_pins_extra_high_model_on_first_run_and_followup() -> None:
+    """Unpinned agent.send(prompt) lets Auto pick Claude/Gemini (Jay LIV-67)."""
+    launch = (CLOUD / "sdk" / "launch.ts").read_text(encoding="utf-8")
+    followup = (CLOUD / "sdk" / "followup.ts").read_text(encoding="utf-8")
+    common = (CLOUD / "sdk" / "common.ts").read_text(encoding="utf-8")
+    assert "await agent.send(prompt);" not in launch
+    assert "await agent.send(prompt);" not in followup
+    assert "sendPinned(" in launch
+    assert "sendPinned(" in followup
+    assert "sendPinned" in common
+    assert "return agent.send(prompt, { model });" in common
+    assert "extraHighModel()" in common
+    assert "agent.send.length < 2" not in common
+    assert "createModelRejected(run.model)" in launch
+    assert "createModelRejected(run.model)" in followup
+    assert "CURSOR_CLOUD_MODEL" not in common
+    assert "CURSOR_CLOUD_EFFORT" not in common
+
+
+def test_extra_high_pin_cli_ignores_env_model_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CURSOR_CLOUD_MODEL", "claude-4-sonnet")
+    monkeypatch.setenv("CURSOR_CLOUD_EFFORT", "low")
+    monkeypatch.setenv("CLOUD_PROMPT_TEXT", "keep going")
+    monkeypatch.setenv("CLOUD_AGENT_NAME", "pin-test")
+    monkeypatch.setenv("GCS_CLOUD_REPO", EXAMPLE_REPO)
+    monkeypatch.setenv("GCS_CLOUD_REF", "main")
+    script = CLOUD / "extra_high_model.py"
+    follow = subprocess.run(
+        ["python3", str(script), "followup-body"],
+        cwd=str(REPO),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert follow.returncode == 0, follow.stderr
+    follow_body = json.loads(follow.stdout)
+    assert follow_body["model"]["id"] == "grok-4.6"
+    params = {(p["id"], p["value"]) for p in follow_body["model"]["params"]}
+    assert ("effort", "xhigh") in params
+    assert ("fast", "false") in params
+    launch = subprocess.run(
+        ["python3", str(script), "launch-body"],
+        cwd=str(REPO),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert launch.returncode == 0, launch.stderr
+    launch_body = json.loads(launch.stdout)
+    assert launch_body["model"]["id"] == "grok-4.6"
+    assert launch_body["name"] == "pin-test"
+    assert launch_body["repos"][0]["url"] == EXAMPLE_REPO
 
 
 def test_launch_fail_closed_when_create_returns_non_grok_model(tmp_path: Path) -> None:
@@ -390,3 +456,43 @@ def test_launch_ok_when_create_omits_model(tmp_path: Path) -> None:
     assert "CLOUD_LAUNCH_OK" in proc.stdout
     body = api.posts[0]["body"]
     assert body["model"]["id"] == "grok-4.6"
+
+
+def test_followup_posts_pinned_extra_high_model(tmp_path: Path) -> None:
+    with MockCursorAPI() as api:
+        proc = _run(
+            FOLLOWUP,
+            ["bc-mock", "Keep the PR; fix the failing check."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "CLOUD_FOLLOWUP_OK" in proc.stdout
+    runs = [p for p in api.posts if str(p.get("path") or "").endswith("/runs")]
+    assert runs, api.posts
+    body = runs[0]["body"]
+    assert body["model"]["id"] == "grok-4.6"
+    params = {(p["id"], p["value"]) for p in body["model"]["params"]}
+    assert ("effort", "xhigh") in params
+    assert ("fast", "false") in params
+    assert FAKE_KEY not in proc.stdout + proc.stderr
+
+
+def test_followup_fail_closed_when_run_returns_non_grok_model(tmp_path: Path) -> None:
+    wrong = {
+        "run": {
+            "id": "run-followup",
+            "agentId": "bc-mock",
+            "status": "CREATING",
+            "model": {"id": "claude-4-sonnet"},
+        }
+    }
+    with MockCursorAPI(followup_http=201, followup_body=wrong) as api:
+        proc = _run(
+            FOLLOWUP,
+            ["bc-mock", "continue"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_FOLLOWUP_ERR" in proc.stdout
+    assert "CLOUD_FOLLOWUP_OK" not in proc.stdout
+    assert FAKE_KEY not in proc.stdout + proc.stderr

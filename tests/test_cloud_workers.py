@@ -198,6 +198,11 @@ def test_extra_high_model_accepts_grok_and_rejects_auto() -> None:
     ok, found = mod.create_response_ok({"model": {"id": "claude-4-sonnet"}})
     assert ok is False
     assert found == "claude-4-sonnet"
+    pin = mod.extra_high_model_object()
+    assert pin["id"] == "grok-4.6"
+    params = {(p["id"], p["value"]) for p in pin["params"]}
+    assert ("effort", "xhigh") in params
+    assert ("fast", "false") in params
 
 
 def test_count_running_ignores_leftover_active_and_other_repos() -> None:

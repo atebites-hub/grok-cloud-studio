@@ -114,35 +114,8 @@ payload="$(mktemp "${TMPDIR:-/tmp}/cloud-launch.XXXXXX")"
 cleanup() { rm -f "$payload"; }
 trap cleanup EXIT
 
-CLOUD_PROMPT_TEXT="$prompt" CLOUD_AGENT_NAME="$name" GCS_CLOUD_REPO="$CLOUD_REPO" GCS_CLOUD_REF="$CLOUD_REF" python3 -c '
-import json, os
-prompt = os.environ.get("CLOUD_PROMPT_TEXT") or ""
-name = os.environ.get("CLOUD_AGENT_NAME") or ""
-repo = os.environ.get("GCS_CLOUD_REPO") or ""
-ref = os.environ.get("GCS_CLOUD_REF") or "main"
-if not repo:
-    raise SystemExit("GCS_CLOUD_REPO missing")
-body = {
-    "prompt": {"text": prompt},
-    "model": {
-        "id": "grok-4.6",
-        "params": [
-            {"id": "effort", "value": "xhigh"},
-            {"id": "fast", "value": "false"},
-        ],
-    },
-    "repos": [
-        {
-            "url": repo,
-            "startingRef": ref,
-        }
-    ],
-    "autoCreatePR": True,
-}
-if name:
-    body["name"] = name
-print(json.dumps(body))
-' >"$payload"
+CLOUD_PROMPT_TEXT="$prompt" CLOUD_AGENT_NAME="$name" GCS_CLOUD_REPO="$CLOUD_REPO" GCS_CLOUD_REF="$CLOUD_REF" \
+  python3 "${SCRIPT_DIR}/cloud/extra_high_model.py" launch-body >"$payload"
 
 if ! cloud_http_request POST /v1/agents \
   -H "Content-Type: application/json" \

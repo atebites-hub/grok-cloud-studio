@@ -46,10 +46,7 @@ payload="$(mktemp "${TMPDIR:-/tmp}/cloud-followup.XXXXXX")"
 cleanup() { rm -f "$payload"; }
 trap cleanup EXIT
 
-CLOUD_PROMPT_TEXT="$prompt" python3 -c '
-import json, os
-print(json.dumps({"prompt": {"text": os.environ.get("CLOUD_PROMPT_TEXT") or ""}}))
-' >"$payload"
+CLOUD_PROMPT_TEXT="$prompt" python3 "${HERE}/extra_high_model.py" followup-body >"$payload"
 
 if ! cloud_http_request POST "/v1/agents/${agent_id}/runs" \
   -H "Content-Type: application/json" \
@@ -63,6 +60,10 @@ if ! cloud_http_is_create_ok; then
     cloud_redact_stream <"$CLOUD_HTTP_BODY" >&2 || true
   fi
   fail_followup "error: follow-up rejected http=${CLOUD_HTTP_CODE}"
+fi
+
+if ! python3 "${HERE}/extra_high_model.py" check "$CLOUD_HTTP_BODY"; then
+  fail_followup "error: follow-up model is not grok-4.6"
 fi
 
 printf '%s\n' "CLOUD_FOLLOWUP_OK"

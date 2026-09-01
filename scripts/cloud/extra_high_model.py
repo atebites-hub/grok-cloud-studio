@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Fail-closed Extra High model pin: grok-4.6 (dashboard alias cursor-grok-4.6-xhigh).
 
-Create requests always send grok-4.6 / effort=xhigh / fast=false. If the API
-exposes a model on the create response and it is not Extra High, callers must
-print CLOUD_LAUNCH_ERR and must not count the agent as a worker.
-Missing model on the response is allowed — v1 agent/run objects often omit it.
+Create and follow-up requests always send grok-4.6 / effort=xhigh / fast=false.
+No CURSOR_CLOUD_MODEL / CURSOR_CLOUD_EFFORT override. If the API exposes a
+model on the create or send/run response and it is not Extra High, callers must
+print CLOUD_LAUNCH_ERR / CLOUD_FOLLOWUP_ERR and must not count the agent as a
+worker. Missing model on the response is allowed — v1 objects often omit it.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from typing import Any
 
@@ -72,6 +74,16 @@ def create_response_ok(payload: Any) -> tuple[bool, str]:
     return is_extra_high_model(found), found
 
 
+def extra_high_model_object() -> dict[str, Any]:
+    return {
+        "id": EXTRA_HIGH_MODEL_ID,
+        "params": [
+            {"id": "effort", "value": "xhigh"},
+            {"id": "fast", "value": "false"},
+        ],
+    }
+
+
 def cmd_check(body_path: str) -> int:
     with open(body_path, encoding="utf-8") as fh:
         payload = json.load(fh)
@@ -82,14 +94,46 @@ def cmd_check(body_path: str) -> int:
     return 2
 
 
+def cmd_followup_body() -> int:
+    prompt = os.environ.get("CLOUD_PROMPT_TEXT") or ""
+    print(json.dumps({"prompt": {"text": prompt}, "model": extra_high_model_object()}))
+    return 0
+
+
+def cmd_launch_body() -> int:
+    prompt = os.environ.get("CLOUD_PROMPT_TEXT") or ""
+    name = os.environ.get("CLOUD_AGENT_NAME") or ""
+    repo = os.environ.get("GCS_CLOUD_REPO") or ""
+    ref = os.environ.get("GCS_CLOUD_REF") or "main"
+    if not repo:
+        print("GCS_CLOUD_REPO missing", file=sys.stderr)
+        return 2
+    body: dict[str, Any] = {
+        "prompt": {"text": prompt},
+        "model": extra_high_model_object(),
+        "repos": [{"url": repo, "startingRef": ref}],
+        "autoCreatePR": True,
+    }
+    if name:
+        body["name"] = name
+    print(json.dumps(body))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="cmd", required=True)
     check = sub.add_parser("check")
     check.add_argument("body")
+    sub.add_parser("followup-body")
+    sub.add_parser("launch-body")
     args = parser.parse_args(argv)
     if args.cmd == "check":
         return cmd_check(args.body)
+    if args.cmd == "followup-body":
+        return cmd_followup_body()
+    if args.cmd == "launch-body":
+        return cmd_launch_body()
     return 2
 
 
