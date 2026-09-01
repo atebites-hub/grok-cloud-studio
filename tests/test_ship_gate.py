@@ -92,11 +92,17 @@ def test_workflow_bootstraps_venv_then_runs_canonical_gate() -> None:
 
 
 def test_workflow_checks_out_submodules() -> None:
-    """Wipe-kit tests need vendor/taskboard; default checkout skips it."""
+    """Wipe-kit tests need vendor/taskboard; default checkout skips it.
+
+    fetch-depth 1 makes a shallow submodule clone with no tags, so
+    `git describe --tags --exact-match` cannot see the v0.6.0 pin.
+    """
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "actions/checkout@" in text
     assert "submodules:" in text
     assert "true" in text or "recursive" in text
+    assert "fetch-depth:" in text
+    assert "fetch-depth: 0" in text or "fetch-depth:0" in text
 
 
 def test_workflow_is_not_leftover_green_override_ini() -> None:
