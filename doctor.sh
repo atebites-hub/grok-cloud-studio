@@ -91,19 +91,38 @@ else
   bad "missing scripts/a2a/bind-bot-agent.sh"
 fi
 
-if [[ -n "${GCS_CLOUD_REPO:-${CLOUD_REPO_URL:-}}" ]]; then
+# Cursor Cloud launch-plane: fail closed. Never print CURSOR_API_KEY
+# (including under `bash -x`). Existence check only for the launcher —
+# do not invoke it, do not spawn agents, do not recreate cloud-env.
+_gcs_xtrace=0
+case "$-" in *x*) _gcs_xtrace=1; set +x ;; esac
+_launch_repo_set=0
+_launch_key_set=0
+_launch_key_file=0
+if [[ -n "${GCS_CLOUD_REPO:-${CLOUD_REPO_URL:-${CURSOR_CLOUD_REPO:-}}}" ]]; then
+  _launch_repo_set=1
+fi
+if [[ -n "${CURSOR_API_KEY:-}" ]]; then
+  _launch_key_set=1
+elif [[ -f "${CURSOR_AGENT_ENV:-$HOME/.config/cursor/agent.env}" ]]; then
+  _launch_key_file=1
+fi
+if [[ "$_gcs_xtrace" -eq 1 ]]; then set -x; fi
+unset _gcs_xtrace
+
+if [[ "$_launch_repo_set" -eq 1 ]]; then
   ok "GCS_CLOUD_REPO/CLOUD_REPO_URL is set"
 else
-  printf 'WARN GCS_CLOUD_REPO unset (Extra High create will fail closed)\n'
+  bad "GCS_CLOUD_REPO unset (Extra High create fail closed)"
 fi
-
-if [[ -n "${CURSOR_API_KEY:-}" ]]; then
+if [[ "$_launch_key_set" -eq 1 ]]; then
   ok "CURSOR_API_KEY is set (value not printed)"
-elif [[ -f "${CURSOR_AGENT_ENV:-$HOME/.config/cursor/agent.env}" ]]; then
+elif [[ "$_launch_key_file" -eq 1 ]]; then
   ok "CURSOR_API_KEY file present (value not printed)"
 else
-  printf 'WARN CURSOR_API_KEY unset (Extra High scripts need it)\n'
+  bad "CURSOR_API_KEY unset (Extra High scripts need it)"
 fi
+unset _launch_repo_set _launch_key_set _launch_key_file
 
 if command -v grok >/dev/null 2>&1; then
   ok "grok CLI on PATH"

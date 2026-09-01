@@ -308,11 +308,17 @@ def test_doctor_warns_on_workspace_folder_in_seat_mcp(tmp_path: Path) -> None:
         f'args = ["{WORKSPACE_FOLDER_TOKEN}/plugins/taskboard/run-mcp.sh"]\n',
         encoding="utf-8",
     )
+    home = tmp_path / "home"
+    home.mkdir(parents=True, exist_ok=True)
+    dummy_key = "test-cursor-api-key-mcp-doctor-not-leaked"
     env = {
         **os.environ,
+        "HOME": str(home),
         "GCS_ROOT": str(REPO),
         "GCS_A2A_STATE": str(tmp_path / "a2a-state"),
         "GCS_BOT_BIND_OPTIONAL": "1",
+        "GCS_CLOUD_REPO": "https://github.com/example/control-plane",
+        "CURSOR_API_KEY": dummy_key,
         "LC_ALL": "C",
         "TERM": "dumb",
     }
@@ -328,6 +334,7 @@ def test_doctor_warns_on_workspace_folder_in_seat_mcp(tmp_path: Path) -> None:
     assert "WARN" in blob, blob
     assert WORKSPACE_FOLDER_TOKEN in blob, blob
     assert "config.toml" in blob, blob
+    assert dummy_key not in blob
 
 
 def test_merge_seat_taskboard_mcp_strips_unmarked_and_marked_dupes(tmp_path: Path) -> None:

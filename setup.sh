@@ -24,7 +24,7 @@ One-command deploy (idempotent). Disaster recovery entrypoint with cleanup.sh.
   4. Install taskboard if missing (prefer vendor/taskboard prebuilt; else brew/tarball).
   5. Start board UI + MCP HTTP.
   6. Start scripts/a2a/start-studio-bus.sh start   (NO --daemons)
-  7. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if Agent Kanban returns)
+  7. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if launch-plane missing or Agent Kanban returns)
   8. Print SETUP_OK with hub/board ports and mind seat list.
   9. Run ./health_check.sh (HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN).
 
