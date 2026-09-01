@@ -69,6 +69,7 @@ class MockCursorAPI:
     run_statuses: list[str] = field(default_factory=lambda: ["FINISHED"])
     run_status_by_id: dict[str, str] = field(default_factory=dict)
     followup_http: int = 201
+    list_http: int = 200
     posts: list[dict[str, Any]] = field(default_factory=list)
     gets: list[str] = field(default_factory=list)
     auth_users: list[str] = field(default_factory=list)
@@ -105,7 +106,14 @@ class MockCursorAPI:
                 api.gets.append(parsed.path)
                 parts = [p for p in parsed.path.split("/") if p]
                 if parts == ["v1", "agents"]:
-                    self._send(200, {"items": api.list_items})
+                    if api.list_http != 200:
+                        self._send(api.list_http, {"error": "list_failed"})
+                        return
+                    items = []
+                    for raw in api.list_items:
+                        item = {k: v for k, v in raw.items() if k != "detailLatestRunId"}
+                        items.append(item)
+                    self._send(200, {"items": items})
                     return
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
@@ -113,6 +121,9 @@ class MockCursorAPI:
                         (row for row in api.list_items if str(row.get("id") or "") == agent_id),
                         None,
                     )
+                    latest = (listed or {}).get("latestRunId")
+                    if not latest:
+                        latest = (listed or {}).get("detailLatestRunId") or "run-mock"
                     self._send(
                         200,
                         {
@@ -120,7 +131,7 @@ class MockCursorAPI:
                             "name": (listed or {}).get("name") or "mock-agent",
                             "status": (listed or {}).get("status") or "ACTIVE",
                             "url": (listed or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": (listed or {}).get("latestRunId") or "run-mock",
+                            "latestRunId": latest,
                         },
                     )
                     return
