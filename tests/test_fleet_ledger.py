@@ -138,6 +138,53 @@ def test_closed_without_terminal_run_is_not_prunable() -> None:
     assert is_closed_leftover(row) is False
 
 
+def test_prune_reread_keeps_row_registered_after_first_load(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Do not wipe a launch that lands between snapshot and rewrite."""
+    _ledger_env(tmp_path, monkeypatch)
+    path = fleet_path("ops")
+    write_entries(
+        path,
+        [
+            _row(
+                "bc-done",
+                status="closed",
+                notified=True,
+                notified_by="waiter",
+                run_status="FINISHED",
+            )
+        ],
+    )
+    real_load = fleet_ledger.load_entries
+    injected = {"done": False}
+
+    def load_then_inject(p: Path) -> list[dict[str, Any]]:
+        rows = real_load(p)
+        if not injected["done"] and p == path:
+            injected["done"] = True
+            write_entries(
+                path,
+                rows
+                + [
+                    _row(
+                        "bc-new",
+                        status="open",
+                        notified=False,
+                        run_status="RUNNING",
+                    )
+                ],
+            )
+        return rows
+
+    monkeypatch.setattr(fleet_ledger, "load_entries", load_then_inject)
+    result = prune_closed_leftovers()
+    remaining = real_load(path)
+    assert [row["bc_id"] for row in remaining] == ["bc-new"]
+    assert result["pruned_count"] == 1
+    assert result["pruned"][0]["bc_id"] == "bc-done"
+
+
 def test_prune_drops_closed_terminal_rows_keeps_open_and_running(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -349,4 +396,13 @@ def test_prune_cli_dry_run(tmp_path: Path, monkeypatch, capsys) -> None:
     assert remaining[0]["bc_id"] == "bc-closed"
 
 
+def test_prune_unknown_seat_exits_nonzero(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    _ledger_env(tmp_path, monkeypatch)
+    rc = fleet_ledger.main(["prune", "--seat", "nope"])
+    assert rc == 1
+    out = json.loads(capsys.readouterr().out)
+    assert out["pruned_count"] == 0
+    assert out["error"] == "unknown seat=nope"
 
