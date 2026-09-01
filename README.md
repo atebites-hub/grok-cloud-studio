@@ -101,7 +101,9 @@ Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_resu
 python3 scripts/secret_scan.py
 ```
 
-The secret scan fails closed on credentials, private-key blocks, and product lore that does not belong in this public control plane. Empty GitHub checks (`check_runs=0`) are not evidence that this gate ran; MERGEABLE is not a substitute. GCS #62 owns the Actions `pull_request` workflow that runs the same two commands — do not remint it.
+GitHub Actions (`.github/workflows/ship-gate.yml`) runs the same two commands on every pull request via `scripts/ci/ship-gate.sh`. The job fails unless pytest prints `N passed` with N≥1 and `secret_scan=clean`. It does not use leftover-green `--override-ini`, and it does not launch Bot CloudAgent. Empty GitHub checks (`check_runs=[]`) are not evidence that this gate ran; MERGEABLE is not a substitute.
+
+The secret scan fails closed on credentials, private-key blocks, and product lore that does not belong in this public control plane.
 
 ## License
 
