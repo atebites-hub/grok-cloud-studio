@@ -266,6 +266,11 @@ def test_souls_are_clean_room_no_pokemon() -> None:
     narrative = (SOULS / "narrative" / "SOUL.md").read_text(encoding="utf-8").lower()
     assert "narrative" in narrative
     assert "launch-cloud-extra-high" in narrative
+    qa_a = (SOULS / "qa-a" / "SOUL.md").read_text(encoding="utf-8").lower()
+    assert "chrome-devtools" in qa_a
+    assert "127.0.0.1:5173" in qa_a
+    assert "grok" in qa_a
+    assert "cursor cli" in qa_a or "not cursor" in qa_a
 
 
 def test_install_stays_secret_free_and_does_not_auto_install_host_bins() -> None:
@@ -539,6 +544,7 @@ _TWO_CATALOG_NEEDLES = (
     "xhigh",
     "cursor-grok-4.6-xhigh",
     "one mailbox",
+    "chrome-devtools",
 )
 
 
@@ -560,6 +566,8 @@ def test_two_runtime_mind_law_in_mind_and_wipe() -> None:
         assert "cursor catalog" in low, label
         assert "grok bot" in low, label
         assert "grok-only" in low or "grok only" in low, label
+        assert "chrome-devtools" in low, label
+        assert "127.0.0.1:5173" in text, label
         assert PRIVATE_GAME not in text
 
 
@@ -570,6 +578,10 @@ def test_cursor_mcp_json_taskboard_stdio_no_ak_no_leaks() -> None:
     assert "taskboard" in servers, data
     assert "ak" not in servers
     assert "agent-kanban" not in servers
+    assert "chrome-devtools" not in servers
+    assert "playwright" not in servers
+    assert "browser-use" not in servers
+    assert list(servers) == ["taskboard"]
     spec = servers["taskboard"]
     blob = json.dumps(data)
     low = blob.lower()

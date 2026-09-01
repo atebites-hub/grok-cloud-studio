@@ -40,9 +40,13 @@ mcps = false
 [mcp_servers.taskboard]
 command = "/absolute/path/to/taskboard"
 args = ["--db", "/absolute/path/to/taskboard.db", "mcp"]
+
+[mcp_servers.chrome-devtools]
+command = "npx"
+args = ["-y", "chrome-devtools-mcp@latest"]
 ```
 
-That is the grok serve config. Isolated `GROK_HOME` does not inherit `~/.grok/config.toml`. Cursor `${workspaceFolder}` never expands under grok; grok must not load `.cursor/mcp.json`. Seat start sets `[compat.cursor] mcps = false`. `./doctor.sh` WARNs if a seat `config.toml` still contains `${workspaceFolder}`. Refreshing MCP config does not remint a live serve.
+That is the grok serve / mind config. Isolated `GROK_HOME` does not inherit `~/.grok/config.toml`. chrome-devtools is the xAI Grok catalog browser MCP (live Chrome; qa-a playtest of `http://127.0.0.1:5173/`). Cursor `${workspaceFolder}` never expands under grok; grok must not load `.cursor/mcp.json`. Seat start sets `[compat.cursor] mcps = false`. `./doctor.sh` WARNs if a seat `config.toml` still contains `${workspaceFolder}`. Refreshing MCP config does not remint a live serve. Do not copy chrome-devtools into Cursor `.cursor/mcp.json`. Two catalogs. Full mind law: `docs/studio/MIND.md`.
 
 Cursor CLI uses a **second catalog**: checkout `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (`taskboard --db $DB mcp`). Do not copy `GROK_HOME` MCP into Cursor CLI. Two catalogs. Never fake a transfer. No Agent Kanban. No secrets, private GitHub URLs, or MagicDNS hostnames in that file.
 

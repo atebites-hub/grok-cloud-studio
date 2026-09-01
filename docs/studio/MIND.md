@@ -27,8 +27,8 @@ Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/of
 
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
-- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust` of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok usage is back.
-- Cursor CLI catalog: repo `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no `GROK_HOME`). Higgsfield is Cursor catalog login when the runner is Cursor CLI (Art generate). Grok Bot Higgsfield is a different catalog.
+- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio `taskboard --db $GCS_TASKBOARD_DB mcp` plus chrome-devtools stdio `npx -y chrome-devtools-mcp@latest`) plus `grok plugin install --trust` of `plugins/studio-mind` and marketplace `chrome-devtools`. chrome-devtools is the xAI Grok catalog browser plugin (live Chrome). qa-a uses it to visually playtest `http://127.0.0.1:5173/`. Not Cursor CLI browser tools. Not Grok Bot CloudAgent. Grok-home Higgsfield is grok-only, for when grok usage is back.
+- Cursor CLI catalog: repo `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no `GROK_HOME`, no chrome-devtools). Higgsfield is Cursor catalog login when the runner is Cursor CLI (Art generate). Grok Bot Higgsfield is a different catalog.
 
 Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`.
 
@@ -130,12 +130,14 @@ agent --resume "$CURSOR_CHAT_ID" -p --force --output-format json --trust \
 | Layer | What grok actually calls |
 |---|---|
 | Grok builtins | Shell, files, etc. inside grok |
-| Seat `GROK_HOME/config.toml` | Taskboard stdio MCP: `taskboard --db $GCS_TASKBOARD_DB mcp` |
-| `grok plugin install --trust` | `plugins/studio-mind` into seat `GROK_HOME` from `seat-mind-loop.sh` (`ticket`, `a2a_send`, `cloud_launch`) |
+| Seat `GROK_HOME/config.toml` | Taskboard stdio MCP: `taskboard --db $GCS_TASKBOARD_DB mcp`. Browser stdio MCP: `npx -y chrome-devtools-mcp@latest` (`[mcp_servers.chrome-devtools]`; official `grok mcp add chrome-devtools`). |
+| `grok plugin install --trust` | `plugins/studio-mind` and xAI marketplace `chrome-devtools` into seat `GROK_HOME` from `seat-mind-loop.sh` (`ticket`, `a2a_send`, `cloud_launch`, live Chrome). |
 
-`--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install "$ROOT/plugins/studio-mind" --trust` with that seat’s `GROK_HOME`. Already-installed / idempotent reinstall is `MIND_PLUGIN_OK` (grok may print `Error: repo studio-mind-... already installed` and exit non-zero). If install is skipped (no grok, missing dir, genuine install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop. Do not copy `GROK_HOME` MCP into Cursor CLI.
+`--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install "$ROOT/plugins/studio-mind" --trust` and `grok plugin install chrome-devtools --trust` with that seat’s `GROK_HOME`. Already-installed / idempotent reinstall is `MIND_PLUGIN_OK` (grok may print `Error: repo studio-mind-... already installed` or the chrome-devtools equivalent and exit non-zero). If install is skipped (no grok, missing dir, genuine install fail), mind is MCP-only: taskboard and chrome-devtools are already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop. Do not copy `GROK_HOME` MCP into Cursor CLI.
 
-Cursor runner: GROK_HOME taskboard MCP and grok `--plugin-dir` **do not transfer**. Two catalogs (see Two-runtime mind law). Cursor CLI uses Cursor builtins plus repo `.cursor/mcp.json`, never a copied `GROK_HOME`. Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`. No third Python tool loop.
+Cursor runner: GROK_HOME taskboard MCP, chrome-devtools MCP, and grok `--plugin-dir` **do not transfer**. Two catalogs (see Two-runtime mind law). Cursor CLI uses Cursor builtins plus repo `.cursor/mcp.json` (taskboard only), never a copied `GROK_HOME`. Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`. No third Python tool loop.
+
+qa-a (qa-lead) visually playtests `http://127.0.0.1:5173/` with chrome-devtools in that seat `GROK_HOME`. Screenshots and live Chrome belong to the Grok catalog. Do not send that work to Cursor CLI or a Bot CloudAgent.
 
 A missing binary returns an error string from the MCP tool. Plugin output is redacted (`CURSOR_API_KEY`, webhook secrets, bearer tokens) and never printed as credentials.
 

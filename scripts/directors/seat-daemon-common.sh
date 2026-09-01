@@ -179,8 +179,12 @@ _gcs_abs_path() {
 _write_seat_taskboard_mcp_config() {
   # Merge stdio MCP into GROK_HOME/config.toml. Equivalent to:
   #   GROK_HOME=$gh grok mcp add taskboard -- "$bin" --db "$db" mcp
+  #   GROK_HOME=$gh grok mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest
+  # chrome-devtools is the xAI Grok catalog browser MCP (live Chrome).
   # Cursor workspace MCP JSON is not the serve config and is not inherited.
-  # Idempotent: never append a second [compat.cursor] / [mcp_servers.taskboard].
+  # Do not copy GROK_HOME MCP into .cursor/mcp.json. Two catalogs.
+  # Idempotent: never append a second [compat.cursor] /
+  # [mcp_servers.taskboard] / [mcp_servers.chrome-devtools].
   local dest="$1" command="$2" db="$3"
   python3 "$ROOT/scripts/directors/seat_grok_mcp.py" "$dest" "$command" "$db"
 }
@@ -188,6 +192,7 @@ _write_seat_taskboard_mcp_config() {
 install_seat_grok_mcp() {
   # Register stdio MCP in this seat's isolated GROK_HOME/config.toml:
   #   <absolute taskboard> --db $GCS_TASKBOARD_DB mcp
+  #   npx -y chrome-devtools-mcp@latest
   # User-scope ~/.grok/config.toml is not inherited. Do not remint serve.
   local seat="${1:-}"
   local sd gh db bin cfg
@@ -228,41 +233,62 @@ _mind_plugin_already_installed() {
   return 1
 }
 
-install_studio_mind_plugin() {
-  # Install plugins/studio-mind into this seat GROK_HOME. grok headless cannot
-  # take --plugin-dir (that is a grok agent flag). --trust belongs here, not
-  # on grok --prompt-file. Failure is MCP-only: taskboard is already in
-  # GROK_HOME/config.toml. Never abort the mind loop. Already-installed and
-  # idempotent reinstall are success (MIND_PLUGIN_OK), not install-fail.
+_install_grok_home_plugin() {
+  # GROK_HOME=$gh grok plugin install <spec> --trust
+  # spec is a local path or a Grok catalog name (chrome-devtools).
+  # grok headless cannot take --plugin-dir (that is a grok agent flag).
+  # --trust belongs here, not on grok --prompt-file. Never abort the mind
+  # loop. Already-installed and idempotent reinstall are MIND_PLUGIN_OK.
   local seat="${1:-}"
-  local plugin gh grok_bin out rc=0
-  plugin="$ROOT/plugins/studio-mind"
+  local spec="${2:-}"
+  local label="${3:-plugin}"
+  local gh grok_bin out rc=0
   gh="${GROK_HOME:-}"
-  if [[ ! -d "$plugin" ]]; then
-    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=missing-dir mcp-only" >&2
-    return 0
-  fi
   grok_bin="$(command -v grok 2>/dev/null || true)"
   if [[ -z "$grok_bin" ]]; then
-    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-grok mcp-only" >&2
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} plugin=${label} reason=no-grok mcp-only" >&2
     return 0
   fi
   if [[ -z "$gh" ]]; then
-    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-GROK_HOME mcp-only" >&2
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} plugin=${label} reason=no-GROK_HOME mcp-only" >&2
+    return 0
+  fi
+  if [[ -z "$spec" ]]; then
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} plugin=${label} reason=missing-spec mcp-only" >&2
     return 0
   fi
   mkdir -p "$gh"
-  plugin="$(_gcs_abs_path "$plugin")"
-  out="$(GROK_HOME="$gh" "$grok_bin" plugin install "$plugin" --trust 2>&1)" && rc=0 || rc=$?
+  out="$(GROK_HOME="$gh" "$grok_bin" plugin install "$spec" --trust 2>&1)" && rc=0 || rc=$?
   if [[ -n "$out" ]]; then
     printf '%s\n' "$out" >&2
   fi
   if [[ "$rc" -eq 0 ]] || _mind_plugin_already_installed "$out"; then
-    echo "MIND_PLUGIN_OK seat=${seat:-?} plugin=studio-mind dest=$gh" >&2
+    echo "MIND_PLUGIN_OK seat=${seat:-?} plugin=${label} dest=$gh" >&2
   else
-    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=install-fail mcp-only" >&2
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} plugin=${label} reason=install-fail mcp-only" >&2
   fi
   return 0
+}
+
+install_studio_mind_plugin() {
+  # Install plugins/studio-mind into this seat GROK_HOME. Failure is MCP-only:
+  # taskboard (and chrome-devtools) are already in GROK_HOME/config.toml.
+  local seat="${1:-}"
+  local plugin="$ROOT/plugins/studio-mind"
+  if [[ ! -d "$plugin" ]]; then
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} plugin=studio-mind reason=missing-dir mcp-only" >&2
+    return 0
+  fi
+  plugin="$(_gcs_abs_path "$plugin")"
+  _install_grok_home_plugin "$seat" "$plugin" "studio-mind"
+}
+
+install_chrome_devtools_plugin() {
+  # xAI Grok catalog browser plugin (ChromeDevTools/chrome-devtools-mcp).
+  # Live Chrome so qa-a can visually playtest http://127.0.0.1:5173/.
+  # Not Cursor CLI. Not Bot CloudAgent. Do not copy GROK_HOME into Cursor.
+  local seat="${1:-}"
+  _install_grok_home_plugin "$seat" "chrome-devtools" "chrome-devtools"
 }
 
 install_seat_taskboard_cli() {

@@ -331,9 +331,12 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "--session-id" in src
     assert "--prompt-file" in src
     assert "install_studio_mind_plugin" in loop
+    assert "install_chrome_devtools_plugin" in loop
     assert "plugin install" in common
     assert "--trust" in common
     assert "studio-mind" in common
+    assert "chrome-devtools" in common
+    assert 'plugin install chrome-devtools' in common or '"chrome-devtools"' in common
     assert "def parse_tool_calls" not in src
     assert "Bot-equivalent" in doc or "bot-equivalent" in doc
     assert "leftover host os" in doc.lower() or "acp inject is leftover" in doc.lower()
@@ -379,6 +382,14 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "deliver_wake" in doc
     assert "fast=false" in doc
     assert "cursor cloud" in doc.lower()
+    assert "chrome-devtools" in doc
+    assert "chrome-devtools-mcp" in doc
+    assert "127.0.0.1:5173" in doc
+    assert "qa-a" in doc
+    assert "not cursor cli" in doc.lower() or "not cursor" in doc.lower()
+    assert "cloudagent" in doc.lower() or "bot cloudagent" in doc.lower() or "grok bot" in doc.lower()
+    cursor_mcp = json.loads((REPO / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+    assert "chrome-devtools" not in (cursor_mcp.get("mcpServers") or {})
 
 
 def test_fake_grok_mints_then_resumes_same_uuid(
@@ -910,6 +921,131 @@ install_studio_mind_plugin floor
     assert argv.count("plugin") >= 2
     assert "--trust" in argv
     assert "studio-mind" in argv
+
+
+def test_seat_mind_loop_installs_chrome_devtools_catalog_plugin(tmp_path: Path) -> None:
+    """LIV-42: grok plugin install chrome-devtools --trust into seat GROK_HOME."""
+    log = tmp_path / "plugin.argv"
+    grok = _write_exec(
+        tmp_path / "fake-bin" / "grok",
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$@" >> "{log}"\n'
+        'printf "GROK_HOME=%s\\n" "$GROK_HOME" >> '
+        f'"{log}.env"\n'
+        "exit 0\n",
+    )
+    env = {
+        "PATH": f"{grok.parent}:/usr/bin:/bin",
+        "HOME": str(tmp_path / "home"),
+        "GCS_ROOT": str(REPO),
+        "GCS_A2A_STATE": str(tmp_path / "a2a-state"),
+        "GROK_HOME": str(tmp_path / "grok-home"),
+        "TASKBOARD_BIN": str(
+            _write_exec(tmp_path / "host-bin" / "taskboard", "#!/bin/sh\nexit 0\n")
+        ),
+        "LC_ALL": "C",
+        "TERM": "dumb",
+    }
+    script = r"""
+set -euo pipefail
+source scripts/directors/seat-daemon-common.sh
+install_chrome_devtools_plugin qa-a
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        cwd=str(REPO),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    assert "MIND_PLUGIN_OK" in blob, blob
+    assert "plugin=chrome-devtools" in blob, blob
+    argv = log.read_text(encoding="utf-8") if log.is_file() else ""
+    assert "plugin" in argv, argv
+    assert "install" in argv, argv
+    assert "--trust" in argv, argv
+    parts = argv.split()
+    assert "chrome-devtools" in parts, argv
+    assert "studio-mind" not in parts
+    assert "-p" not in parts, argv
+    assert "--plugin-dir" not in argv, argv
+    grok_home = (tmp_path / "plugin.argv.env").read_text(encoding="utf-8")
+    assert str(tmp_path / "grok-home") in grok_home
+    loop = MIND_LOOP.read_text(encoding="utf-8")
+    assert "install_chrome_devtools_plugin" in loop
+    cursor_mcp = json.loads((REPO / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+    assert "chrome-devtools" not in (cursor_mcp.get("mcpServers") or {})
+
+
+def test_chrome_devtools_plugin_already_installed_is_ok(tmp_path: Path) -> None:
+    """Marketplace chrome-devtools already-installed is MIND_PLUGIN_OK."""
+    log = tmp_path / "plugin.argv"
+    stamp = tmp_path / "plugin.installed"
+    grok = _write_exec(
+        tmp_path / "fake-bin" / "grok",
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$@" >> "{log}"\n'
+        f'if [ -f "{stamp}" ]; then\n'
+        '  echo "Error: repo chrome-devtools-deadbeef already installed" >&2\n'
+        "  exit 1\n"
+        "fi\n"
+        f'touch "{stamp}"\n'
+        "exit 0\n",
+    )
+    env = {
+        "PATH": f"{grok.parent}:/usr/bin:/bin",
+        "HOME": str(tmp_path / "home"),
+        "GCS_ROOT": str(REPO),
+        "GCS_A2A_STATE": str(tmp_path / "a2a-state"),
+        "GROK_HOME": str(tmp_path / "grok-home"),
+        "TASKBOARD_BIN": str(
+            _write_exec(tmp_path / "host-bin" / "taskboard", "#!/bin/sh\nexit 0\n")
+        ),
+        "LC_ALL": "C",
+        "TERM": "dumb",
+    }
+    script = r"""
+set -euo pipefail
+source scripts/directors/seat-daemon-common.sh
+install_chrome_devtools_plugin qa-a
+install_chrome_devtools_plugin qa-a
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        cwd=str(REPO),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    assert blob.count("MIND_PLUGIN_OK") >= 2, blob
+    assert "plugin=chrome-devtools" in blob, blob
+    assert "reason=install-fail" not in blob, blob
+    assert "MIND_PLUGIN_SKIP" not in blob, blob
+    argv = log.read_text(encoding="utf-8")
+    assert argv.count("chrome-devtools") >= 2
+    assert "--trust" in argv
+
+
+def test_mind_loop_installs_studio_mind_then_chrome_devtools(tmp_path: Path) -> None:
+    """seat-mind-loop.sh installs both GROK catalog plugins; Cursor stays untouched."""
+    loop = MIND_LOOP.read_text(encoding="utf-8")
+    studio_at = loop.find("install_studio_mind_plugin")
+    chrome_at = loop.find("install_chrome_devtools_plugin")
+    assert studio_at != -1
+    assert chrome_at != -1
+    assert studio_at < chrome_at
+    cursor_mcp = json.loads((REPO / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+    servers = cursor_mcp.get("mcpServers") or {}
+    assert list(servers) == ["taskboard"]
+    assert "chrome-devtools" not in servers
+    assert "playwright" not in servers
+    assert "browser-use" not in servers
 
 
 def test_a2a_send_and_cloud_launch_plugins_missing_binaries(
