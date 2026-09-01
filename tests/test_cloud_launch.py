@@ -69,7 +69,9 @@ class MockCursorAPI:
     run_statuses: list[str] = field(default_factory=lambda: ["FINISHED"])
     followup_http: int = 201
     posts: list[dict[str, Any]] = field(default_factory=list)
+    gets: list[str] = field(default_factory=list)
     auth_users: list[str] = field(default_factory=list)
+    agents: dict[str, dict[str, Any]] = field(default_factory=dict)
     _run_i: int = 0
     _httpd: ThreadingHTTPServer | None = None
     _thread: threading.Thread | None = None
@@ -100,30 +102,37 @@ class MockCursorAPI:
             def do_GET(self) -> None:
                 api.auth_users.append(_basic_user(self.headers.get("Authorization")))
                 parsed = urlparse(self.path)
+                api.gets.append(parsed.path)
                 parts = [p for p in parsed.path.split("/") if p]
                 if parts == ["v1", "agents"]:
                     self._send(200, {"items": api.list_items})
                     return
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
+                    cfg = api.agents.get(agent_id) or {}
+                    latest = cfg["latestRunId"] if "latestRunId" in cfg else "run-mock"
                     self._send(
                         200,
                         {
                             "id": agent_id,
-                            "name": "mock-agent",
-                            "status": "ACTIVE",
-                            "url": f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": "run-mock",
+                            "name": cfg.get("name") or "mock-agent",
+                            "status": cfg.get("status") or "ACTIVE",
+                            "url": cfg.get("url") or f"https://cursor.com/agents/{agent_id}",
+                            "latestRunId": latest,
                         },
                     )
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
-                    seq = api.run_statuses or ["RUNNING"]
-                    if api._run_i < len(seq):
-                        status = seq[api._run_i]
-                        api._run_i += 1
+                    cfg = api.agents.get(parts[2]) or {}
+                    if "runStatus" in cfg:
+                        status = str(cfg["runStatus"])
                     else:
-                        status = seq[-1]
+                        seq = api.run_statuses or ["RUNNING"]
+                        if api._run_i < len(seq):
+                            status = seq[api._run_i]
+                            api._run_i += 1
+                        else:
+                            status = seq[-1]
                     self._send(
                         200,
                         {

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Send a follow-up prompt to an existing Cursor Cloud agent. SDK-first.
+# REFUSE when the latest runStatus is RUNNING (do not stack a second live Extra High).
+# Leftover ACTIVE+FINISHED may follow up. Never Bot CloudAgent.
 # Prints CLOUD_FOLLOWUP_OK only on success. Never prints API keys.
 set -euo pipefail
 
@@ -13,6 +15,44 @@ fail_followup() {
     printf '%s\n' "$*" >&2
   fi
   exit 1
+}
+
+# Refuse line must include runStatus= so Directors see why send was blocked.
+refuse_live_followup() {
+  local rs="${1:-unknown}"
+  printf '%s\n' "CLOUD_FOLLOWUP_ERR runStatus=${rs}"
+  printf '%s\n' "error: refuse live Extra High runStatus=${rs}; do not stack a second run" >&2
+  exit 1
+}
+
+probe_latest_run_status() {
+  local latest_run_id=""
+  if ! cloud_http_request GET "/v1/agents/${agent_id}"; then
+    fail_followup "error: curl failed probing agent http=${CLOUD_HTTP_CODE:-000}"
+  fi
+  if ! cloud_http_is_2xx; then
+    echo "http=${CLOUD_HTTP_CODE}" >&2
+    if [[ -n "${CLOUD_HTTP_BODY:-}" && -f "$CLOUD_HTTP_BODY" ]]; then
+      cloud_redact_stream <"$CLOUD_HTTP_BODY" >&2 || true
+    fi
+    fail_followup "error: follow-up status probe failed http=${CLOUD_HTTP_CODE}"
+  fi
+  latest_run_id="$(cloud_json_get "$CLOUD_HTTP_BODY" latestRunId)"
+  FOLLOWUP_RUN_STATUS=""
+  if [[ -z "$latest_run_id" ]]; then
+    return 0
+  fi
+  if ! cloud_http_request GET "/v1/agents/${agent_id}/runs/${latest_run_id}"; then
+    fail_followup "error: curl failed probing run http=${CLOUD_HTTP_CODE:-000}"
+  fi
+  if ! cloud_http_is_2xx; then
+    echo "http=${CLOUD_HTTP_CODE}" >&2
+    if [[ -n "${CLOUD_HTTP_BODY:-}" && -f "$CLOUD_HTTP_BODY" ]]; then
+      cloud_redact_stream <"$CLOUD_HTTP_BODY" >&2 || true
+    fi
+    fail_followup "error: follow-up run probe failed http=${CLOUD_HTTP_CODE}"
+  fi
+  FOLLOWUP_RUN_STATUS="$(cloud_json_get "$CLOUD_HTTP_BODY" status)"
 }
 
 if [[ $# -lt 1 || "$1" == "-h" || "$1" == "--help" ]]; then
@@ -36,6 +76,20 @@ fi
 
 if ! cloud_load_auth; then
   fail_followup "error: CURSOR_API_KEY is not set (export it or add it to ~/.config/cursor/agent.env)"
+fi
+
+# Never follow up on the Grok Bot orchestrator id. Extra High is the grunt.
+if [[ -n "${GCS_BOT_AGENT_ID:-}" && "$agent_id" == "$GCS_BOT_AGENT_ID" ]]; then
+  printf '%s\n' "CLOUD_FOLLOWUP_ERR"
+  printf '%s\n' "error: never Bot CloudAgent (orchestrator/donald is send.sh)" >&2
+  exit 1
+fi
+
+FOLLOWUP_RUN_STATUS=""
+probe_latest_run_status
+FOLLOWUP_RUN_STATUS_UC="$(printf '%s' "${FOLLOWUP_RUN_STATUS}" | tr '[:lower:]' '[:upper:]')"
+if [[ "$FOLLOWUP_RUN_STATUS_UC" == "RUNNING" ]]; then
+  refuse_live_followup "RUNNING"
 fi
 
 if cloud_sdk_exec followup "$agent_id" "$prompt"; then

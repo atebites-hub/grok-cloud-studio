@@ -15,6 +15,8 @@ Hard rules:
 - On FLEET_DONE / PR_READY: collect with scripts/cloud/result-cloud-agent.sh <bc-id>; hand the PR to QA; no twin launch.
 - Status: scripts/cloud/status-cloud-agent.sh <bc-id>
 - Follow-up: scripts/cloud/followup-cloud-agent.sh <bc-id> "<prompt>"
+  Refuse if latest runStatus=RUNNING (do not stack a second live Extra High).
+  Leftover ACTIVE+FINISHED may follow up. Never Bot CloudAgent (orchestrator/donald is send.sh).
 - List: scripts/cloud/list-cloud-agents.sh [limit]
 - How-to: scripts/cloud/README.md
 - Prefer MCP tools from plugins/a2a and plugins/cursor-cloud when connected (a2a_send, cloud_launch, cloud_status, cloud_result).

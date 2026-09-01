@@ -23,7 +23,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
-| `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
+| `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run. **REFUSE** if latest `runStatus=RUNNING` (do not stack a second live Extra High). Leftover `ACTIVE`+`FINISHED` may follow up. Never Bot CloudAgent. |
 | `result-cloud-agent.sh <bc-id>` | Result/context JSON |
 | `webhook-harness.sh serve \| simulate` | Signed webhook receiver / local POST |
 
@@ -101,7 +101,9 @@ scripts/cloud/status-cloud-agent.sh bc-…
 # 3) On FLEET_DONE / PR_READY
 scripts/cloud/result-cloud-agent.sh bc-…
 
-# 4) Follow-up if needed (agent idle)
+# 4) Follow-up if the latest run is idle (leftover ACTIVE+FINISHED).
+#    REFUSE if runStatus=RUNNING — do not stack a second run on a live Extra High.
+#    Never Bot CloudAgent (orchestrator/donald is send.sh).
 scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check."
 ```
 
