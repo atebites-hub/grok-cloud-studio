@@ -7,7 +7,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts" / "cloud"))
 
-from list_rows import format_list_row, normalize_run_status, unwrap_entity  # noqa: E402
+from list_rows import (  # noqa: E402
+    format_list_row,
+    include_list_row,
+    normalize_run_status,
+    unwrap_entity,
+)
 
 
 def test_format_list_row_prints_run_status_token() -> None:
@@ -50,3 +55,17 @@ def test_unwrap_entity_run_wrapper() -> None:
     assert normalize_run_status(run.get("status")) == "FINISHED"
     bare = {"id": "run-2", "status": "RUNNING"}
     assert unwrap_entity(bare, "run") is bare
+
+
+def test_include_list_row_running_filter() -> None:
+    """--running keeps latest-run RUNNING only. Existence is not liveness."""
+    assert include_list_row("RUNNING", running_only=True) is True
+    assert include_list_row("running", running_only=True) is True
+    assert include_list_row("FINISHED", running_only=True) is False
+    assert include_list_row("CREATING", running_only=True) is False
+    assert include_list_row("ERROR", running_only=True) is False
+    assert include_list_row("none", running_only=True) is False
+    assert include_list_row("", running_only=True) is False
+    assert include_list_row("FINISHED", running_only=False) is True
+    assert include_list_row("none", running_only=False) is True
+    assert include_list_row("CREATING", running_only=False) is True

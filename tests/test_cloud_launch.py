@@ -373,6 +373,90 @@ def test_sdk_list_prints_run_status_on_each_row() -> None:
     assert "status=${status}" in src or "status=${" in src
 
 
+def test_list_running_filters_to_live_run_status(tmp_path: Path) -> None:
+    """Capacity beat: --running prints only latest-run runStatus=RUNNING.
+
+    Default list stays backward compatible (ACTIVE membership, including
+    leftover FINISHED shells) and still prints runStatus on every row.
+    Floor must not serial-status leftover ACTIVE shells.
+    """
+    items = _leftover_and_live_items() + [
+        {
+            "id": "bc-creating",
+            "name": "booting-grunt",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-creating",
+            "latestRunId": "run-creating",
+        }
+    ]
+    with MockCursorAPI(
+        list_items=items,
+        run_status_by_id={
+            "run-done": "FINISHED",
+            "run-live": "RUNNING",
+            "run-creating": "CREATING",
+        },
+    ) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        defaulted = _run(CLOUD / "list.sh", [], env)
+        filtered = _run(CLOUD / "list.sh", ["--running", "--limit", "20"], env)
+        wrapped = _run(CLOUD / "list-cloud-agents.sh", ["--running"], env)
+    assert defaulted.returncode == 0, defaulted.stdout + defaulted.stderr
+    leftover = _list_row(defaulted.stdout, "bc-leftover")
+    live_default = _list_row(defaulted.stdout, "bc-live")
+    idle = _list_row(defaulted.stdout, "bc-idle")
+    creating = _list_row(defaulted.stdout, "bc-creating")
+    assert "status=ACTIVE" in leftover
+    assert "runStatus=FINISHED" in leftover
+    assert "runStatus=RUNNING" in live_default
+    assert "runStatus=none" in idle
+    assert "runStatus=CREATING" in creating
+
+    assert filtered.returncode == 0, filtered.stdout + filtered.stderr
+    assert "bc-leftover" not in filtered.stdout
+    assert "bc-idle" not in filtered.stdout
+    assert "bc-creating" not in filtered.stdout
+    live = _list_row(filtered.stdout, "bc-live")
+    assert "status=ACTIVE" in live
+    assert "runStatus=RUNNING" in live
+    assert "runStatus=FINISHED" not in live
+    assert "CLOUD_LIST empty" not in filtered.stdout
+
+    assert wrapped.returncode == 0, wrapped.stdout + wrapped.stderr
+    wrap_live = _list_row(wrapped.stdout, "bc-live")
+    assert "runStatus=RUNNING" in wrap_live
+    assert "bc-leftover" not in wrapped.stdout
+    assert any(path.endswith("/runs/run-live") for path in api.gets), api.gets
+    blob = defaulted.stdout + defaulted.stderr + filtered.stdout + filtered.stderr
+    assert FAKE_KEY not in blob
+
+
+def test_list_running_empty_when_only_finished_leftovers(tmp_path: Path) -> None:
+    items = [_leftover_and_live_items()[0]]
+    with MockCursorAPI(
+        list_items=items,
+        run_status_by_id={"run-done": "FINISHED"},
+    ) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        filtered = _run(CLOUD / "list.sh", ["--running"], env)
+    assert filtered.returncode == 0, filtered.stdout + filtered.stderr
+    assert "bc-leftover" not in filtered.stdout
+    assert "runStatus=FINISHED" not in filtered.stdout
+    assert "CLOUD_LIST empty" in filtered.stdout
+    assert FAKE_KEY not in filtered.stdout + filtered.stderr
+
+
+def test_sdk_list_supports_running_filter() -> None:
+    src = (CLOUD / "sdk" / "list.ts").read_text(encoding="utf-8")
+    sh = (CLOUD / "list.sh").read_text(encoding="utf-8")
+    rows = (CLOUD / "list_rows.py").read_text(encoding="utf-8")
+    assert "--running" in src
+    assert "--running" in sh
+    assert "--running" in rows
+    assert "runStatus=" in src
+    assert "include_list_row" in rows or "running_only" in rows
+
+
 def test_list_cli_stays_list_output_not_adjacent_scopes() -> None:
     """CLI/SDK list rows only. Distinct from MCP cloud_list, count-running, list --repo, send pin."""
     blob = "".join(
@@ -384,6 +468,7 @@ def test_list_cli_stays_list_output_not_adjacent_scopes() -> None:
             CLOUD / "sdk" / "list.ts",
         )
     )
+    assert "--running" in blob
     assert "--repo" not in blob
     assert "MUST_LAUNCH" not in blob
     assert "count-running" not in blob

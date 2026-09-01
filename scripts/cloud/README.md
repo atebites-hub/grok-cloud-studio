@@ -20,7 +20,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK` |
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
-| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus` |
+| `list.sh` / `list-cloud-agents.sh [--running] [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus`. `--running` keeps `runStatus=RUNNING` only |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
@@ -115,6 +115,8 @@ Cloud agents are durable membership. `GET /v1/agents` `status` stays `ACTIVE` un
 - `runStatus=` latest run (`RUNNING` vs `FINISHED`, also `CREATING` / `ERROR` / `CANCELLED` / `EXPIRED` / `none`)
 
 REST resolves `latestRunId` via `GET /v1/agents/{id}/runs/{runId}` (`scripts/cloud/list_rows.py`). SDK uses `Agent.listRuns`. A missing or failed run fetch prints `runStatus=none`.
+
+Default list is membership (`ACTIVE` leftovers included). `list.sh --running` prints only rows whose latest run is `RUNNING`, so capacity beats do not serial-status leftover shells. Each printed row still includes `runStatus`.
 
 ## Terminal run statuses
 

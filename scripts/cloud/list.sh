@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # List Cursor Cloud agents (newest first). SDK-first; REST fallback.
-# Usage: list.sh [--limit N]   or   list.sh [N]
+# Usage: list.sh [--running] [--limit N]   or   list.sh [--running] [N]
 # Each row prints agent status and latest-run runStatus. Never prints API keys.
+# Default lists ACTIVE membership. --running keeps latest-run runStatus=RUNNING only.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,8 +10,13 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HERE}/_common.sh"
 
 limit="${CLOUD_LIST_LIMIT:-20}"
+running=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --running)
+      running=1
+      shift
+      ;;
     --limit)
       limit="$2"
       shift 2
@@ -20,8 +26,9 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     -h|--help)
-      echo "Usage: scripts/cloud/list.sh [--limit N]"
-      echo "       scripts/cloud/list-cloud-agents.sh [limit=20]"
+      echo "Usage: scripts/cloud/list.sh [--running] [--limit N]"
+      echo "       scripts/cloud/list-cloud-agents.sh [--running] [limit=20]"
+      echo "  --running  only rows whose latest run runStatus is RUNNING"
       exit 0
       ;;
     *)
@@ -41,7 +48,11 @@ if ! cloud_load_auth; then
   exit 1
 fi
 
-if cloud_sdk_exec list "$limit"; then
+sdk_args=("$limit")
+if [[ "$running" -eq 1 ]]; then
+  sdk_args+=("--running")
+fi
+if cloud_sdk_exec list "${sdk_args[@]}"; then
   exit "$CLOUD_SDK_RC"
 fi
 
@@ -57,4 +68,9 @@ fi
 
 # Agent.status stays ACTIVE after the latest run is terminal (stale membership).
 # Fetch each latest run so rows show runStatus (RUNNING vs FINISHED), not only ACTIVE.
-python3 "${HERE}/list_rows.py" "$CLOUD_HTTP_BODY"
+# --running filters after that parallel fetch so capacity beats skip leftover shells.
+row_args=("$CLOUD_HTTP_BODY")
+if [[ "$running" -eq 1 ]]; then
+  row_args+=("--running")
+fi
+python3 "${HERE}/list_rows.py" "${row_args[@]}"

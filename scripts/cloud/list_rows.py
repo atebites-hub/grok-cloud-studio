@@ -6,6 +6,7 @@ GET /v1/agents/{id}/runs/{latestRunId}. Agent ACTIVE is membership, not
 liveness: leftover FINISHED grunts must not look like spinning workers.
 
 A missing or failed run fetch prints runStatus=none so the list still succeeds.
+--running keeps latest-run runStatus=RUNNING rows only (existence is not liveness).
 Never prints API keys.
 """
 from __future__ import annotations
@@ -35,6 +36,13 @@ def unwrap_entity(data: Any, key: str) -> Any:
 def normalize_run_status(raw: Any) -> str:
     status = str(raw or "").strip()
     return status.upper() if status else "none"
+
+
+def include_list_row(run_status: str, *, running_only: bool) -> bool:
+    """Default lists membership. --running keeps latest-run RUNNING only."""
+    if not running_only:
+        return True
+    return normalize_run_status(run_status) == "RUNNING"
 
 
 def format_list_row(
@@ -95,7 +103,7 @@ def _agent_fields(item: Any) -> tuple[str, str, str, str, str]:
     )
 
 
-def format_list_lines(items: list[Any]) -> list[str]:
+def format_list_lines(items: list[Any], *, running_only: bool = False) -> list[str]:
     base = (os.environ.get("CURSOR_API_BASE") or "https://api.cursor.com").rstrip("/")
     key = os.environ.get("CURSOR_API_KEY") or ""
     timeout = _run_fetch_timeout()
@@ -121,11 +129,14 @@ def format_list_lines(items: list[Any]) -> list[str]:
                     run_status_by_index[idx] = "none"
     lines: list[str] = []
     for idx, (agent_id, agent_status, name, url, run_id) in enumerate(parsed):
+        run_status = run_status_by_index[idx]
+        if not include_list_row(run_status, running_only=running_only):
+            continue
         lines.append(
             format_list_row(
                 agent_id=agent_id,
                 agent_status=agent_status,
-                run_status=run_status_by_index[idx],
+                run_status=run_status,
                 name=name,
                 url=url,
                 run_id=run_id,
@@ -137,6 +148,11 @@ def format_list_lines(items: list[Any]) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Print agent list rows with runStatus.")
     parser.add_argument("body_json", help="Path to GET /v1/agents JSON body")
+    parser.add_argument(
+        "--running",
+        action="store_true",
+        help="Print only rows whose latest run runStatus is RUNNING",
+    )
     args = parser.parse_args(argv)
     with open(args.body_json, encoding="utf-8") as fh:
         data = json.load(fh)
@@ -148,7 +164,11 @@ def main(argv: list[str] | None = None) -> int:
         items = []
     if not isinstance(items, list):
         items = []
-    for line in format_list_lines(items):
+    lines = format_list_lines(items, running_only=args.running)
+    if args.running and not lines:
+        print("CLOUD_LIST empty")
+        return 0
+    for line in lines:
         print(line)
     return 0
 
