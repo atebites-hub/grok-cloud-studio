@@ -25,7 +25,9 @@ Probe live studio services (no secrets):
 
 Prints HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN and exits 0 / 1 / 2.
 Hub down => HEALTH_DOWN. Hub up but board/mcp/mind down => HEALTH_DEGRADED.
-See docs/studio/WIPE.md (DR loop with recover.sh).
+A leftover bot-bridge.pid whose process is dead is stale membership:
+remove the pidfile, write bot-bridge.standby, and do not start bot-bridge.
+A later host start must not resurrect it. See docs/studio/WIPE.md.
 EOF
 }
 
@@ -41,6 +43,9 @@ fi
 
 STATE="$(gcs_studio_state_dir)"
 export GCS_A2A_STATE="$STATE"
+
+# Hive stale membership: a pidfile is not liveness. Do not resurrect.
+gcs_sweep_stale_bot_bridge_pidfile
 
 hub_down=0
 degraded=0

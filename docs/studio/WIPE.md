@@ -34,10 +34,12 @@ daemons, then wipes inboxes, mind pins, and `taskboard.db` (warning printed).
 ## Stale bot-bridge membership
 
 A leftover `bot-bridge.pid` is not a live daemon. If the process named in
-the pidfile is dead (Hive example: pid 374656 leftover), `recover.sh` and
-`doctor.sh` remove the pidfile and do **not** start bot-bridge. Existence of
-a pidfile is not liveness. Distinct from default-off spawn when the pidfile
-is missing.
+the pidfile is dead (Hive example: pid 374656 leftover), `recover.sh`,
+`doctor.sh`, `health_check.sh`, and `start-studio-bus.sh` (start/status)
+remove the pidfile, write `bot-bridge.standby`, and do **not** start
+bot-bridge. A later host `start` (watchdog) must not resurrect it. Existence
+of a pidfile is not liveness. Distinct from default-off spawn when the
+pidfile is missing (`GCS_BOT_BRIDGE` is #74).
 
 ## Recovered-studio layout (live box)
 
