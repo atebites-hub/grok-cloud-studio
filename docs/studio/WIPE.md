@@ -72,7 +72,9 @@ The grunt is **Cursor Cloud** (not "Extra High" as the noun, not "Cursor Cloud A
 Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
 `--model grok-4.6 --reasoning-effort xhigh` (extra-high). Cursor fallback:
 `--model cursor-grok-4.6-xhigh` only. The PATH launcher stays
-`scripts/launch-cloud-extra-high.sh`. Full mind law: `docs/studio/MIND.md`.
+`scripts/launch-cloud-extra-high.sh`. Directors `cloud_launch` until ≥8
+`runStatus` RUNNING per repo; leftover ACTIVE is not a worker. Never Bot
+CloudAgent. Full mind law: `docs/studio/MIND.md`.
 
 ## Steps
 

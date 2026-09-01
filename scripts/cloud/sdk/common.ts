@@ -159,7 +159,8 @@ export function mapAgentStatus(status: SDKAgentInfo["status"] | string | undefin
       return "ERROR";
     case undefined:
     case "":
-      // SDK often omits status on cloud agents; REST used ACTIVE.
+      // SDK often omits status on cloud agents; REST membership used ACTIVE.
+      // Execution state is runStatus on the latest run, not this field.
       return "ACTIVE";
     default:
       return String(status).toUpperCase();

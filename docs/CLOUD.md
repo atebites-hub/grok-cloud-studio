@@ -19,3 +19,14 @@ scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
+
+## Fleet floor (LIV-41 / LIV-67)
+
+Directors must `cloud_launch` until the target repo has **≥8** in-flight
+runs (`GCS_CLOUD_MIN_RUNNING`, default 8). Count latest-run **`runStatus`**
+(`RUNNING` / `CREATING`). Agent `status` stays `ACTIVE` until archive —
+leftover `ACTIVE`+`FINISHED` shells are **not** workers.
+
+`scripts/cloud/list.sh` / `status.sh` print `runStatus`. Check the floor
+with `scripts/cloud/running-count.sh`. Never launch Bot CloudAgent
+(orchestrator / donald); Bot is `send.sh`, not Extra High.

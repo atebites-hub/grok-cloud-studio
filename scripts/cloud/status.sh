@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Show one Cursor Cloud agent and its latest run. SDK-first; REST fallback.
 # Usage: status.sh AGENT_ID [--json]
-# Never prints API keys.
+# Prints runStatus (latest run), not leftover agent ACTIVE. Never prints API keys.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -65,9 +65,9 @@ url="$(cloud_json_get "$CLOUD_HTTP_BODY" url)"
 run_id="$(cloud_json_get "$CLOUD_HTTP_BODY" latestRunId)"
 printf 'id=%s\n' "$agent_id"
 printf 'name=%s\n' "$name"
-printf 'agent_status=%s\n' "$agent_status"
+printf 'agentStatus=%s\n' "$agent_status"
 printf 'url=%s\n' "$url"
-printf 'latest_run_id=%s\n' "$run_id"
+printf 'latestRunId=%s\n' "$run_id"
 
 if [[ -n "$run_id" ]]; then
   if ! cloud_http_request GET "/v1/agents/${agent_id}/runs/${run_id}"; then
@@ -80,5 +80,7 @@ if [[ -n "$run_id" ]]; then
     exit 1
   fi
   run_status="$(cloud_json_get "$CLOUD_HTTP_BODY" status)"
-  printf 'run_status=%s\n' "$run_status"
+  printf 'runStatus=%s\n' "$run_status"
+else
+  printf 'runStatus=%s\n' "none"
 fi

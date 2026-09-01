@@ -67,8 +67,11 @@ class MockCursorAPI:
     create_body: dict[str, Any] | None = None
     list_items: list[dict[str, Any]] = field(default_factory=list)
     run_statuses: list[str] = field(default_factory=lambda: ["FINISHED"])
+    run_status_by_id: dict[str, str] = field(default_factory=dict)
     followup_http: int = 201
     posts: list[dict[str, Any]] = field(default_factory=list)
+    gets: list[str] = field(default_factory=list)
+    run_not_found_ids: set[str] = field(default_factory=set)
     auth_users: list[str] = field(default_factory=list)
     _run_i: int = 0
     _httpd: ThreadingHTTPServer | None = None
@@ -100,34 +103,46 @@ class MockCursorAPI:
             def do_GET(self) -> None:
                 api.auth_users.append(_basic_user(self.headers.get("Authorization")))
                 parsed = urlparse(self.path)
+                api.gets.append(parsed.path)
                 parts = [p for p in parsed.path.split("/") if p]
                 if parts == ["v1", "agents"]:
                     self._send(200, {"items": api.list_items})
                     return
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
-                    self._send(
-                        200,
-                        {
-                            "id": agent_id,
-                            "name": "mock-agent",
-                            "status": "ACTIVE",
-                            "url": f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": "run-mock",
-                        },
+                    listed = next(
+                        (item for item in api.list_items if str(item.get("id") or "") == agent_id),
+                        None,
                     )
+                    payload: dict[str, Any] = {
+                        "id": agent_id,
+                        "name": (listed or {}).get("name") or "mock-agent",
+                        "status": (listed or {}).get("status") or "ACTIVE",
+                        "url": (listed or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
+                        "latestRunId": (listed or {}).get("latestRunId") or "run-mock",
+                    }
+                    if listed and listed.get("repos"):
+                        payload["repos"] = listed["repos"]
+                    self._send(200, payload)
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
-                    seq = api.run_statuses or ["RUNNING"]
-                    if api._run_i < len(seq):
-                        status = seq[api._run_i]
-                        api._run_i += 1
+                    run_id = parts[4]
+                    if run_id in api.run_not_found_ids:
+                        self._send(404, {"error": "not_found"})
+                        return
+                    if run_id in api.run_status_by_id:
+                        status = api.run_status_by_id[run_id]
                     else:
-                        status = seq[-1]
+                        seq = api.run_statuses or ["RUNNING"]
+                        if api._run_i < len(seq):
+                            status = seq[api._run_i]
+                            api._run_i += 1
+                        else:
+                            status = seq[-1]
                     self._send(
                         200,
                         {
-                            "id": parts[4],
+                            "id": run_id,
                             "agentId": parts[2],
                             "status": status,
                         },
@@ -263,3 +278,106 @@ def test_sdk_launch_does_not_hardcode_private_repo() -> None:
     assert banned not in common
     assert "cloudRepo()" in common
     assert "GCS_CLOUD_REPO" in common
+
+
+def _list_row(stdout: str, agent_id: str) -> str:
+    rows = [line for line in stdout.splitlines() if f"id={agent_id}" in line or agent_id in line.split("\t")]
+    assert rows, stdout
+    return rows[0]
+
+
+def test_list_prints_run_status_not_leftover_active_as_worker(tmp_path: Path) -> None:
+    """List format: runStatus from the latest run, not leftover agent ACTIVE."""
+    items = [
+        {
+            "id": "bc-leftover",
+            "name": "done-grunt",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-leftover",
+            "latestRunId": "run-done",
+            "repos": [{"url": EXAMPLE_REPO}],
+        },
+        {
+            "id": "bc-live",
+            "name": "busy-grunt",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-live",
+            "latestRunId": "run-live",
+            "repos": [{"url": EXAMPLE_REPO}],
+        },
+        {
+            "id": "bc-idle",
+            "name": "no-run",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-idle",
+            "latestRunId": "",
+        },
+    ]
+    with MockCursorAPI(
+        list_items=items,
+        run_status_by_id={"run-done": "FINISHED", "run-live": "RUNNING"},
+    ) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        listed = _run(CLOUD / "list-cloud-agents.sh", [], env)
+    assert listed.returncode == 0, listed.stdout + listed.stderr
+    leftover = _list_row(listed.stdout, "bc-leftover")
+    live = _list_row(listed.stdout, "bc-live")
+    idle = _list_row(listed.stdout, "bc-idle")
+    assert "runStatus=FINISHED" in leftover
+    assert "runStatus=RUNNING" not in leftover
+    assert "runStatus=RUNNING" in live
+    assert "runStatus=FINISHED" not in live
+    assert "runStatus=none" in idle
+    assert any(path.endswith("/runs/run-done") for path in api.gets), api.gets
+    assert any(path.endswith("/runs/run-live") for path in api.gets), api.gets
+    assert FAKE_KEY not in listed.stdout + listed.stderr
+
+
+def test_list_missing_run_prints_run_status_none(tmp_path: Path) -> None:
+    items = [
+        {
+            "id": "bc-stale-id",
+            "name": "ghost-run",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-stale-id",
+            "latestRunId": "run-missing",
+        }
+    ]
+    with MockCursorAPI(list_items=items, run_not_found_ids={"run-missing"}) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        listed = _run(CLOUD / "list-cloud-agents.sh", [], env)
+    assert listed.returncode == 0, listed.stdout + listed.stderr
+    row = _list_row(listed.stdout, "bc-stale-id")
+    assert "runStatus=none" in row
+    assert any(path.endswith("/runs/run-missing") for path in api.gets), api.gets
+    assert FAKE_KEY not in listed.stdout + listed.stderr
+
+
+def test_status_prints_run_status_not_leftover_active(tmp_path: Path) -> None:
+    items = [
+        {
+            "id": "bc-leftover",
+            "name": "done-grunt",
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-leftover",
+            "latestRunId": "run-done",
+        }
+    ]
+    with MockCursorAPI(
+        list_items=items,
+        run_status_by_id={"run-done": "FINISHED"},
+    ) as api:
+        env = _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY)
+        status = _run(CLOUD / "status.sh", ["bc-leftover"], env)
+    assert status.returncode == 0, status.stdout + status.stderr
+    blob = status.stdout
+    assert "runStatus=FINISHED" in blob
+    assert "run_status=" not in blob
+    assert FAKE_KEY not in blob + status.stderr
+
+
+def test_sdk_list_prints_run_status_on_each_row() -> None:
+    src = (CLOUD / "sdk" / "list.ts").read_text(encoding="utf-8")
+    assert "runStatus=" in src
+    assert "mapRunStatus" in src
+    assert "listRuns" in src or "getRun" in src
