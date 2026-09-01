@@ -33,6 +33,7 @@ SECRET_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("openai_sk", re.compile(r"\bsk-(?:proj-|live-)?[A-Za-z0-9]{20,}\b")),
     ("aws_akia", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("cursor_key_assignment", re.compile(r"CURSOR_API_KEY\s*=\s*['\"]?[A-Za-z0-9_\-]{16,}")),
+    ("linear_key_assignment", re.compile(r"LINEAR_API_KEY\s*=\s*['\"]?[A-Za-z0-9_\-]{16,}")),
     ("webhook_assignment", re.compile(r"GCS_WEBHOOK_SECRET\s*=\s*['\"]?[A-Za-z0-9_\-]{12,}")),
 ]
 

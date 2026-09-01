@@ -27,8 +27,10 @@ Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/of
 
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
-- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust` of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok usage is back.
-- Cursor CLI catalog: repo `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no `GROK_HOME`). Higgsfield is Cursor catalog login when the runner is Cursor CLI (Art generate). Grok Bot Higgsfield is a different catalog.
+- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio `taskboard --db $GCS_TASKBOARD_DB mcp` plus Linear HTTP `https://mcp.linear.app/mcp`). Grok minds get Linear via this GROK_HOME catalog, not via Cursor `.cursor/mcp.json`. Studio Linear is **Living Sky** (`linear.app/livingsky`, team Livingsky / `LIV`). **NEVER Black Swan Money.** `${LINEAR_API_KEY}` expands at grok load time (never print, never commit). Linear tools: `save_issue`, `save_comment`, `prepare_attachment_upload`. Plus `grok plugin install --trust` of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok usage is back.
+- Cursor CLI catalog: repo `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no `GROK_HOME`) **and** Linear HTTP at `https://mcp.linear.app/mcp` with `Authorization: Bearer ${LINEAR_API_KEY}`. Linear + taskboard only — do not copy the Grok MCP catalog into Cursor. Higgsfield is Cursor catalog login when the runner is Cursor CLI (Art generate). Grok Bot Higgsfield is a different catalog.
+
+Cursor Cloud Extra High agents cannot scrape `GROK_HOME`. Give them Linear via cloud-env: snapshot / dashboard Secrets / process env `LINEAR_API_KEY`, plus checkout `.cursor/mcp.json` (Linear + taskboard). RUNNING specialists `save_comment` on Living Sky (`LIV`). They never inherit seat GROK_HOME `config.toml`.
 
 Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`.
 
@@ -130,12 +132,12 @@ agent --resume "$CURSOR_CHAT_ID" -p --force --output-format json --trust \
 | Layer | What grok actually calls |
 |---|---|
 | Grok builtins | Shell, files, etc. inside grok |
-| Seat `GROK_HOME/config.toml` | Taskboard stdio MCP: `taskboard --db $GCS_TASKBOARD_DB mcp` |
+| Seat `GROK_HOME/config.toml` | Taskboard stdio MCP: `taskboard --db $GCS_TASKBOARD_DB mcp`. Linear HTTP catalog: `url = "https://mcp.linear.app/mcp"` (`save_issue`, `save_comment`). Living Sky / `LIV`. Never Black Swan Money. |
 | `grok plugin install --trust` | `plugins/studio-mind` into seat `GROK_HOME` from `seat-mind-loop.sh` (`ticket`, `a2a_send`, `cloud_launch`) |
 
 `--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install "$ROOT/plugins/studio-mind" --trust` with that seat’s `GROK_HOME`. Already-installed / idempotent reinstall is `MIND_PLUGIN_OK` (grok may print `Error: repo studio-mind-... already installed` and exit non-zero). If install is skipped (no grok, missing dir, genuine install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop. Do not copy `GROK_HOME` MCP into Cursor CLI.
 
-Cursor runner: GROK_HOME taskboard MCP and grok `--plugin-dir` **do not transfer**. Two catalogs (see Two-runtime mind law). Cursor CLI uses Cursor builtins plus repo `.cursor/mcp.json`, never a copied `GROK_HOME`. Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`. No third Python tool loop.
+Cursor runner: GROK_HOME taskboard MCP, Linear GROK_HOME HTTP, and grok `--plugin-dir` **do not transfer**. Two catalogs (see Two-runtime mind law). Cursor CLI uses Cursor builtins plus repo `.cursor/mcp.json` (Linear + taskboard only), never a copied `GROK_HOME`. Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`. No third Python tool loop.
 
 A missing binary returns an error string from the MCP tool. Plugin output is redacted (`CURSOR_API_KEY`, webhook secrets, bearer tokens) and never printed as credentials.
 
