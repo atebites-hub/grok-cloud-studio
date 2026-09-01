@@ -20,7 +20,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK` |
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
-| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
+| `list.sh` / `list-cloud-agents.sh [--limit N] [--repo org/name]` | Newest agents; each row prints `status` and `runStatus`; `--repo` keeps one bound git remote |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
@@ -104,6 +104,25 @@ scripts/cloud/result-cloud-agent.sh bc-…
 # 4) Follow-up if needed (agent idle)
 scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check."
 ```
+
+## List rows: `--repo` and runStatus
+
+Cloud agents stay `ACTIVE` until archive. Execution state lives on the latest
+run. Directors count **live** workers with `runStatus=RUNNING` for the bound
+repo — leftover `ACTIVE`+`FINISHED` is not capacity.
+
+```bash
+scripts/cloud/list-cloud-agents.sh --repo org/name
+scripts/cloud/list.sh --repo https://github.com/org/name
+```
+
+`--repo` accepts `org/name`, `https://github.com/org/name`, a `.git` suffix, or
+`git@github.com:org/name.git`. List items omit `repos`; the filter loads
+`GET /v1/agents/{id}` (and the latest run, including `git.branches[].repoUrl`
+when the agent record has no repos). Unbound agents are dropped when
+`--repo` is set.
+
+Palemon Linear is **Living Sky** (`LIV`), not Black Swan. Never Bot CloudAgent.
 
 ## Terminal run statuses
 
