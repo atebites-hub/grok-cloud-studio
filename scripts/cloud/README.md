@@ -63,6 +63,8 @@ Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
 `scripts/directors/fleet-shepherd.py` is an **orphan-only** safety net: it skips rows with a live `waiter_pid` or `notified_by` in `{waiter, webhook, shepherd}`. Presence of `waiter_pid` is **not** liveness. A pid that names a dead process is evicted durably on `fleet.jsonl` (`waiter_pid` null, `waiter_tombstone`) so a reused pid cannot look live; shepherd then orphan-notifies **once**. Distinct from leftover `ACTIVE`+`FINISHED` skip and from `bot-bridge.pid` tombstones.
 
+`python3 scripts/cloud/fleet_ledger.py prune` drops leftover `.a2a-state/<seat>/fleet.jsonl` rows that are already closed (`notified`, latest run `FINISHED|ERROR|CANCELLED|EXPIRED`). Open leftover shells stay on the ledger. Prune is ledger-only: it does not probe Cursor Cloud or A2A-ping. `--dry-run` reports without rewriting; `--seat` limits to one seat.
+
 Optional signed webhooks (`scripts/cloud/webhook_receiver.py`) are the other completion path. Waiter remains the fallback when `GCS_WEBHOOK_SECRET` is unset.
 
 ## Node >= 22.13

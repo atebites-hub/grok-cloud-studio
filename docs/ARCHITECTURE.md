@@ -74,6 +74,8 @@ MERGE_REQUEST / QA squash requires pasted `.venv/bin/pytest -q` (`N passed`) and
 
 Do not double-notify a live waiter. A leftover `waiter_pid` number is not liveness.
 
+`python3 scripts/cloud/fleet_ledger.py prune` drops leftover `fleet.jsonl` rows that are already closed (`notified`, latest run `FINISHED|ERROR|CANCELLED|EXPIRED`). Open leftover shells stay. Ledger-only; no Cloud probe.
+
 ## Linear (Living Sky)
 
 Free-tier **200**-issue cap (LIV-76): close stale Living Sky tickets and

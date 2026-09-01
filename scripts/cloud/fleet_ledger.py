@@ -17,6 +17,9 @@ are not a ship-gate.
 Presence of waiter_pid is not liveness. A pid that names a dead process is
 evicted durably (waiter_pid null, waiter_tombstone) so a reused pid cannot
 look live and shepherd can orphan-notify once.
+
+Closed leftover rows (notified, latest run FINISHED/ERROR/CANCELLED/EXPIRED)
+can be dropped with `python3 scripts/cloud/fleet_ledger.py prune`.
 """
 from __future__ import annotations
 
@@ -218,6 +221,77 @@ def is_orphan(entry: dict[str, Any]) -> bool:
     return True
 
 
+def _latest_run_status(entry: dict[str, Any]) -> str:
+    return str(entry.get("run_status") or entry.get("runStatus") or "").strip().upper()
+
+
+def is_closed_leftover(entry: dict[str, Any]) -> bool:
+    """True when a leftover fleet.jsonl row is already closed.
+
+    Closed leftover: notified, ledger status closed, and latest run is
+    FINISHED/ERROR/CANCELLED/EXPIRED. Open leftover shells (ACTIVE +
+    FINISHED, not yet notified) stay on the ledger. Ledger fields only;
+    this does not probe Cursor Cloud or A2A-ping.
+    """
+    if not entry.get("notified"):
+        return False
+    if entry.get("status") != "closed":
+        return False
+    return _latest_run_status(entry) in TERMINAL
+
+
+def _seat_dirs(seat: str | None = None) -> list[Path]:
+    state = _state()
+    if seat:
+        path = state / seat
+        return [path] if path.is_dir() else []
+    if not state.is_dir():
+        return []
+    return [
+        path
+        for path in sorted(state.iterdir())
+        if path.is_dir() and not path.name.startswith(".")
+    ]
+
+
+def prune_closed_leftovers(
+    *,
+    seat: str | None = None,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    """Drop closed leftover rows from fleet.jsonl. Ledger-only; no API probe."""
+    pruned: list[dict[str, Any]] = []
+    kept_count = 0
+    for seat_dir in _seat_dirs(seat):
+        path = seat_dir / "fleet.jsonl"
+        entries = load_entries(path)
+        if not entries:
+            continue
+        keep: list[dict[str, Any]] = []
+        for entry in entries:
+            if is_closed_leftover(entry):
+                pruned.append(
+                    {
+                        "seat": seat_dir.name,
+                        "bc_id": entry.get("bc_id"),
+                        "run_status": str(
+                            entry.get("run_status") or entry.get("runStatus") or ""
+                        ),
+                    }
+                )
+                continue
+            keep.append(entry)
+            kept_count += 1
+        if not dry_run and len(keep) != len(entries):
+            write_entries(path, keep)
+    return {
+        "dry_run": dry_run,
+        "pruned_count": len(pruned),
+        "kept_count": kept_count,
+        "pruned": pruned,
+    }
+
+
 def ping_seat(seat: str, text: str) -> bool:
     send = _root() / "scripts" / "a2a" / "send.sh"
     if not send.is_file():
@@ -397,6 +471,9 @@ def main(argv: list[str]) -> int:
     ntf.add_argument("--payload-file", default="")
     ntf.add_argument("--notified-by", default="waiter")
     ntf.add_argument("--seat", default="")
+    prn = sub.add_parser("prune")
+    prn.add_argument("--seat", default="")
+    prn.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
 
     if args.cmd == "register":
@@ -458,6 +535,13 @@ def main(argv: list[str]) -> int:
             print(str(exc), file=sys.stderr)
             return 1
         print(json.dumps(row))
+        return 0
+    if args.cmd == "prune":
+        result = prune_closed_leftovers(
+            seat=args.seat or None,
+            dry_run=args.dry_run,
+        )
+        print(json.dumps(result))
         return 0
     return 2
 
