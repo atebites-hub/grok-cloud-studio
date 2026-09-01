@@ -9,6 +9,7 @@ import {
   mapRunStatus,
   safeError,
 } from "./common.ts";
+import { githubPrIsDraft } from "./pr-draft.ts";
 
 const TERMINAL = new Set(["FINISHED", "ERROR", "CANCELLED", "EXPIRED"]);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -180,7 +181,16 @@ async function sdkWait(agentId: string, runId: string, apiKey: string): Promise<
   throw new Error(`CLOUD_WAITER_TIMEOUT id=${agentId} lastStatus=${last}`);
 }
 
-function ledgerNotify(agentId: string, payload: DirectorResult): void {
+type WaiterPayload = DirectorResult & { draft?: boolean };
+
+async function withDraftFlag(payload: DirectorResult): Promise<WaiterPayload> {
+  // One-shot GitHub draft lookup. Do not reuse Extra High waiter 429 backoff (GCS #35).
+  const draft = await githubPrIsDraft(payload.prUrl);
+  if (draft === null) return payload;
+  return { ...payload, draft };
+}
+
+function ledgerNotify(agentId: string, payload: WaiterPayload): void {
   const proc = spawnSync(
     "python3",
     [LEDGER, "notify", "--id", agentId, "--notified-by", "waiter"],
@@ -206,12 +216,14 @@ async function main(): Promise<void> {
   const apiKey = loadApiKey();
   process.stdout.write(`CLOUD_WAITER_START id=${agentId} run=${runId || "latest"}\n`);
   try {
-    const payload = preferRest()
-      ? await restPoll(agentId, runId, apiKey)
-      : await sdkWait(agentId, runId, apiKey);
+    const payload = await withDraftFlag(
+      preferRest() ? await restPoll(agentId, runId, apiKey) : await sdkWait(agentId, runId, apiKey),
+    );
     ledgerNotify(agentId, payload);
+    const draftTag =
+      payload.draft === true ? " draft=true" : payload.draft === false ? " draft=false" : "";
     process.stdout.write(
-      `CLOUD_WAITER_DONE id=${agentId} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"}\n`,
+      `CLOUD_WAITER_DONE id=${agentId} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"}${draftTag}\n`,
     );
   } catch (err) {
     console.error(`CLOUD_WAITER_ERR id=${agentId} ${safeError(err)}`);

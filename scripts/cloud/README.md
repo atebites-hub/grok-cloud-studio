@@ -47,7 +47,7 @@ Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 
 ## Waiter + orphan shepherd
 
-After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.jsonl` and spawns `wait-notify.ts` (SDK `run.wait()`, REST poll when `CURSOR_API_BASE` / `CLOUD_FORCE_REST`). On `FINISHED|ERROR|CANCELLED|EXPIRED` the waiter A2A-pings the owning seat (`FLEET_DONE` / `PR_READY`) and marks `notified_by=waiter`.
+After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.jsonl` and spawns `wait-notify.ts` (SDK `run.wait()`, REST poll when `CURSOR_API_BASE` / `CLOUD_FORCE_REST`). On `FINISHED|ERROR|CANCELLED|EXPIRED` the waiter A2A-pings the owning seat (`FLEET_DONE` / `PR_READY`) and marks `notified_by=waiter`. If `prUrl` is a GitHub **draft**, the ping includes `draft=true` and must not be treated as MERGE_REQUEST-ready (QA does not squash drafts).
 
 Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
