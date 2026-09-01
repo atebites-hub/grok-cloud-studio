@@ -83,18 +83,24 @@ gcs_health_tailscale_ok() {
 }
 
 # Hive stale membership: a leftover bot-bridge.pid is not a live daemon.
-# recover.sh / doctor.sh remove the pidfile and do not start bot-bridge.
-# A live pid is kept. Distinct from default-off spawn when the file is missing.
+# recover.sh / doctor.sh / health_check.sh remove the pidfile, write
+# bot-bridge.standby so a later host start does not resurrect, and do not
+# start bot-bridge. A live pid is kept. Distinct from default-off spawn
+# when the file is missing (GCS_BOT_BRIDGE is a sibling slice).
 gcs_sweep_stale_bot_bridge_pidfile() {
-  local state pidfile pid
+  local state pidfile standby pid
   state="$(gcs_studio_state_dir)"
   pidfile="$state/bot-bridge.pid"
+  standby="$state/bot-bridge.standby"
   [[ -f "$pidfile" ]] || return 0
   pid="$(gcs_read_pid "$pidfile")"
   if gcs_pid_alive "$pid"; then
+    # Live membership is not a tombstone. Watchdog start already clears this.
+    rm -f "$standby"
     return 0
   fi
   rm -f "$pidfile"
+  printf 'pid=%s\n' "${pid:-none}" >"$standby"
   echo "STALE_PIDFILE bot-bridge.pid pid=${pid:-none} removed (pidfile is not liveness)"
   return 0
 }
