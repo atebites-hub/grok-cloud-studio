@@ -53,9 +53,13 @@ Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
 After a real `CLOUD_LAUNCH_OK`, `spawn-waiter.sh` also runs
 `scripts/studio/linear_stamp_after_launch_beat1740.sh` (Living Sky `LIV-69`,
-optional `GCS_LINEAR_STAMP_ISSUES`). Missing `LINEAR_API_KEY` prints
-`LINEAR_STAMP_FAIL` and still records local evidence; it does not fake
-`save_comment` and does not fail the launch. This is not #109's every-mind-turn hive stamp.
+optional `GCS_LINEAR_STAMP_ISSUES`). The SDK launcher always invokes
+`spawn-waiter.sh` for that stamp even when `GCS_SPAWN_WAITER=0` (the bash
+script still skips the waiter). Missing `LINEAR_API_KEY` (process env or
+`$GCS_A2A_STATE/studio.env`) prints `LINEAR_STAMP_FAIL` and still records
+local evidence; it does not fake `save_comment` and does not fail the launch.
+Personal Linear keys use `Authorization: <key>` (no `Bearer`). Living Sky
+only. This is not #109's every-mind-turn hive stamp.
 
 `scripts/directors/fleet-shepherd.py` is an **orphan-only** safety net: it skips rows with a live `waiter_pid` or `notified_by` in `{waiter, webhook, shepherd}`.
 

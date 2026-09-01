@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent } from "@cursor/sdk";
@@ -13,20 +13,19 @@ import {
 } from "./common.ts";
 
 function spawnWaiter(agentId: string, runId: string, name: string): void {
-  const raw = (process.env.GCS_SPAWN_WAITER || process.env.CLOUD_SPAWN_WAITER || "1").trim();
-  if (raw === "0" || raw === "false" || raw === "no") return;
+  // Always invoke spawn-waiter.sh after CLOUD_LAUNCH_OK so LIV-82 Living Sky
+  // stamp runs even when GCS_SPAWN_WAITER=0. The bash script skips the waiter
+  // itself. Inherit stdio so LINEAR_STAMP_* is visible. Do not fail create.
   const here = dirname(fileURLToPath(import.meta.url));
   const script = resolve(here, "..", "spawn-waiter.sh");
-  const child = spawn(
+  spawnSync(
     "bash",
     [script, "--id", agentId, "--run", runId, ...(name ? ["--name", name] : [])],
     {
-      detached: true,
-      stdio: "ignore",
+      stdio: "inherit",
       env: process.env,
     },
   );
-  child.unref();
 }
 
 async function main(): Promise<void> {

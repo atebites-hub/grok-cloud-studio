@@ -34,6 +34,12 @@ LIVING_SKY_URL_KEY = "livingsky"
 LIVING_SKY_TEAM = "LIV"
 DEFAULT_ISSUE = "LIV-69"
 TRUSTED_SOURCES = frozenset({"spawn-waiter", "launch"})
+STUDIO_ENV_KEYS = (
+    "LINEAR_API_KEY",
+    "GCS_LINEAR_API",
+    "GCS_LINEAR_STAMP_ISSUES",
+    "GCS_LINEAR_TIMEOUT",
+)
 BLACK_SWAN_KEYS = frozenset(
     {"blackswan", "black-swan", "blackswanmoney", "black-swan-money"}
 )
@@ -141,6 +147,38 @@ def parse_issues(raw: str) -> list[str]:
         seen.add(ident)
         found.append(ident)
     return found or [DEFAULT_ISSUE]
+
+
+def apply_studio_env() -> None:
+    """Fill Linear knobs from $GCS_A2A_STATE/studio.env when unset. Never print values."""
+    path = state_dir() / "studio.env"
+    if not path.is_file():
+        return
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, val = stripped.split("=", 1)
+        key = key.strip()
+        if key not in STUDIO_ENV_KEYS:
+            continue
+        if (os.environ.get(key) or "").strip():
+            continue
+        val = val.strip().strip("'\"")
+        if val:
+            os.environ[key] = val
+
+
+def authorization_header(api_key: str) -> str:
+    """Personal Linear keys are Authorization: <key> with no Bearer prefix.
+
+    OAuth tokens may already include 'Bearer '; leave those unchanged.
+    """
+    return api_key.strip()
 
 
 def linear_api_url() -> str:
@@ -258,7 +296,7 @@ def graphql_post(payload: dict[str, Any], api_url: str, api_key: str) -> dict[st
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": authorization_header(api_key),
         },
         method="POST",
     )
@@ -291,6 +329,7 @@ def comment_body(fields: dict[str, str], issue: str) -> str:
 
 def main(argv: list[str]) -> int:
     fields = parse_args(argv)
+    apply_studio_env()
     issues = parse_issues(fields.get("issues") or "")
     dump_text = ""
     evidence = fields.get("evidence") or ""

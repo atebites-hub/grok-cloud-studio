@@ -30,6 +30,7 @@ from test_cloud_launch import (
 REPO = Path(__file__).resolve().parents[1]
 STAMP = REPO / "scripts" / "studio" / "linear_stamp_after_launch_beat1740.sh"
 SPAWN_WAITER = REPO / "scripts" / "cloud" / "spawn-waiter.sh"
+SDK_LAUNCH = REPO / "scripts" / "cloud" / "sdk" / "launch.ts"
 MIND_PY = REPO / "scripts" / "directors" / "mind.py"
 LINEAR_HIVE = REPO / "scripts" / "directors" / "linear_hive.py"
 LIV_STAMP = REPO / "scripts" / "studio" / "linear" / "liv_stamp.py"
@@ -290,6 +291,10 @@ def test_living_sky_comment_create_on_liv69(tmp_path: Path) -> None:
     assert bodies
     assert any("CLOUD_LAUNCH_OK" in b or "Extra High" in b or "launch" in b.lower() for b in bodies)
     assert all("mind turn" not in b.lower() for b in bodies)
+    assert api.auth_headers, "GraphQL must send Authorization"
+    for header in api.auth_headers:
+        assert header == FAKE_LINEAR, header
+        assert not header.lower().startswith("bearer ")
 
 
 def test_optional_issues_liv63_82_96(tmp_path: Path) -> None:
@@ -388,6 +393,34 @@ def test_launch_err_does_not_stamp(tmp_path: Path) -> None:
     assert "LINEAR_STAMP_ATTEMPT" not in blob
     assert "LINEAR_STAMP_OK" not in blob
     assert _evidence_rows(tmp_path) == []
+
+
+def test_sdk_launch_always_invokes_spawn_waiter_for_stamp() -> None:
+    """Canonical SDK launch must still hit spawn-waiter (stamp) when waiter=0."""
+    src = SDK_LAUNCH.read_text(encoding="utf-8")
+    assert "spawn-waiter.sh" in src
+    assert "spawnSync" in src
+    assert "stdio: \"ignore\"" not in src
+    assert "if (raw === \"0\"" not in src
+    assert "CLOUD_LAUNCH_OK" in src
+
+
+def test_loads_linear_key_from_studio_env(tmp_path: Path) -> None:
+    dump = tmp_path / "launch.ok"
+    dump.write_text("CLOUD_LAUNCH_OK\nid=bc-env\n", encoding="utf-8")
+    state = tmp_path / "a2a-state"
+    state.mkdir(parents=True, exist_ok=True)
+    (state / "studio.env").write_text("LINEAR_API_KEY=" + FAKE_LINEAR + "\n", encoding="utf-8")
+    with FakeLinearHTTP() as api:
+        env = _stamp_env(tmp_path, GCS_LINEAR_API=api.base)
+        env.pop("LINEAR_API_KEY", None)
+        proc = _run_stamp(["--evidence", str(dump)], env)
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    assert "LINEAR_STAMP_OK" in blob
+    assert FAKE_LINEAR not in blob
+    assert api.auth_headers
+    assert api.auth_headers[0] == FAKE_LINEAR
 
 
 def test_spawn_waiter_skipped_still_attempts_stamp(tmp_path: Path) -> None:
