@@ -68,6 +68,7 @@ class MockCursorAPI:
     list_items: list[dict[str, Any]] = field(default_factory=list)
     run_statuses: list[str] = field(default_factory=lambda: ["FINISHED"])
     run_status_by_id: dict[str, str] = field(default_factory=dict)
+    run_not_found_ids: set[str] = field(default_factory=set)
     followup_http: int = 201
     list_http: int = 200
     posts: list[dict[str, Any]] = field(default_factory=list)
@@ -118,12 +119,23 @@ class MockCursorAPI:
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
                     listed = next(
-                        (row for row in api.list_items if str(row.get("id") or "") == agent_id),
+                        (
+                            row
+                            for row in api.list_items
+                            if str(row.get("id") or row.get("agentId") or "") == agent_id
+                        ),
                         None,
                     )
-                    latest = (listed or {}).get("latestRunId")
-                    if not latest:
-                        latest = (listed or {}).get("detailLatestRunId") or "run-mock"
+                    # Do not invent a run id for a listed agent. Skipping that
+                    # row in production would remint a live RUNNING twin.
+                    if listed is None:
+                        latest = "run-mock"
+                    elif "latestRunId" in listed:
+                        latest = listed.get("latestRunId") or ""
+                    elif "detailLatestRunId" in listed:
+                        latest = listed.get("detailLatestRunId") or ""
+                    else:
+                        latest = ""
                     self._send(
                         200,
                         {
@@ -137,6 +149,9 @@ class MockCursorAPI:
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
                     run_id = parts[4]
+                    if run_id in api.run_not_found_ids:
+                        self._send(404, {"error": "not_found"})
+                        return
                     if run_id in api.run_status_by_id:
                         status = api.run_status_by_id[run_id]
                     else:

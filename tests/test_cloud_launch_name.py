@@ -5,10 +5,13 @@ Palemon Linear is Living Sky (LIV). Does not remint GCS #49 followup-refuse.
 """
 from __future__ import annotations
 
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from test_cloud_launch import CLOUD, FAKE_KEY, LAUNCH, MockCursorAPI, REPO, _run, _script_env
 
@@ -21,6 +24,11 @@ FOLLOWUP_TS = CLOUD / "sdk" / "followup.ts"
 NAME_TWIN = CLOUD / "name_twin.py"
 
 LIVE_NAME = "floor-iac"
+
+_NAME_TWIN_SPEC = importlib.util.spec_from_file_location("gcs_name_twin", NAME_TWIN)
+assert _NAME_TWIN_SPEC is not None and _NAME_TWIN_SPEC.loader is not None
+name_twin = importlib.util.module_from_spec(_NAME_TWIN_SPEC)
+_NAME_TWIN_SPEC.loader.exec_module(name_twin)
 
 
 def _create_posts(api: MockCursorAPI) -> list[dict[str, Any]]:
@@ -282,6 +290,116 @@ def test_launch_name_resolves_latest_run_id_when_list_omits_it(tmp_path: Path) -
     assert any(path.endswith("/runs/run-live") for path in api.gets), api.gets
 
 
+def test_launch_name_unresolved_latest_run_id_fail_closed(tmp_path: Path) -> None:
+    """Name-matched Extra High with no resolvable runStatus must not remint."""
+    items = [
+        {
+            "id": "bc-live",
+            "name": LIVE_NAME,
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-live",
+        }
+    ]
+    with MockCursorAPI(list_items=items) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", LIVE_NAME, "Fail closed when runStatus cannot be read."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0, combined
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert not _create_posts(api), api.posts
+    assert any(path.rstrip("/").endswith("/v1/agents/bc-live") for path in api.gets), api.gets
+    assert FAKE_KEY not in combined
+
+
+def test_launch_name_run_404_fail_closed(tmp_path: Path) -> None:
+    """Name-matched latestRunId whose GET run 404s is unknown, not leftover-green."""
+    items = [
+        {
+            "id": "bc-live",
+            "name": LIVE_NAME,
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-live",
+            "latestRunId": "run-missing",
+        }
+    ]
+    with MockCursorAPI(list_items=items, run_not_found_ids={"run-missing"}) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", LIVE_NAME, "Fail closed when the latest run cannot be read."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0, combined
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert not _create_posts(api), api.posts
+    assert any(path.endswith("/runs/run-missing") for path in api.gets), api.gets
+    assert FAKE_KEY not in combined
+
+
+def test_launch_name_list_runstatus_running_without_latest_run_id(tmp_path: Path) -> None:
+    """List row runStatus=RUNNING is enough to refuse even when latestRunId is omitted."""
+    items = [
+        {
+            "id": "bc-live",
+            "name": LIVE_NAME,
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-live",
+            "runStatus": "RUNNING",
+        }
+    ]
+    with MockCursorAPI(list_items=items) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", LIVE_NAME, "Refuse list runStatus=RUNNING without latestRunId."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0, combined
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    refuse = [ln for ln in proc.stdout.splitlines() if ln.startswith("CLOUD_LAUNCH_ERR")][0]
+    assert "runStatus=RUNNING" in refuse, refuse
+    assert not _create_posts(api), api.posts
+    assert FAKE_KEY not in combined
+
+
+def test_launch_name_unresolved_row_does_not_hide_running_twin(tmp_path: Path) -> None:
+    """An unreadable same-name row must not skip a later RUNNING twin."""
+    items = [
+        {
+            "id": "bc-ghost",
+            "name": LIVE_NAME,
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-ghost",
+        },
+        {
+            "id": "bc-live",
+            "name": LIVE_NAME,
+            "status": "ACTIVE",
+            "url": "https://cursor.com/agents/bc-live",
+            "latestRunId": "run-live",
+        },
+    ]
+    with MockCursorAPI(list_items=items, run_status_by_id={"run-live": "RUNNING"}) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", LIVE_NAME, "Still refuse the live RUNNING twin."],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0, combined
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    refuse = [ln for ln in proc.stdout.splitlines() if ln.startswith("CLOUD_LAUNCH_ERR")][0]
+    assert "runStatus=RUNNING" in refuse, refuse
+    assert not _create_posts(api), api.posts
+    assert any(path.endswith("/runs/run-live") for path in api.gets), api.gets
+    assert FAKE_KEY not in combined
+
+
 def test_name_twin_cli_running_vs_finished(tmp_path: Path) -> None:
     items, runs = _fleet()
     with MockCursorAPI(list_items=items, run_status_by_id=runs) as api:
@@ -309,9 +427,6 @@ def test_name_twin_cli_running_vs_finished(tmp_path: Path) -> None:
 
 
 def test_find_live_name_twin_pure() -> None:
-    sys.path.insert(0, str(CLOUD))
-    import name_twin
-
     fetched: list[tuple[str, str]] = []
 
     def fetch(agent_id: str, run_id: str) -> str | None:
@@ -350,6 +465,56 @@ def test_find_live_name_twin_pure() -> None:
     assert other is None
 
 
+def test_find_live_name_twin_unresolved_raises() -> None:
+    items = [{"id": "bc-live", "name": LIVE_NAME, "status": "ACTIVE"}]
+    with pytest.raises(name_twin.TwinProbeError):
+        name_twin.find_live_name_twin(
+            items,
+            LIVE_NAME,
+            fetch_run_status=lambda _a, _r: "FINISHED",
+            fetch_latest_run_id=lambda _i: None,
+        )
+
+
+def test_find_live_name_twin_inline_running_without_run_id() -> None:
+    items = [
+        {
+            "id": "bc-live",
+            "name": LIVE_NAME,
+            "status": "ACTIVE",
+            "runStatus": "RUNNING",
+        }
+    ]
+    twin = name_twin.find_live_name_twin(
+        items,
+        LIVE_NAME,
+        fetch_run_status=lambda _a, _r: None,
+    )
+    assert twin is not None
+    assert twin["id"] == "bc-live"
+    assert twin["runStatus"] == "RUNNING"
+
+
+def test_find_live_name_twin_nested_latest_run_running() -> None:
+    items = [
+        {
+            "id": "bc-live",
+            "name": LIVE_NAME,
+            "status": "ACTIVE",
+            "latestRun": {"id": "run-live", "status": "running"},
+        }
+    ]
+    twin = name_twin.find_live_name_twin(
+        items,
+        LIVE_NAME,
+        fetch_run_status=lambda _a, _r: None,
+    )
+    assert twin is not None
+    assert twin["id"] == "bc-live"
+    assert twin["runStatus"] == "RUNNING"
+    assert twin["latestRunId"] == "run-live"
+
+
 def test_sdk_launch_refuses_running_name_before_create() -> None:
     src = LAUNCH_TS.read_text(encoding="utf-8")
     running_at = src.find("RUNNING")
@@ -360,6 +525,12 @@ def test_sdk_launch_refuses_running_name_before_create() -> None:
     assert "CLOUD_LAUNCH_ERR" in src
     assert "runStatus" in src
     assert "GCS_BOT_AGENT_ID" in src or "Bot CloudAgent" in src
+    none_at = src.find('runStatus === "none"')
+    unresolved_at = src.find("unresolved")
+    assert none_at != -1
+    assert unresolved_at != -1
+    assert none_at < create_at
+    assert unresolved_at < create_at
 
 
 def test_does_not_remint_followup_refuse() -> None:
@@ -387,3 +558,5 @@ def test_docs_launch_name_twin_living_sky() -> None:
     assert "LIV" in blob
     assert "grok-4.6" in blob
     assert "xhigh" in blob
+    fold = blob.lower()
+    assert "fail-closed" in fold or "fail closed" in fold or "unresolved" in fold

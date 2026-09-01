@@ -52,6 +52,7 @@ async function refuseIfLiveNameTwin(apiKey: string, name: string): Promise<void>
   const rawLimit = (process.env.CLOUD_LIST_LIMIT || "50").trim();
   const limit = /^\d+$/.test(rawLimit) ? Number(rawLimit) : 50;
   const { items } = await Agent.list({ runtime: "cloud", apiKey, limit });
+  let unresolved = false;
   for (const agent of items) {
     const id = agent.agentId || "";
     if (botId && id === botId) continue;
@@ -60,6 +61,16 @@ async function refuseIfLiveNameTwin(apiKey: string, name: string): Promise<void>
     if (runStatus === "RUNNING") {
       refuseLiveNameTwin(id, name, runStatus);
     }
+    if (runStatus === "none") {
+      unresolved = true;
+    }
+  }
+  if (unresolved) {
+    process.stdout.write("CLOUD_LAUNCH_ERR\n");
+    console.error(
+      "error: name-twin probe failed; name-matched Extra High runStatus unresolved",
+    );
+    process.exit(1);
   }
 }
 

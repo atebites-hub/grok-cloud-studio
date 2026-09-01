@@ -18,7 +18,7 @@ scripts/cloud/watch-cloud-agent.sh bc-...
 scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
-Launch `--name` **REFUSE**s when a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Never Bot CloudAgent.
+Launch `--name` **REFUSE**s when a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Name-matched Extra High whose latest runStatus cannot be read is fail-closed (no create). Never Bot CloudAgent.
 
 Palemon Linear is Living Sky (`LIV`).
 

@@ -7,7 +7,8 @@ Leftover ACTIVE+FINISHED shells do not count as twins. Never Bot CloudAgent
 Exit codes:
   0 — live twin found; stdout is `id=… name=… runStatus=RUNNING`
   1 — no live twin
-  2 — list/probe failed (fail closed; do not remint blindly)
+  2 — list/probe failed or a name-matched Extra High runStatus is unresolved
+      (fail closed; do not remint blindly)
 """
 from __future__ import annotations
 
@@ -52,6 +53,33 @@ def unwrap(data: Any, key: str) -> Any:
     return data
 
 
+def _nested_latest_run(raw: dict[str, Any]) -> dict[str, Any] | None:
+    latest = raw.get("latestRun") or raw.get("latest_run")
+    if isinstance(latest, dict):
+        return latest
+    return None
+
+
+def run_id_from_item(raw: dict[str, Any]) -> str:
+    run_id = str(raw.get("latestRunId") or raw.get("latest_run_id") or "")
+    if run_id:
+        return run_id
+    latest = _nested_latest_run(raw)
+    if latest is None:
+        return ""
+    return str(latest.get("id") or latest.get("runId") or latest.get("run_id") or "")
+
+
+def inline_run_status(raw: dict[str, Any]) -> str:
+    status = raw.get("runStatus") or raw.get("run_status")
+    if status:
+        return run_status_upper(str(status))
+    latest = _nested_latest_run(raw)
+    if latest is None:
+        return "none"
+    return run_status_upper(str(latest.get("status") or latest.get("runStatus") or ""))
+
+
 def find_live_name_twin(
     items: list[dict[str, Any]],
     wanted_name: str,
@@ -60,25 +88,52 @@ def find_live_name_twin(
     fetch_run_status: FetchRun,
     fetch_latest_run_id: FetchLatest | None = None,
 ) -> dict[str, str] | None:
-    """Return the first non-Bot agent with this name whose latest run is RUNNING."""
+    """Return the first non-Bot agent with this name whose latest run is RUNNING.
+
+    Name-matched Extra Highs whose runStatus cannot be read raise TwinProbeError
+    (fail closed; do not remint blindly). Scan every same-name row so an
+    unreadable leftover cannot hide a later RUNNING twin.
+    """
     wanted = wanted_name or ""
     if not wanted:
         return None
+    unresolved = False
     for raw in items:
         if not isinstance(raw, dict):
             continue
-        agent_id = str(raw.get("id") or raw.get("agentId") or "")
+        row = unwrap(raw, "agent")
+        if not isinstance(row, dict):
+            row = raw
+        agent_id = str(row.get("id") or row.get("agentId") or "")
         if not agent_id or is_bot_agent(agent_id, bot_id):
             continue
-        name = str(raw.get("name") or "")
+        name = str(row.get("name") or "")
         if name != wanted:
             continue
-        run_id = str(raw.get("latestRunId") or raw.get("latest_run_id") or "")
+        inline = inline_run_status(row)
+        run_id = run_id_from_item(row)
+        if inline == "RUNNING":
+            return {
+                "id": agent_id,
+                "name": name,
+                "runStatus": "RUNNING",
+                "latestRunId": run_id,
+            }
         if not run_id and fetch_latest_run_id is not None:
-            run_id = str(fetch_latest_run_id(agent_id) or "")
+            try:
+                run_id = str(fetch_latest_run_id(agent_id) or "")
+            except TwinProbeError:
+                unresolved = True
+                continue
         if not run_id:
+            unresolved = True
             continue
-        status = run_status_upper(fetch_run_status(agent_id, run_id))
+        try:
+            fetched = fetch_run_status(agent_id, run_id)
+        except TwinProbeError:
+            unresolved = True
+            continue
+        status = run_status_upper(fetched)
         if status == "RUNNING":
             return {
                 "id": agent_id,
@@ -86,6 +141,10 @@ def find_live_name_twin(
                 "runStatus": "RUNNING",
                 "latestRunId": run_id,
             }
+        if status == "none":
+            unresolved = True
+    if unresolved:
+        raise TwinProbeError("name-matched Extra High runStatus unresolved")
     return None
 
 
@@ -128,8 +187,7 @@ def fetch_latest_run_id(agent_id: str) -> str | None:
     agent = unwrap(payload, "agent")
     if not isinstance(agent, dict):
         return None
-    run_id = str(agent.get("latestRunId") or agent.get("latest_run_id") or "")
-    return run_id or None
+    return run_id_from_item(agent) or None
 
 
 def fetch_run_status(agent_id: str, run_id: str) -> str | None:

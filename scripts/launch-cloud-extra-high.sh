@@ -27,6 +27,7 @@ Creates a Cursor Cloud Extra High agent (SDK-first):
 
 --name REFUSE if a live runStatus=RUNNING Extra High already has that name
 (no twin remint). Leftover ACTIVE+FINISHED does not block.
+Name-matched Extra High whose latest runStatus cannot be read is fail-closed.
 Never Bot CloudAgent. Palemon Linear is Living Sky (LIV).
 
 REST fallback (CLOUD_FORCE_REST=1, GCS_CLOUD_BACKEND=rest,
