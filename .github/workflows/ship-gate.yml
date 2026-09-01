@@ -1,0 +1,41 @@
+# Minimal GitHub Actions ship-gate for this public control plane.
+# Empty CI is not merge. Main has no workflows; this file is the gate:
+#   python3 -m pytest -q
+#   python3 scripts/secret_scan.py
+# Does not remint #64 MCP catalogs / footers / SOUL.
+name: ship-gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ship-gate:
+    name: pytest -q and secret_scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pytest
+        run: python3 -m pip install -r requirements.txt
+
+      - name: pytest -q
+        run: python3 -m pytest -q
+
+      - name: secret_scan
+        run: python3 scripts/secret_scan.py

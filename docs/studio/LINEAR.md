@@ -60,6 +60,11 @@ python3 scripts/studio/linear/liv_stamp.py create \
 This CLI does not wait on Linear MCP auth. Extra High Linear MCP login is
 desktop-only; cloud snapshots need `LINEAR_API_KEY` in Secrets.
 
+## Ship gate
+
+GitHub Actions `.github/workflows/ship-gate.yml` runs `pytest -q` and
+`python3 scripts/secret_scan.py`. Empty CI is not merge.
+
 ## Out of scope
 
 Does not remint PR #64 MCP catalogs. Does not edit `scripts/cloud/list.sh`
