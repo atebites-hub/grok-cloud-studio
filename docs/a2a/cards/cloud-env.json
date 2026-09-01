@@ -1,6 +1,6 @@
 {
   "name": "Cloud Env",
-  "description": "Owns cloud environment baselines, install scripts, and launch defaults.",
+  "description": "LIV-84 cloud-env baselines, snapshot, and dashboard Secrets (Higgsfield login + SENTRY_DSN). Do not remint as a new product.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -24,7 +24,7 @@
     {
       "id": "cloud-env",
       "name": "Cloud Env",
-      "description": "Owns cloud environment baselines, install scripts, and launch defaults.",
+      "description": "LIV-84 cloud-env baselines, snapshot, and dashboard Secrets (Higgsfield login + SENTRY_DSN). Do not remint as a new product.",
       "tags": [
         "cloud-env",
         "gcs",

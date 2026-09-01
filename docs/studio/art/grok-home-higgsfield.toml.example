@@ -1,0 +1,8 @@
+# Grok Build catalog only (seat GROK_HOME/config.toml).
+# Grok-home Higgsfield is grok-only. Do not copy this block into
+# Cursor CLI / Extra High `.cursor/mcp.json` (two catalogs; never fake a transfer).
+# Higgsfield MCP is OAuth/login at grok — do not encode tokens here.
+# Cursor Extra High uses the existing LIV-84 cloud-env snapshot login + dashboard Secrets.
+
+[mcp_servers.higgsfield]
+url = "https://mcp.higgsfield.ai/mcp"
