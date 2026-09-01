@@ -26,6 +26,25 @@ env):
 Grok Build minds get Linear via seat `GROK_HOME/config.toml` (separate
 catalog). See `docs/studio/MIND.md`.
 
+## Art env (LIV-93) — Higgsfield + Sentry
+
+Cloud-env is **LIV-84**. Use the existing snapshot / `docs/a2a/cards/cloud-env.json`
+/ dashboard Secrets. **Do not remint** cloud-env. **NEVER Black Swan Money.**
+
+Two catalogs. Extra High **cannot scrape `GROK_HOME`**:
+
+- Grok Build: seat `GROK_HOME` Higgsfield from
+  `docs/studio/art/grok-home-higgsfield.toml.example` (grok-only). Do not copy
+  that file into `.cursor/mcp.json`.
+- Cursor Cloud Extra High / Cursor CLI: checkout `.cursor/mcp.json` (Linear HTTP
+  + taskboard only) plus LIV-84 cloud-env snapshot login for Higgsfield. Cursor
+  Agents MCP login is enough when generate is needed. Do not mcp_auth loop.
+- `SENTRY_DSN` / `GCS_SENTRY_DSN` from snapshot Secrets / process env only.
+  `scripts/art/sentry_env.py` reads the env. Never print the DSN.
+- PAL-8 Dewcave generate stays HOLD without a session. Do not invent PNG.
+
+Details: `docs/studio/art/ART_ENV.md`.
+
 ## Launch
 
 ```bash
