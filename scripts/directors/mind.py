@@ -38,15 +38,19 @@ from pathlib import Path
 from typing import Any, Callable
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
+_DIRECTORS_DIR = Path(__file__).resolve().parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
+if str(_DIRECTORS_DIR) not in sys.path:
+    sys.path.insert(0, str(_DIRECTORS_DIR))
 from lib import canonical_seat, skip_seats  # noqa: E402
+from linear_key import apply_linear_key_env  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 
 _SECRET_ASSIGN_RE = re.compile(
-    r"(?i)\b(CURSOR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
+    r"(?i)\b(CURSOR_API_KEY|LINEAR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
     r"server-key|ACP_SECRET|api[_-]?key)\s*[=:]\s*\S+"
 )
 _SESSION_IN_USE_RE = re.compile(
@@ -67,7 +71,7 @@ GROK_MIND_REASONING_EFFORT = "xhigh"  # extra-high
 class Plugin:
     """Fallback helper callable plus JSON schema. Not a second agent loop.
 
-    Grok sees tools via builtins, seat GROK_HOME taskboard MCP, and
+    Grok sees tools via builtins, seat GROK_HOME taskboard + Linear MCP, and
     `grok plugin install --trust` of `plugins/studio-mind` into that GROK_HOME.
     This dict stays for `call_plugin` / tests / the studio-mind MCP server.
     """
@@ -496,6 +500,7 @@ def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str,
     env["GCS_A2A_STATE"] = str(STATE_DIR)
     env["GROK_HOME"] = str(grok_home)
     env["GROK_MEMORY"] = "1"
+    apply_linear_key_env(env, state_dir=STATE_DIR)
     timeout_raw = os.environ.get("GCS_MIND_TURN_TIMEOUT", "").strip()
     timeout: float | None = float(timeout_raw) if timeout_raw else None
 
@@ -988,6 +993,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     seat = canonical_seat(args.seat, ROOT)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
+    apply_linear_key_env(os.environ, state_dir=STATE_DIR)
     if args.once:
         process_once(seat)
         return 0

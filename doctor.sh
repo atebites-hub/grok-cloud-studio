@@ -50,6 +50,9 @@ for p in \
   scripts/host/cursor-grok \
   scripts/launch-cloud-extra-high.sh \
   scripts/cloud/spawn-waiter.sh \
+  scripts/cloud/list.sh \
+  scripts/cloud/running-count.sh \
+  scripts/cloud/capacity.py \
   scripts/cloud/sdk/wait-notify.ts \
   scripts/cloud/webhook_receiver.py \
   scripts/mcp/gcs_mcp.py \
@@ -105,6 +108,14 @@ else
   printf 'WARN CURSOR_API_KEY unset (Extra High scripts need it)\n'
 fi
 
+if [[ -n "${LINEAR_API_KEY:-}" ]]; then
+  ok "LINEAR_API_KEY is set (value not printed)"
+elif [[ -f "${GCS_LINEAR_KEY_FILE:-${GCS_A2A_STATE:-$ROOT/.a2a-state}/linear.env}" ]]; then
+  ok "LINEAR_API_KEY file present (value not printed)"
+else
+  printf 'WARN LINEAR_API_KEY unset (Living Sky Linear MCP; never Black Swan Money)\n'
+fi
+
 if command -v grok >/dev/null 2>&1; then
   ok "grok CLI on PATH"
 else
@@ -153,6 +164,9 @@ _gcs_warn_workspace_folder_mcp() {
   [[ -f "$f" ]] || return 0
   if grep -F '${workspaceFolder}' "$f" >/dev/null 2>&1; then
     printf 'WARN seat MCP config contains ${workspaceFolder} (never expands; register stdio MCP in GROK_HOME/config.toml): %s\n' "$f"
+  fi
+  if ! grep -F '[mcp_servers.linear]' "$f" >/dev/null 2>&1; then
+    printf 'WARN seat MCP config missing Linear HTTP catalog (Living Sky; never Black Swan Money): %s\n' "$f"
   fi
 }
 mcp_configs=()

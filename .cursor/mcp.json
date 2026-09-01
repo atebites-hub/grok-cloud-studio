@@ -5,6 +5,12 @@
       "args": [
         "${workspaceFolder}/scripts/studio/taskboard/run-mcp.sh"
       ]
+    },
+    "linear": {
+      "url": "https://mcp.linear.app/mcp",
+      "headers": {
+        "Authorization": "Bearer ${LINEAR_API_KEY}"
+      }
     }
   }
 }

@@ -10,6 +10,11 @@ Hard rules:
   Target repo is GCS_CLOUD_REPO or CLOUD_REPO_URL (required). Model grok-4.6 effort=xhigh.
   Directors and leads spawn specialists only via scripts/launch-cloud-extra-high.sh.
   Do not mint local specialist seats (not a 49-specialist floor).
+  Fleet capacity: count latest-run runStatus (RUNNING/CREATING), not agent status ACTIVE.
+  ACTIVE+FINISHED leftovers are not workers. scripts/cloud/list-cloud-agents.sh prints runStatus.
+  If playability/art work is in progress and RUNNING Cursor Cloud count for GCS_CLOUD_REPO
+  is below GCS_CLOUD_RUNNING_CAP (default 8), you MUST cloud_launch. Do not burn Grok turns
+  implementing that work locally. scripts/cloud/running-count.sh --work "playability …"
   Launch auto-registers bc-id on your seat fleet ledger and spawns a background waiter
   (scripts/cloud/sdk/wait-notify.ts via run.wait). Do NOT block this session/prompt on watch-cloud-agent.sh.
 - On FLEET_DONE / PR_READY: collect with scripts/cloud/result-cloud-agent.sh <bc-id>; hand the PR to QA; no twin launch.

@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""Merge taskboard stdio MCP into an isolated GROK_HOME/config.toml.
+"""Merge taskboard stdio + Linear HTTP MCP into an isolated GROK_HOME/config.toml.
 
 Idempotent: a second write (or a grok rewrite that dropped the marker
 comments) must not append a duplicate `[compat.cursor]` /
-`[mcp_servers.taskboard]` table. Duplicate tables fail grok's TOML parse.
+`[mcp_servers.taskboard]` / `[mcp_servers.linear]` table. Duplicate tables
+fail grok's TOML parse.
+
+Linear is the Grok catalog form (`grok mcp add --transport http linear
+https://mcp.linear.app/mcp`), not a copy of Cursor `.cursor/mcp.json`.
+Palemon Linear is Living Sky (linear.app/livingsky, team Livingsky / LIV).
+Never Black Swan Money.
 
 Stdlib only.
 """
@@ -16,6 +22,9 @@ from pathlib import Path
 
 MARK_START = "# gcs-seat-taskboard-mcp"
 MARK_END = "# gcs-seat-taskboard-mcp-end"
+LINEAR_MARK_START = "# gcs-seat-linear-mcp"
+LINEAR_MARK_END = "# gcs-seat-linear-mcp-end"
+LINEAR_MCP_URL = "https://mcp.linear.app/mcp"
 
 _MARKED_BLOCK = re.compile(
     r"(?ms)^"
@@ -24,10 +33,20 @@ _MARKED_BLOCK = re.compile(
     + re.escape(MARK_END)
     + r"[ \t]*\n?"
 )
+_LINEAR_MARKED_BLOCK = re.compile(
+    r"(?ms)^"
+    + re.escape(LINEAR_MARK_START)
+    + r"[ \t]*\n.*?^"
+    + re.escape(LINEAR_MARK_END)
+    + r"[ \t]*\n?"
+)
 _MARK_LINE = re.compile(
     r"(?m)^" + re.escape(MARK_START) + r"(?:-end)?[ \t]*\n?"
 )
-_OWNED_TABLES = ("compat.cursor", "mcp_servers.taskboard")
+_LINEAR_MARK_LINE = re.compile(
+    r"(?m)^" + re.escape(LINEAR_MARK_START) + r"(?:-end)?[ \t]*\n?"
+)
+_OWNED_TABLES = ("compat.cursor", "mcp_servers.taskboard", "mcp_servers.linear")
 
 
 def q(value: str) -> str:
@@ -44,6 +63,19 @@ def mcp_block(command: str, db: str) -> str:
         f"command = {q(command)}\n"
         f"args = [{q('--db')}, {q(db)}, {q('mcp')}]\n"
         f"{MARK_END}\n"
+    )
+
+
+def linear_block() -> str:
+    """Grok HTTP catalog Linear. ${LINEAR_API_KEY} expands at grok load time."""
+    return (
+        f"{LINEAR_MARK_START}\n"
+# Palemon Linear: Living Sky (linear.app/livingsky) team Livingsky / LIV. Never Black Swan Money.
+        "[mcp_servers.linear]\n"
+        f"url = {q(LINEAR_MCP_URL)}\n"
+        'headers = { Authorization = "Bearer ${LINEAR_API_KEY}", '
+        '"x-mcp-session-id" = "{{session_id}}" }\n'
+        f"{LINEAR_MARK_END}\n"
     )
 
 
@@ -65,7 +97,7 @@ def _owned_header(header: str) -> bool:
 
 
 def strip_owned_toml_tables(text: str) -> str:
-    """Drop `[compat.cursor]` and `[mcp_servers.taskboard]` even without markers."""
+    """Drop GCS-owned MCP tables even without markers."""
     out: list[str] = []
     dropping = False
     for line in text.splitlines(keepends=True):
@@ -83,13 +115,42 @@ def _collapse_blank_lines(text: str) -> str:
     return text.strip()
 
 
+def merge_seat_linear_mcp(text: str) -> str:
+    """Return config.toml with exactly one marked Linear HTTP MCP block."""
+    text = _LINEAR_MARKED_BLOCK.sub("", text or "")
+    text = _LINEAR_MARK_LINE.sub("", text)
+    text = _strip_linear_tables(text)
+    text = _collapse_blank_lines(text)
+    block = linear_block()
+    if text:
+        return text + "\n\n" + block
+    return block
+
+
+def _strip_linear_tables(text: str) -> str:
+    out: list[str] = []
+    dropping = False
+    for line in text.splitlines(keepends=True):
+        header = _header_name(line)
+        if header is not None:
+            dropping = header == "mcp_servers.linear" or header.startswith(
+                "mcp_servers.linear."
+            )
+        if dropping:
+            continue
+        out.append(line)
+    return "".join(out)
+
+
 def merge_seat_taskboard_mcp(text: str, command: str, db: str) -> str:
-    """Return config.toml with exactly one marked taskboard MCP block."""
+    """Return config.toml with one taskboard block and one Linear HTTP block."""
     text = _MARKED_BLOCK.sub("", text or "")
     text = _MARK_LINE.sub("", text)
+    text = _LINEAR_MARKED_BLOCK.sub("", text)
+    text = _LINEAR_MARK_LINE.sub("", text)
     text = strip_owned_toml_tables(text)
     text = _collapse_blank_lines(text)
-    block = mcp_block(command, db)
+    block = mcp_block(command, db) + "\n" + linear_block()
     if text:
         return text + "\n\n" + block
     return block
