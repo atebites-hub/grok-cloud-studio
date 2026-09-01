@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import os
+import signal
 import socket
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -14,8 +16,10 @@ RECOVER = REPO / "recover.sh"
 SETUP = REPO / "setup.sh"
 INSTALL = REPO / "install.sh"
 DOCTOR = REPO / "doctor.sh"
+BUS = REPO / "scripts" / "a2a" / "start-studio-bus.sh"
 WIPE = REPO / "docs" / "studio" / "WIPE.md"
 README = REPO / "README.md"
+STUDIO_ENV_EXAMPLE = REPO / "studio.env.example"
 
 PRIVATE_GAME = "atebites-hub/" + "palemon"
 
@@ -47,6 +51,7 @@ def _base_env(tmp_path: Path, state: Path) -> dict[str, str]:
         "GCS_A2A_STATE": str(state),
         "GCS_MIND_SEATS": "",
         "GCS_BOT_BIND_OPTIONAL": "1",
+        "GCS_START_SEAT_DAEMONS": "0",
         "LC_ALL": "C",
         "TERM": "dumb",
         "CURSOR_API_KEY": "test-cursor-api-key-health-not-leaked",
@@ -159,6 +164,17 @@ def test_recover_uses_official_scripts_without_daemons() -> None:
     assert "RECOVER_OK" in text
     assert "health_check.sh" in text
     assert "acp_inject.py" not in text
+    assert "launch-cloud-extra-high" not in text
+    bus = BUS.read_text(encoding="utf-8")
+    assert "GCS_BOT_BRIDGE" in bus
+    assert "want_bot_bridge" in bus
+    # recover must not force the bridge on (Bot seats stay standby).
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        assert "GCS_BOT_BRIDGE=1" not in stripped
+        assert "export GCS_BOT_BRIDGE=1" not in stripped
 
 
 def test_wipe_names_health_recover_dr_loop() -> None:
@@ -305,3 +321,140 @@ def test_recover_restarts_only_what_is_down(tmp_path: Path) -> None:
         assert "start-studio-bus.sh" not in blob
     finally:
         hub.shutdown()
+
+
+def _spawn_sleep() -> subprocess.Popen[bytes]:
+    return subprocess.Popen(
+        ["sleep", "60"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def _write_pid(path: Path, proc: subprocess.Popen[bytes]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{proc.pid}\n", encoding="utf-8")
+
+
+def _reap_proc(proc: subprocess.Popen[bytes] | None) -> None:
+    if proc is None or proc.poll() is not None:
+        return
+    proc.kill()
+    try:
+        proc.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _reap_pid(pid: int) -> None:
+    if pid <= 0:
+        return
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except OSError:
+        return
+    for _ in range(20):
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return
+        time.sleep(0.05)
+
+
+def _pidfile_pid(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    try:
+        return int(path.read_text(encoding="utf-8").strip().split()[0])
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def _reap_pidfile(path: Path) -> None:
+    _reap_pid(_pidfile_pid(path))
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _plant_leftover_bus(state: Path, *, bot_bridge: bool) -> dict[str, subprocess.Popen[bytes]]:
+    state.mkdir(parents=True, exist_ok=True)
+    procs: dict[str, subprocess.Popen[bytes]] = {
+        "hub": _spawn_sleep(),
+        "dispatch": _spawn_sleep(),
+        "shepherd": _spawn_sleep(),
+    }
+    _write_pid(state / "hub.pid", procs["hub"])
+    _write_pid(state / "dispatch.pid", procs["dispatch"])
+    _write_pid(state / "fleet-shepherd.pid", procs["shepherd"])
+    (state / "dispatch.mind-seats").write_text("\n", encoding="utf-8")
+    if bot_bridge:
+        procs["bot-bridge"] = _spawn_sleep()
+        _write_pid(state / "bot-bridge.pid", procs["bot-bridge"])
+    return procs
+
+
+def _reap_bus_state(
+    procs: dict[str, subprocess.Popen[bytes]], state: Path
+) -> None:
+    for name in ("hub", "dispatch", "fleet-shepherd", "bot-bridge"):
+        _reap_pidfile(state / f"{name}.pid")
+    for proc in procs.values():
+        _reap_proc(proc)
+
+
+def test_recover_does_not_restart_live_bot_bridge_pid(tmp_path: Path) -> None:
+    """Live leftover bot-bridge.pid must survive recover.sh / start-studio-bus start."""
+    state = tmp_path / "a2a-state"
+    procs = _plant_leftover_bus(state, bot_bridge=True)
+    leftover = procs["bot-bridge"].pid
+    env = _base_env(tmp_path, state)
+    env["PATH"] = os.environ.get("PATH", "/usr/bin:/bin")
+    env["GCS_A2A_PORT"] = str(_free_port())
+    env["GCS_TASKBOARD_UI_PORT"] = str(_free_port())
+    env["GCS_TASKBOARD_MCP_PORT"] = str(_free_port())
+    try:
+        proc = _run(RECOVER, [], env, timeout=30)
+        blob = proc.stdout + proc.stderr
+        assert "RECOVER_OK" in blob, blob
+        assert "STUDIO_BUS_BOT_BRIDGE_ALREADY" in blob, blob
+        assert f"pid={leftover}" in blob, blob
+        assert "STUDIO_BUS_BOT_BRIDGE_START" not in blob, blob
+        assert "STUDIO_BUS_BOT_BRIDGE_STOP" not in blob, blob
+        assert procs["bot-bridge"].poll() is None
+        assert _pidfile_pid(state / "bot-bridge.pid") == leftover
+        assert _pid_alive(leftover)
+    finally:
+        _reap_bus_state(procs, state)
+
+
+def test_recover_does_not_start_bot_bridge_unless_opted_in(tmp_path: Path) -> None:
+    """Kill-after-RECOVER is a bug: recover must not spawn bot-bridge by default."""
+    state = tmp_path / "a2a-state"
+    procs = _plant_leftover_bus(state, bot_bridge=False)
+    env = _base_env(tmp_path, state)
+    env["PATH"] = os.environ.get("PATH", "/usr/bin:/bin")
+    env["GCS_A2A_PORT"] = str(_free_port())
+    env["GCS_TASKBOARD_UI_PORT"] = str(_free_port())
+    env["GCS_TASKBOARD_MCP_PORT"] = str(_free_port())
+    try:
+        proc = _run(RECOVER, [], env, timeout=30)
+        blob = proc.stdout + proc.stderr
+        assert "RECOVER_OK" in blob, blob
+        assert "STUDIO_BUS_BOT_BRIDGE_START" not in blob, blob
+        assert "STUDIO_BUS_BOT_BRIDGE_SKIP" in blob, blob
+        assert "standby" in blob.lower(), blob
+        pid = _pidfile_pid(state / "bot-bridge.pid")
+        assert not _pid_alive(pid), f"default recover spawned bot-bridge pid={pid}"
+        studio = STUDIO_ENV_EXAMPLE.read_text(encoding="utf-8")
+        assert "GCS_BOT_BRIDGE=0" in studio
+    finally:
+        _reap_bus_state(procs, state)

@@ -229,7 +229,7 @@ def _bind() -> int:
         entry["name"] = agent_name.strip()
     entry.setdefault(
         "note",
-        "Orchestrator Bot. Put Bot seats in registry skipSeats; bot-bridge wakes via bot-wake artifacts. Not an ACP inject target.",
+        "Orchestrator Bot. Put Bot seats in registry skipSeats. bot-bridge is opt-in (GCS_BOT_BRIDGE=1). Not an ACP inject target. Never a Cursor CloudAgent.",
     )
     seats[seat] = entry
     bots["seats"] = seats

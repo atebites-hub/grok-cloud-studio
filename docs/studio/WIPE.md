@@ -24,7 +24,8 @@ to be up: probe live hub `/health`, taskboard `:3010`, mcp-http `:3011`, and
 each `GCS_MIND_SEATS` mind pid; restart only the down pieces via
 `start-studio-bus.sh start` (NO `--daemons`), `start-taskboard.sh start`, and
 `mcp-http.sh start`. Do not remint sessions. Do not wipe state. Do not launch
-Cursor Cloud. Tailscale missing is WARN, not FAIL.
+Cursor Cloud. Do not remint a live bot-bridge pid; bot-bridge stays off unless
+`GCS_BOT_BRIDGE=1`. Tailscale missing is WARN, not FAIL.
 
 Default cleanup does not delete `studio.env`, `.env`, grok login, Cursor
 login, inboxes, or pins. `CLEANUP_WIPE_STATE=1 ./cleanup.sh` also stops
@@ -148,7 +149,9 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    scripts/a2a/start-studio-bus.sh start
    ```
 
-   That is hub + leftover dispatch + bot-bridge + shepherd + **mind loops**.
+   That is hub + leftover dispatch + shepherd + **mind loops**.
+   **bot-bridge stays off** unless `GCS_BOT_BRIDGE=1` (Bot seats standby).
+   A live leftover `bot-bridge.pid` is not reminted. Bot is not a Cursor CloudAgent.
    It does **not** spawn `grok agent serve` per seat. Never auto-spawn a
    13-seat grok serve floor on a ~15GB box.
 

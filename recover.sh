@@ -17,7 +17,9 @@ usage() {
 Usage: recover.sh [--help]
 
 Restart only what health_check would mark down:
-  hub or mind pid down -> scripts/a2a/start-studio-bus.sh start   (NO --daemons)
+  hub or mind pid down -> scripts/a2a/start-studio-bus.sh start   (NO --daemons;
+                         do not restart a live bot-bridge pid; Bot seats stay
+                         standby unless studio.env already opted the bridge in)
   taskboard :3010 down -> scripts/studio/taskboard/start-taskboard.sh start
   mcp-http :3011 down  -> scripts/studio/taskboard/mcp-http.sh start
 
@@ -79,6 +81,8 @@ recover_start() {
 
 if [[ "$need_bus" -eq 1 ]]; then
   # Crash-safe: never pass --daemons. Do not remint. Do not wipe state.
+  # Do not enable bot-bridge. Do not kill a live leftover bot-bridge pid.
+  # Bot seats stay standby unless studio.env already opted the bridge in.
   recover_start bus "$ROOT/scripts/a2a/start-studio-bus.sh" start
 fi
 if [[ "$need_tb" -eq 1 ]]; then
