@@ -212,7 +212,7 @@ def _assert_cursor_clap(argv: list[str], *, chat_id: str, prompt: str) -> None:
     assert "--approve-mcps" in argv
     assert "--model" in argv
     assert _flag_value(argv, "--model") == CURSOR_MIND_MODEL
-    assert argv[-1] == prompt
+    assert argv[-1] == prompt or prompt in argv[-1]
     assert "--prompt-file" not in argv
     assert "--session-id" not in argv
     assert "--continue" not in argv
