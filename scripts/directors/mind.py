@@ -405,7 +405,7 @@ def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
     """scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT.
 
     --name REFUSE if a live runStatus=RUNNING Extra High already has that name.
-    Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent.
+    Leftover ACTIVE+FINISHED does not block. Never a Grok Bot grunt runtime.
     """
     script = ROOT / "scripts" / "launch-cloud-extra-high.sh"
     if not script.is_file():
