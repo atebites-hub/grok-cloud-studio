@@ -13,7 +13,11 @@ GROK_HOME=$GCS_A2A_STATE/<seat>/grok-home \
 `--plugin-dir` is a grok **agent** flag and cannot go on headless `grok`
 (`--prompt-file` / `--resume`). `--trust` belongs on `plugin install`, not on
 the mind argv. Already-installed / idempotent reinstall is success
-(`MIND_PLUGIN_OK`), not `reason=install-fail`. If install is skipped (no grok,
+(`MIND_PLUGIN_OK`), not `reason=install-fail`. Install stamps
+`$GROK_HOME/gcs-root` with `GCS_ROOT` so the copied `server.py` still imports
+repo scripts. `mcp.json` runs `python3 -u server.py`. The MCP handshake must
+not close on `initialize`: stay connected through `notifications/initialized`
+then `tools/list` on the same stdio pid. If install is skipped (no grok,
 missing dir, genuine fail), mind is MCP-only: seat `GROK_HOME/config.toml`
 still owns taskboard stdio MCP (`taskboard --db`).
 

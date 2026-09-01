@@ -234,6 +234,8 @@ install_studio_mind_plugin() {
   # on grok --prompt-file. Failure is MCP-only: taskboard is already in
   # GROK_HOME/config.toml. Never abort the mind loop. Already-installed and
   # idempotent reinstall are success (MIND_PLUGIN_OK), not install-fail.
+  # Stamp GROK_HOME/gcs-root with GCS_ROOT so the copied server.py can import
+  # repo scripts after initialize (handshake must not close).
   local seat="${1:-}"
   local plugin gh grok_bin out rc=0
   plugin="$ROOT/plugins/studio-mind"
@@ -242,16 +244,17 @@ install_studio_mind_plugin() {
     echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=missing-dir mcp-only" >&2
     return 0
   fi
-  grok_bin="$(command -v grok 2>/dev/null || true)"
-  if [[ -z "$grok_bin" ]]; then
-    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-grok mcp-only" >&2
-    return 0
-  fi
   if [[ -z "$gh" ]]; then
     echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-GROK_HOME mcp-only" >&2
     return 0
   fi
   mkdir -p "$gh"
+  printf '%s\n' "$ROOT" >"$gh/gcs-root" || true
+  grok_bin="$(command -v grok 2>/dev/null || true)"
+  if [[ -z "$grok_bin" ]]; then
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-grok mcp-only" >&2
+    return 0
+  fi
   plugin="$(_gcs_abs_path "$plugin")"
   out="$(GROK_HOME="$gh" "$grok_bin" plugin install "$plugin" --trust 2>&1)" && rc=0 || rc=$?
   if [[ -n "$out" ]]; then

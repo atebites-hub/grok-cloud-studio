@@ -7,7 +7,8 @@ Primary (Python stdio MCP + Cursor plugin manifests):
 
 Grok `--plugin-dir` is a grok **agent** flag (not headless). Opted-in seat mind
 installs this plugin into seat `GROK_HOME` via `grok plugin install --trust`
-(see `docs/studio/MIND.md`):
+(see `docs/studio/MIND.md`). The copied stdio server must not close on
+`initialize`:
 
 - `plugins/studio-mind` — `ticket`, `a2a_send`, `cloud_launch`
 

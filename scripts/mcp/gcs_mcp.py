@@ -7,6 +7,9 @@ Planes:
   --plane all     both (default)
 
 Framing: Content-Length (MCP) or NDJSON when GCS_MCP_NDJSON=1.
+A first stdin line that starts with `{` latches NDJSON for the session
+so initialize still replies when the client omits Content-Length.
+Initialize is not shutdown: stay on the pipe until stdin EOF.
 Never prints credentials.
 """
 from __future__ import annotations
@@ -28,6 +31,9 @@ import lib  # noqa: E402
 PROTOCOL = "2024-11-05"
 SERVER_NAME = "gcs-mcp"
 SERVER_VERSION = "1.0.0"
+# None = not yet seen a frame. First `{` line latches NDJSON for the session
+# so initialize replies match the client even when GCS_MCP_NDJSON is unset.
+_stdio_ndjson: bool | None = None
 
 
 def a2a_tools() -> list[dict[str, Any]]:
@@ -166,6 +172,7 @@ def handle(msg: dict[str, Any], plane: str) -> dict[str, Any] | None:
     method = msg.get("method")
     req_id = msg.get("id")
     if method == "initialize":
+        # Reply and keep serving. Do not close stdio after this result.
         return {
             "jsonrpc": "2.0",
             "id": req_id,
@@ -199,8 +206,9 @@ def handle(msg: dict[str, Any], plane: str) -> dict[str, Any] | None:
 
 
 def write_message(obj: dict[str, Any], ndjson: bool) -> None:
+    use_ndjson = _stdio_ndjson if _stdio_ndjson is not None else ndjson
     blob = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-    if ndjson:
+    if use_ndjson:
         sys.stdout.buffer.write(blob + b"\n")
     else:
         header = f"Content-Length: {len(blob)}\r\n\r\n".encode("ascii")
@@ -209,16 +217,25 @@ def write_message(obj: dict[str, Any], ndjson: bool) -> None:
 
 
 def read_message(ndjson: bool) -> dict[str, Any] | None:
-    if ndjson:
+    global _stdio_ndjson
+    if _stdio_ndjson is True or (ndjson and _stdio_ndjson is None):
+        _stdio_ndjson = True
         line = sys.stdin.buffer.readline()
         if not line:
             return None
         return json.loads(line.decode("utf-8"))
     headers: dict[str, str] = {}
+    first = True
     while True:
         raw = sys.stdin.buffer.readline()
         if not raw:
             return None
+        if first:
+            first = False
+            if raw.lstrip().startswith(b"{"):
+                _stdio_ndjson = True
+                return json.loads(raw.decode("utf-8"))
+            _stdio_ndjson = False
         if raw in (b"\r\n", b"\n"):
             break
         line = raw.decode("utf-8", errors="replace").strip()
