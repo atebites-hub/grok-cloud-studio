@@ -182,7 +182,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 "ok": True,
                 "id": bc_id,
                 "seat": seat,
-                "notified_by": "webhook",
+                "notified_by": row.get("notified_by") or "webhook",
                 "status": status,
                 "ledger": {"status": row.get("status"), "notified": row.get("notified")},
             },
