@@ -9,6 +9,7 @@ import {
   mapRunStatus,
   safeError,
 } from "./common.ts";
+import { attachShipGate } from "./pr-checks.ts";
 
 const TERMINAL = new Set(["FINISHED", "ERROR", "CANCELLED", "EXPIRED"]);
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -206,12 +207,20 @@ async function main(): Promise<void> {
   const apiKey = loadApiKey();
   process.stdout.write(`CLOUD_WAITER_START id=${agentId} run=${runId || "latest"}\n`);
   try {
-    const payload = preferRest()
-      ? await restPoll(agentId, runId, apiKey)
-      : await sdkWait(agentId, runId, apiKey);
+    const payload = await attachShipGate(
+      preferRest() ? await restPoll(agentId, runId, apiKey) : await sdkWait(agentId, runId, apiKey),
+    );
     ledgerNotify(agentId, payload);
+    const checkTag =
+      typeof payload.checkRuns === "number"
+        ? ` check_runs=${payload.checkRuns}`
+        : payload.emptyChecks === true
+          ? " check_runs=0"
+          : "";
+    const gateTag =
+      payload.shipGateOk === true ? " shipGate=ok" : payload.emptyChecks === true ? " shipGate=empty" : "";
     process.stdout.write(
-      `CLOUD_WAITER_DONE id=${agentId} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"}\n`,
+      `CLOUD_WAITER_DONE id=${agentId} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"}${checkTag}${gateTag}\n`,
     );
   } catch (err) {
     console.error(`CLOUD_WAITER_ERR id=${agentId} ${safeError(err)}`);

@@ -20,11 +20,21 @@ from pathlib import Path
 from typing import Any
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
+_CLOUD_DIR = Path(__file__).resolve().parent
+if str(_CLOUD_DIR) not in sys.path:
+    sys.path.insert(0, str(_CLOUD_DIR))
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from lib import env_first, pid_alive, repo_root, state_root  # noqa: E402
+from ship_gate_evidence import (  # noqa: E402
+    payload_empty_checks,
+    payload_ship_gate_ok,
+    resolve_ship_gate,
+    should_hold_empty_checks,
+)
 
 TERMINAL = frozenset({"FINISHED", "ERROR", "CANCELLED", "EXPIRED"})
+MERGE_READY = "ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST"
 
 
 def _now() -> str:
@@ -172,6 +182,7 @@ def notify_owner(
     """
     hit = find_by_bc(bc_id)
     seat_name = seat or (hit[0] if hit else _seat_name())
+    payload = resolve_ship_gate(dict(payload))
     text = notify_text(bc_id, payload)
     ok = ping_seat(seat_name, text)
     if not ok:
@@ -185,11 +196,31 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
     name = payload.get("name") or ""
     url = payload.get("url") or f"https://cursor.com/agents/{bc_id}"
     if run_status == "FINISHED":
+        if should_hold_empty_checks(payload):
+            check_runs = payload.get("checkRuns")
+            if check_runs is None:
+                check_runs = payload.get("check_runs", 0)
+            mergeable = (
+                payload.get("mergeableState")
+                or payload.get("mergeable_state")
+                or "unknown"
+            )
+            return (
+                f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
+                f"runStatus=FINISHED pr={pr} check_runs={check_runs} "
+                f"mergeable={mergeable} url={url}. "
+                f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
+                f"Empty GitHub checks are not evidence "
+                f"(MERGEABLE is not a substitute). "
+                f"Need pull_request ship-gate: .venv/bin/pytest -q AND "
+                f"python3 scripts/secret_scan.py. "
+                f"Do not ping QA MERGE_REQUEST. RESULT with bc-id + pr."
+            )
         return (
             f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
             f"runStatus=FINISHED pr={pr} url={url}. "
             f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
-            f"If pr is a URL: ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST; "
+            f"If pr is a URL: {MERGE_READY}; "
             f"do not launch a twin. RESULT with bc-id + pr."
         )
     return (
@@ -225,6 +256,10 @@ def complete(
     assert row is not None
     row["run_status"] = str(payload.get("runStatus") or payload.get("status") or "")
     row["pr_url"] = payload.get("prUrl")
+    if payload.get("emptyChecks") is not None or payload.get("empty_checks") is not None:
+        row["empty_checks"] = payload_empty_checks(payload)
+    if payload.get("shipGateOk") is not None or payload.get("ship_gate_ok") is not None:
+        row["ship_gate_ok"] = payload_ship_gate_ok(payload)
     row["notified"] = True
     row["status"] = "closed"
     row["notified_by"] = notified_by
