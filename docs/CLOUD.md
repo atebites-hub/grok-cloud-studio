@@ -94,6 +94,13 @@ Empty GitHub leftover-green is not MERGE_REQUEST evidence. QA squash requires pa
 
 `scripts/cloud/list.sh` / `list-cloud-agents.sh` print agent `status` (membership, often `ACTIVE`) and latest-run `runStatus` (`RUNNING` vs `FINISHED`). Agent `ACTIVE` is not a live worker. Leftover `ACTIVE`+`FINISHED` must not count as live. REST `list.sh --limit` walks `nextCursor` beyond the API **limit=100** page cap (SDK `list.ts` already did). A catalog page error is fail-closed — never a partial list that looks like `running=0`.
 
+`--repo org/name` (or a full `https://github.com/org/name` URL, `.git` suffix, or SSH form) keeps one bound git remote so Directors can count live `runStatus=RUNNING` per bound repo. List items omit `repos`; the filter loads `GET /v1/agents/{id}` (fallback: run `git.branches[].repoUrl`). Unbound agents are dropped when `--repo` is set. Palemon Linear is Living Sky (`LIV`), not Black Swan.
+
+```bash
+scripts/cloud/list-cloud-agents.sh --repo org/name
+scripts/cloud/list.sh --repo https://github.com/ORG/REPO
+```
+
 Wait-notify (`scripts/cloud/sdk/wait-notify.ts`) GETs `GET /v1/agents/{id}/runs` and A2A-pings `FLEET_DONE` only when the **latest** run is terminal, including waiter/context return from `result`. Leftover `FINISHED` while a newer run is `CREATING`/`RUNNING` is not done. Distinct from occupancy listRuns counts and paginated agent catalog. Never Bot CloudAgent.
 
 Occupancy catalog (`scripts/cloud/occupancy-count.sh`) paginates `Agent.list` / REST `GET /v1/agents` via `nextCursor` beyond the API **limit=100** page cap (hive dump was **439**). `count-running` / occupancy-count **fail-closed** if a page errors — never fake `running=0` from a partial catalog. Existence ACTIVE is not liveness. Palemon Linear is Living Sky (`LIV`).

@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # List Cursor Cloud agents (newest first). SDK-first; REST fallback.
-# Usage: list.sh [--limit N]   or   list.sh [N]
+# Usage: list.sh [--limit N] [--repo org/name|https://github.com/org/name]
+#        list.sh [N]
 # Each row prints agent status and latest-run runStatus. Never prints API keys.
 # REST walks nextCursor when --limit exceeds the API page cap (100).
+# Count runStatus=RUNNING for --repo. Leftover ACTIVE is not capacity.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,6 +12,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HERE}/_common.sh"
 
 limit="${CLOUD_LIST_LIMIT:-20}"
+repo=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --limit)
@@ -20,9 +23,24 @@ while [[ $# -gt 0 ]]; do
       limit="${1#--limit=}"
       shift
       ;;
+    --repo)
+      if [[ $# -lt 2 ]]; then
+        echo "error: --repo requires org/name or https URL" >&2
+        exit 1
+      fi
+      repo="$2"
+      shift 2
+      ;;
+    --repo=*)
+      repo="${1#--repo=}"
+      shift
+      ;;
     -h|--help)
-      echo "Usage: scripts/cloud/list.sh [--limit N]"
-      echo "       scripts/cloud/list-cloud-agents.sh [limit=20]"
+      echo "Usage: scripts/cloud/list.sh [--limit N] [--repo org/name|https://github.com/org/name]"
+      echo "       scripts/cloud/list-cloud-agents.sh [--limit N] [--repo org/name]"
+      echo "Each row prints status= (membership) and runStatus= (latest run)."
+      echo "Count runStatus=RUNNING for the bound repo. Leftover ACTIVE is not capacity."
+      echo "REST walks nextCursor when --limit exceeds the API page cap (100)."
       exit 0
       ;;
     *)
@@ -42,10 +60,19 @@ if ! cloud_load_auth; then
   exit 1
 fi
 
-if cloud_sdk_exec list "$limit"; then
+sdk_args=(list --limit "$limit")
+if [[ -n "$repo" ]]; then
+  sdk_args+=(--repo "$repo")
+fi
+if cloud_sdk_exec "${sdk_args[@]}"; then
   exit "$CLOUD_SDK_RC"
 fi
 
 # REST: paginate GET /v1/agents via nextCursor (API max page 100). Fail-closed
 # on a page error — never a partial list that looks like running=0.
-python3 "${HERE}/list_rows.py" --limit "$limit"
+# --repo loads GET /v1/agents/{id} for bound repos (list items omit repos).
+if [[ -n "$repo" ]]; then
+  python3 "${HERE}/list_rows.py" --limit "$limit" --repo "$repo"
+else
+  python3 "${HERE}/list_rows.py" --limit "$limit"
+fi
