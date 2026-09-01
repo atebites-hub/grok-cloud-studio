@@ -13,4 +13,4 @@ Public control plane for Grok Build CLI Directors and Cursor Cloud Extra High gr
 - Board is tcarac/taskboard (ticket CLI + HTTP `/mcp`). Agent Kanban was removed.
 - Palemon studio wipe: `docs/studio/WIPE.md` (`studio.env.example` → `$GCS_A2A_STATE/studio.env`; board scripts under `scripts/studio/taskboard/`; `start-studio-bus.sh start` with **no** `--daemons`).
 - Director prompts: `prompts/` or `docs/studio/directors/*_director_prompt.txt` (`GCS_PROMPT_DIR`). Remint must resolve either layout.
-- Ship gate: `.venv/bin/pytest -q` and `python3 scripts/secret_scan.py`.
+- Ship gate: `.venv/bin/pytest -q` and `python3 scripts/secret_scan.py`. Empty GitHub checks (`check_runs=0`) are not evidence; MERGEABLE is not a substitute. GCS #62 owns the Actions `pull_request` workflow; do not remint it.
