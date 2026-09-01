@@ -14,4 +14,6 @@ Target git repo is **required** via `GCS_CLOUD_REPO` or `CLOUD_REPO_URL`. Auth i
 grok plugin install ./plugins/cursor-cloud --trust
 ```
 
-Stdio server: `python3 plugins/cursor-cloud/server.py`.
+Stdio server: `python3 -u plugins/cursor-cloud/server.py` (`GCS_ROOT` or
+`GROK_HOME/gcs-root` after grok copies this dir). Grok `plugin.json`, not
+Hermes `plugin.yaml`. Extra High only. Not Bot CloudAgent.

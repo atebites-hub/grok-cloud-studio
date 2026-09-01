@@ -15,6 +15,8 @@ From the Grok Cloud Studio repo root:
 grok plugin install ./plugins/a2a --trust
 ```
 
-Stdio server: `python3 plugins/a2a/server.py` (Content-Length JSON-RPC).
+Stdio server: `python3 -u plugins/a2a/server.py` (Content-Length JSON-RPC;
+`GCS_ROOT` or `GROK_HOME/gcs-root` after grok copies this dir). Grok
+`plugin.json`, not Hermes `plugin.yaml`.
 
 Requires the studio bus: `scripts/a2a/start-studio-bus.sh start`.

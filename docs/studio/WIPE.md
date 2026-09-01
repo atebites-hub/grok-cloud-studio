@@ -54,9 +54,10 @@ advances only on runner exit 0.
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
 - Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio
-  `taskboard --db $GCS_TASKBOARD_DB mcp`) plus `grok plugin install --trust`
-  of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok
-  usage is back.
+  `taskboard --db $GCS_TASKBOARD_DB mcp`) plus grok-bot-like
+  `grok plugin install --trust` of `plugins/studio-mind`, `plugins/a2a`,
+  and `plugins/cursor-cloud` (`plugin.json`; `GROK_HOME/gcs-root` stamp).
+  Do not vendor hermes-agent.
 - Cursor CLI catalog: repo `.cursor/mcp.json` wrapping
   `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no
   `GROK_HOME`). Higgsfield is Cursor catalog login when the runner is Cursor

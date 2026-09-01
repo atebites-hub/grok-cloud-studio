@@ -54,7 +54,10 @@ for p in \
   scripts/cloud/webhook_receiver.py \
   scripts/mcp/gcs_mcp.py \
   plugins/a2a/.cursor-plugin/plugin.json \
+  plugins/a2a/plugin.json \
   plugins/cursor-cloud/.cursor-plugin/plugin.json \
+  plugins/cursor-cloud/plugin.json \
+  plugins/studio-mind/plugin.json \
   docs/a2a/registry.json \
   docs/a2a/bot-agents.json \
   scripts/a2a/bind-bot-agent.sh \
