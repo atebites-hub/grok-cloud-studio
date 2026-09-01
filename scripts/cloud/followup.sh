@@ -37,6 +37,9 @@ fi
 if ! cloud_load_auth; then
   fail_followup "error: CURSOR_API_KEY is not set (export it or add it to ~/.config/cursor/agent.env)"
 fi
+if ! python3 "${HERE}/extra_high_pin.py"; then
+  fail_followup "error: Extra High model pin rejected (grok-4.6 xhigh fast=false only)"
+fi
 
 if cloud_sdk_exec followup "$agent_id" "$prompt"; then
   exit "$CLOUD_SDK_RC"

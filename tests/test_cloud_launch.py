@@ -204,8 +204,8 @@ def test_launch_posts_parameterized_repo(tmp_path: Path) -> None:
     assert body["name"] == "gcs-eh-test"
 
 
-def test_launch_ignores_cursor_cloud_model_override(tmp_path: Path) -> None:
-    """CURSOR_CLOUD_MODEL must not leak Opus/Auto onto Extra High create (LIV-67)."""
+def test_launch_rejects_non_grok_cursor_cloud_model(tmp_path: Path) -> None:
+    """Non-grok CURSOR_CLOUD_MODEL cannot create (LIV-67 / LIV-69). Opus must never run."""
     with MockCursorAPI(create_http=201) as api:
         proc = _run(
             LAUNCH,
@@ -215,16 +215,34 @@ def test_launch_ignores_cursor_cloud_model_override(tmp_path: Path) -> None:
                 api.base,
                 CURSOR_API_KEY=FAKE_KEY,
                 CURSOR_CLOUD_MODEL="claude-opus-4.5-thinking",
-                CURSOR_CLOUD_EFFORT="low",
             ),
         )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    body = api.posts[0]["body"]
-    assert body["model"]["id"] == "grok-4.6"
-    params = {(p["id"], p["value"]) for p in body["model"]["params"]}
-    assert ("effort", "xhigh") in params
-    assert ("fast", "false") in params
-    assert "claude" not in json.dumps(body).lower()
+    assert proc.returncode != 0
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    assert "CLOUD_BLOCKED" in proc.stderr
+    assert not api.posts
+
+
+def test_followup_rejects_non_grok_cursor_cloud_model(tmp_path: Path) -> None:
+    """Non-grok CURSOR_CLOUD_MODEL cannot send (LIV-67)."""
+    followup = REPO / "scripts" / "cloud" / "followup.sh"
+    with MockCursorAPI(followup_http=201) as api:
+        proc = _run(
+            followup,
+            ["bc-mock", "Continue the assigned outcome."],
+            _script_env(
+                tmp_path,
+                api.base,
+                CURSOR_API_KEY=FAKE_KEY,
+                CURSOR_CLOUD_MODEL="claude-opus-4.5-thinking",
+            ),
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_FOLLOWUP_ERR" in proc.stdout
+    assert "CLOUD_FOLLOWUP_OK" not in proc.stdout
+    assert "CLOUD_BLOCKED" in proc.stderr
+    assert not api.posts
 
 
 def test_followup_rest_pins_grok_46_xhigh(tmp_path: Path) -> None:

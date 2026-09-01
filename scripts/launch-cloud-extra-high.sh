@@ -95,6 +95,9 @@ fi
 if ! cloud_load_auth; then
   fail_launch "error: CURSOR_API_KEY is not set (export it or add it to ~/.config/cursor/agent.env)"
 fi
+if ! python3 "${SCRIPT_DIR}/cloud/extra_high_pin.py"; then
+  fail_launch "error: Extra High model pin rejected (grok-4.6 xhigh fast=false only)"
+fi
 
 CLOUD_REPO="$(python3 "${SCRIPT_DIR}/a2a/lib.py" cloud-repo)" || fail_launch "error: GCS_CLOUD_REPO or CLOUD_REPO_URL is required"
 CLOUD_REF="$(python3 "${SCRIPT_DIR}/a2a/lib.py" cloud-ref)"
