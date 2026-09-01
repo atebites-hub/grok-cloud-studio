@@ -856,6 +856,62 @@ install_studio_mind_plugin floor
     assert "plugin install" in loop or "install_studio_mind_plugin" in loop
 
 
+def test_studio_mind_plugin_already_installed_is_ok(tmp_path: Path) -> None:
+    """grok 'Error: repo studio-mind-... already installed' is MIND_PLUGIN_OK.
+
+    Seat start reinstalls studio-mind every loop. A non-zero grok exit with
+    that message is idempotent success, not reason=install-fail.
+    """
+    log = tmp_path / "plugin.argv"
+    stamp = tmp_path / "plugin.installed"
+    grok = _write_exec(
+        tmp_path / "fake-bin" / "grok",
+        "#!/bin/sh\n"
+        f'printf "%s\\n" "$@" >> "{log}"\n'
+        f'if [ -f "{stamp}" ]; then\n'
+        '  echo "Error: repo studio-mind-deadbeef already installed" >&2\n'
+        "  exit 1\n"
+        "fi\n"
+        f'touch "{stamp}"\n'
+        "exit 0\n",
+    )
+    env = {
+        "PATH": f"{grok.parent}:/usr/bin:/bin",
+        "HOME": str(tmp_path / "home"),
+        "GCS_ROOT": str(REPO),
+        "GCS_A2A_STATE": str(tmp_path / "a2a-state"),
+        "GROK_HOME": str(tmp_path / "grok-home"),
+        "TASKBOARD_BIN": str(
+            _write_exec(tmp_path / "host-bin" / "taskboard", "#!/bin/sh\nexit 0\n")
+        ),
+        "LC_ALL": "C",
+        "TERM": "dumb",
+    }
+    script = r"""
+set -euo pipefail
+source scripts/directors/seat-daemon-common.sh
+install_studio_mind_plugin floor
+install_studio_mind_plugin floor
+"""
+    proc = subprocess.run(
+        ["bash", "-c", script],
+        cwd=str(REPO),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    assert blob.count("MIND_PLUGIN_OK") >= 2, blob
+    assert "reason=install-fail" not in blob, blob
+    assert "MIND_PLUGIN_SKIP" not in blob, blob
+    argv = log.read_text(encoding="utf-8")
+    assert argv.count("plugin") >= 2
+    assert "--trust" in argv
+    assert "studio-mind" in argv
+
+
 def test_a2a_send_and_cloud_launch_plugins_missing_binaries(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

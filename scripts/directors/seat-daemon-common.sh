@@ -217,13 +217,25 @@ install_seat_grok_mcp() {
   echo "SEAT_GROK_MCP_OK seat=${seat:-?} command=$bin db=$db dest=$cfg" >&2
 }
 
+_mind_plugin_already_installed() {
+  # grok plugin install: "Error: repo studio-mind-<id> already installed"
+  local blob="${1:-}"
+  local low
+  low="$(printf '%s' "$blob" | tr '[:upper:]' '[:lower:]')"
+  case "$low" in
+    *'already installed'*) return 0 ;;
+  esac
+  return 1
+}
+
 install_studio_mind_plugin() {
   # Install plugins/studio-mind into this seat GROK_HOME. grok headless cannot
   # take --plugin-dir (that is a grok agent flag). --trust belongs here, not
   # on grok --prompt-file. Failure is MCP-only: taskboard is already in
-  # GROK_HOME/config.toml. Never abort the mind loop.
+  # GROK_HOME/config.toml. Never abort the mind loop. Already-installed and
+  # idempotent reinstall are success (MIND_PLUGIN_OK), not install-fail.
   local seat="${1:-}"
-  local plugin gh grok_bin
+  local plugin gh grok_bin out rc=0
   plugin="$ROOT/plugins/studio-mind"
   gh="${GROK_HOME:-}"
   if [[ ! -d "$plugin" ]]; then
@@ -241,7 +253,11 @@ install_studio_mind_plugin() {
   fi
   mkdir -p "$gh"
   plugin="$(_gcs_abs_path "$plugin")"
-  if GROK_HOME="$gh" "$grok_bin" plugin install "$plugin" --trust; then
+  out="$(GROK_HOME="$gh" "$grok_bin" plugin install "$plugin" --trust 2>&1)" && rc=0 || rc=$?
+  if [[ -n "$out" ]]; then
+    printf '%s\n' "$out" >&2
+  fi
+  if [[ "$rc" -eq 0 ]] || _mind_plugin_already_installed "$out"; then
     echo "MIND_PLUGIN_OK seat=${seat:-?} plugin=studio-mind dest=$gh" >&2
   else
     echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=install-fail mcp-only" >&2
