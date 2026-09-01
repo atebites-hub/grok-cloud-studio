@@ -3,10 +3,11 @@
 PRs must not land on leftover-green `--override-ini` or a plan with no
 `N passed`. Does not remint secret_scan mcp.json (#56) or doctor.sh (#51).
 Does not clone runStatus list PRs. Never launches Bot CloudAgent.
-Living Sky Linear is LIV (never Black Swan). Same theme as GCS #62.
+Living Sky Linear is LIV (never Black Swan).
 """
 from __future__ import annotations
 
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -92,17 +93,22 @@ def test_workflow_bootstraps_venv_then_runs_canonical_gate() -> None:
 
 
 def test_workflow_checks_out_submodules() -> None:
-    """Wipe-kit tests need vendor/taskboard; default checkout skips it.
-
-    fetch-depth 1 makes a shallow submodule clone with no tags, so
-    `git describe --tags --exact-match` cannot see the v0.6.0 pin.
-    """
+    """Wipe-kit tests need vendor/taskboard; default checkout skips it."""
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "actions/checkout@" in text
     assert "submodules:" in text
     assert "true" in text or "recursive" in text
-    assert "fetch-depth:" in text
-    assert "fetch-depth: 0" in text or "fetch-depth:0" in text
+
+
+def test_workflow_fetches_full_history_for_submodule_tags() -> None:
+    """Default fetch-depth: 1 clones vendor/taskboard with no tags.
+
+    Wipe-kit `git describe --tags --exact-match` then fails with
+    'No names found, cannot describe anything.' fetch-depth: 0 is
+    the checkout contract for that pin.
+    """
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert re.search(r"fetch-depth:\s*0\b", text)
 
 
 def test_workflow_is_not_leftover_green_override_ini() -> None:
