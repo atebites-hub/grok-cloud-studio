@@ -22,7 +22,8 @@ Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
 
 Create always sends those fields (SDK `Agent.create` and REST `POST /v1/agents`).
 There is no `CURSOR_CLOUD_MODEL` / `CURSOR_CLOUD_EFFORT` override. SDK first
-`send` passes the same pin (`sendPinned`).
+`send` and REST/SDK follow-up pass the same pin (`sendPinned`). Do not vendor
+Hermes.
 
 Never Grok Bot CloudAgent. Bot seats (`orchestrator` / `donald`) stay
 `skipSeats` / `send.sh`. Directors spawn Extra High via
