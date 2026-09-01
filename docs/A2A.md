@@ -23,7 +23,7 @@ Opt-in mind: `GCS_MIND_SEATS` (default empty, example `floor,ops`) starts `seat-
 xAI grok-build does not accept external PRs, so `deliver_wake()` cannot live inside `grok agent serve`. Closest leftover host OS (ACP inject):
 
 1. One persistent `grok agent serve` per seat (`scripts/directors/start-seat-daemon.sh`).
-2. GROW wake: `inbox.jsonl` growth → `scripts/a2a/wake-daemon.py` → `scripts/directors/seat-prompt-acp.sh` → `session/prompt` **inside that serve pid** (never `grok --resume`).
+2. GROW wake: `inbox.jsonl` growth → `scripts/a2a/wake-daemon.py` → `scripts/directors/seat-prompt-acp.sh` → `session/prompt` **inside that serve pid** (never `grok --resume`). Wake treats serve as healthy only when `daemon.pid` is alive **and** the `acp.url` port accepts TCP. If serve is down, restart serve — never fall back to `grok --resume`.
 3. Pin-session: reuse `.a2a-state/<seat>/acp.session`. Do not remint per ping.
 4. Named identity: `docs/studio/directors/souls/<seat>/{SOUL.md,MEMORY.md}` plus `GROK_MEMORY=1` on serve.
 5. Host ticker (`scripts/a2a/host-ticker.py`, interval `GCS_TICKER_SEC` default 600s) enqueues `ACP_PING STATUS/CONTINUE` **work turns** (tools allowed). Not PONG. Not a 45s central assigner. Not a LAUNCH kind.
