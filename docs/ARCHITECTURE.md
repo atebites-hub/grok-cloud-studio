@@ -44,7 +44,7 @@ launch-cloud-extra-high.sh → @cursor/sdk Agent.create
 fleet-shepherd.py = orphan-only Extra High safety net (no live waiter_pid; dead waiter_pid is evicted);
                     also TASKBOARD_HEALTH_OK / TASKBOARD_HEALTH_FAIL
 Host board maintainer kit = scripts/studio/taskboard/maintainer.sh (start/health/docs); not shepherd, not seat MCP
-webhook_receiver.py = optional signed completion path
+webhook_receiver.py = optional signed statusChange path (no get_agent_run)
 ```
 
 ## A2A hub
@@ -79,7 +79,7 @@ MERGE_REQUEST / QA squash requires pasted `.venv/bin/pytest -q` (`N passed`) and
 | Path | When |
 |---|---|
 | Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`). GitHub CONFLICTING PRs ping `mergeable=CONFLICTING` (QA HOLD squash). Empty GitHub checks (`check_runs=0`) are not MERGE_REQUEST-ready. MERGEABLE+empty CI is leftover-green theatre. Latest run `CANCELLED` with `prUrl` pings `INSPECT follow-up-or-close` (not MERGE_REQUEST). |
-| Webhook | `GCS_WEBHOOK_SECRET` set and `webhook-harness.sh serve` |
+| Webhook | `GCS_WEBHOOK_SECRET` set; bus starts `webhook_receiver.py`; Cursor `statusChange` POST (or `webhook-harness.sh serve`) |
 | Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook). Dead `waiter_pid` is evicted on `fleet.jsonl` before notify-once. |
 
 Each shepherd cycle also probes tcarac/taskboard: the SQLite DB file
@@ -91,7 +91,7 @@ install seat stdio MCP, or reconnect Agent Kanban.
 
 Do not double-notify a live waiter. A leftover `waiter_pid` number is not liveness.
 `notify_owner` is idempotent: a second notify on a row already `notified_by=waiter`
-does not A2A-ping again.
+does not A2A-ping again. The webhook path does not call `get_agent_run`.
 
 `python3 scripts/cloud/fleet_ledger.py prune` drops leftover `fleet.jsonl` rows that are already closed (`notified`, `status=closed`, latest run `FINISHED|ERROR|CANCELLED|EXPIRED`). Open leftover shells stay. Ledger-only; no Cloud probe.
 

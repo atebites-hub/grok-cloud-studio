@@ -60,6 +60,7 @@ export GCS_CLOUD_REPO="https://github.com/example/your-repo"
 scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." "floor-demo"
 # or: scripts/launch-cloud-extra-high.sh --name floor-demo --prompt-file /path/to/prompt.txt
 # → CLOUD_LAUNCH_OK id=bc-…  — waiter pings the owning seat when the run finishes (context on the A2A ping + result-cloud-agent.sh). Never Bot CloudAgent.
+# Optional: GCS_WEBHOOK_SECRET + statusChange webhook also pings FLEET_DONE
 ```
 
 ## Environment
@@ -74,7 +75,8 @@ See `.env.example`. Prefix is **`GCS_*`**. Important:
 - `GCS_CLOUD_REF` — default `main`
 - `GCS_PROMPT_DIR` — director prompts dir; empty uses `prompts/` or `docs/studio/directors`
 - `GCS_SPAWN_WAITER=0` — disable the detached waiter (tests)
-- `GCS_WEBHOOK_SECRET` — enable signed webhook receiver
+- `GCS_WEBHOOK_SECRET` — enable signed Cursor Cloud `statusChange` receiver (`FLEET_DONE` without `get_agent_run`)
+- `GCS_WEBHOOK_URL` — public URL to give Cursor (dashboard or v0 `webhook.url`)
 - `CURSOR_API_KEY` — never print; never commit
 - Living Sky Linear (`LINEAR_API_KEY` / `GCS_LINEAR_API_KEY`) — LIV-76 close stale + archive Done/Canceled for the 200 cap; **do not delete**. See `docs/studio/LINEAR.md`. Never Black Swan Money.
 

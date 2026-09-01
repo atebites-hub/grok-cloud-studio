@@ -21,7 +21,9 @@ Hard rules:
   Never Bot CloudAgent (orchestrator/donald). Bot is send.sh / Grok Bot,
   not Extra High.
   Launch auto-registers bc-id on your seat fleet ledger and spawns a background waiter
-  (scripts/cloud/sdk/wait-notify.ts via run.wait). Do NOT block this session/prompt on watch-cloud-agent.sh
+  (scripts/cloud/sdk/wait-notify.ts via run.wait). Optional GCS_WEBHOOK_SECRET
+  statusChange receiver can FLEET_DONE without get_agent_run polling.
+  Do NOT block this session/prompt on watch-cloud-agent.sh
   (CLOUD_WATCH_REFUSED when GCS_DIRECTOR_SEAT is set unless CLOUD_ALLOW_BLOCK_WAIT=1).
   Waiter A2A-pings this seat and REPORT_TO (default studio-ops) with waiter/context return.
   Collect context with scripts/cloud/result-cloud-agent.sh <bc-id> or MCP cloud_result (non-blocking).
