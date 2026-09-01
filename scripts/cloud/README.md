@@ -61,7 +61,7 @@ After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.
 
 Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
-`scripts/directors/fleet-shepherd.py` is an **orphan-only** safety net: it skips rows with a live `waiter_pid` or `notified_by` in `{waiter, webhook, shepherd}`. Presence of `waiter_pid` is **not** liveness. A pid that names a dead process is evicted durably on `fleet.jsonl` (`waiter_pid` null, `waiter_tombstone`) so a reused pid cannot look live; shepherd then orphan-notifies **once**. Distinct from leftover `ACTIVE`+`FINISHED` skip and from `bot-bridge.pid` tombstones.
+`scripts/directors/fleet-shepherd.py` is an **orphan-only** safety net: it skips rows with a live `waiter_pid` or `notified_by` in `{waiter, webhook, shepherd}`. Presence of `waiter_pid` is **not** liveness. A pid that names a dead process is evicted durably on `fleet.jsonl` (`waiter_pid` null, `waiter_tombstone`) so a reused pid cannot look live; shepherd then orphan-notifies **once**. Distinct from leftover `ACTIVE`+`FINISHED` skip and from `bot-bridge.pid` tombstones. Each cycle also probes tcarac/taskboard health (DB file + `ticket list` or HTTP `/mcp`) and logs `TASKBOARD_HEALTH_OK` or `TASKBOARD_HEALTH_FAIL`. GET `/health` is not the probe. This is not leftover-shell skip and does not install seat stdio MCP.
 
 Optional signed webhooks (`scripts/cloud/webhook_receiver.py`) are the other completion path. Waiter remains the fallback when `GCS_WEBHOOK_SECRET` is unset.
 

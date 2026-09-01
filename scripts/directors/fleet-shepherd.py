@@ -6,14 +6,21 @@ This process only notifies when a ledger row has no live waiter_pid and was
 never closed by waiter/webhook. A waiter_pid that names a dead process is not
 liveness: eviction is written to fleet.jsonl (waiter_tombstone) before the
 orphan notify. Local studio. Stdlib + existing cloud scripts.
+
+Each cycle also probes tcarac/taskboard health: the SQLite DB file plus
+`ticket list` or HTTP /mcp. Logs TASKBOARD_HEALTH_OK or TASKBOARD_HEALTH_FAIL.
+Does not start the board, install seat MCP, or reconnect Agent Kanban.
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -86,7 +93,104 @@ def _reload_entry(seat: str, bc_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _taskboard_db() -> Path:
+    override = (os.environ.get("GCS_TASKBOARD_DB") or os.environ.get("TASKBOARD_DB") or "").strip()
+    if override:
+        return Path(override)
+    return STATE_DIR / "taskboard" / "taskboard.db"
+
+
+def _taskboard_bin() -> Path | None:
+    override = (os.environ.get("TASKBOARD_BIN") or "").strip()
+    if override:
+        candidate = Path(override)
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    which = shutil.which("taskboard")
+    if which:
+        return Path(which)
+    for candidate in (
+        ROOT / "vendor" / "taskboard" / "taskboard",
+        ROOT / "vendor" / "taskboard" / "bin" / "taskboard",
+        ROOT / "bin" / "taskboard",
+    ):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _ticket_list_ok(db: Path) -> bool:
+    binary = _taskboard_bin()
+    env = os.environ.copy()
+    if binary is not None:
+        argv = [str(binary), "--db", str(db), "ticket", "list"]
+    else:
+        ticket = shutil.which("ticket")
+        if ticket is None:
+            return False
+        argv = [ticket, "list"]
+        env["GCS_TASKBOARD_DB"] = str(db)
+    try:
+        proc = subprocess.run(
+            argv,
+            cwd=str(ROOT),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            env=env,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return proc.returncode == 0
+
+
+def _mcp_http_url() -> str:
+    override = (os.environ.get("GCS_TASKBOARD_MCP_URL") or "").strip()
+    if override:
+        return override
+    host = (os.environ.get("GCS_TASKBOARD_MCP_HOST") or "127.0.0.1").strip() or "127.0.0.1"
+    port = (os.environ.get("GCS_TASKBOARD_MCP_PORT") or "3011").strip() or "3011"
+    return f"http://{host}:{port}/mcp"
+
+
+def _mcp_http_ok() -> bool:
+    url = _mcp_http_url()
+    payload = json.dumps(
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            status = int(getattr(resp, "status", 200) or 200)
+            resp.read()
+        return 200 <= status < 300
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, ValueError):
+        return False
+
+
+def _probe_taskboard_health() -> bool:
+    db = _taskboard_db()
+    if not db.is_file():
+        _log(f"TASKBOARD_HEALTH_FAIL db={db} reason=missing-db")
+        return False
+    if _ticket_list_ok(db):
+        _log(f"TASKBOARD_HEALTH_OK db={db} via=ticket")
+        return True
+    if _mcp_http_ok():
+        _log(f"TASKBOARD_HEALTH_OK db={db} via=mcp")
+        return True
+    _log(f"TASKBOARD_HEALTH_FAIL db={db} reason=cli-and-mcp")
+    return False
+
+
 def _cycle() -> int:
+    _probe_taskboard_health()
     notified = 0
     if not STATE_DIR.is_dir():
         return 0
