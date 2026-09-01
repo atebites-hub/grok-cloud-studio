@@ -41,6 +41,8 @@ Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 - `repos[0].startingRef` from `GCS_CLOUD_REF` / `CLOUD_REPO_REF` / `CURSOR_CLOUD_REF` (default `main`)
 - `autoCreatePR = true`
 
+Per-invocation `GCS_CLOUD_REPO` / `CLOUD_REPO_URL` wins over a process-global `CURSOR_CLOUD_REPO` and over any `GCS_CLOUD_REPO` in `~/.config/cursor/agent.env` (auth loads **only** `CURSOR_API_KEY` from that file). The launcher does not `export` the resolved repo, so the next launch sees the original process environment (studio vs Palemon). Specialists are Cursor Cloud Extra High, not a Grok Bot grunt.
+
 `CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, or missing auth prints `CLOUD_LAUNCH_ERR` and exits non-zero.
 
 **v1 metadata:** do not send `Agent.create({ cloud: { metadata } })` by default. API v1 returns `feature_unavailable: "API v1 agent metadata is not enabled."` Metadata is gated behind `CLOUD_SDK_METADATA=1` (default off; key `gcs`). Retryable/unavailable SDK create failures exit **75** so `_common.sh` still REST-falls-back.

@@ -19,3 +19,5 @@ scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
+
+Per-invocation `GCS_CLOUD_REPO` wins over a process-global `CURSOR_CLOUD_REPO` and over `agent.env`. Prefix the var on that command only; the launcher does not export it, so the next launch keeps the original default (studio vs Palemon). Specialists are Cursor Cloud Extra High, not a Grok Bot grunt.

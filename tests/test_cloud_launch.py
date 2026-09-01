@@ -17,8 +17,12 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 LAUNCH = REPO / "scripts" / "launch-cloud-extra-high.sh"
 CLOUD = REPO / "scripts" / "cloud"
+AUTH = CLOUD / "auth.sh"
 FAKE_KEY = "test-cursor-api-key"
 EXAMPLE_REPO = "https://github.com/atebites-hub/grok-cloud-studio"
+# Studio vs Palemon targets. Do not concatenate atebites-hub + palemon (secret_scan).
+STUDIO_REPO = EXAMPLE_REPO
+PALEMON_REPO = "https://github.com/example/" + "palemon"
 
 
 def _script_env(home: Path, base: str, **extra: str) -> dict[str, str]:
@@ -52,6 +56,29 @@ def _run(path: Path, args: list[str], env: dict[str, str], stdin: str | None = N
         input=stdin,
         timeout=20,
     )
+
+
+def _write_agent_env(home: Path, **kv: str) -> Path:
+    path = home / ".config" / "cursor" / "agent.env"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = "".join(f"{key}={value}\n" for key, value in kv.items())
+    path.write_text(body, encoding="utf-8")
+    return path
+
+
+def _assert_extra_high_create(body: dict[str, Any], *, repo: str, name: str | None = None) -> None:
+    """Cursor Cloud Extra High create: grok-4.6 / xhigh / fast=false. Never Bot CloudAgent."""
+    assert body["model"]["id"] == "grok-4.6"
+    params = {(p["id"], p["value"]) for p in body["model"]["params"]}
+    assert ("effort", "xhigh") in params
+    assert ("fast", "false") in params
+    assert body["repos"] == [{"url": repo, "startingRef": "main"}]
+    assert body["autoCreatePR"] is True
+    dumped = json.dumps(body).lower()
+    assert "bot cloudagent" not in dumped
+    assert "grok-bot" not in dumped
+    if name is not None:
+        assert body["name"] == name
 
 
 def _basic_user(header: str | None) -> str:
@@ -194,14 +221,7 @@ def test_launch_posts_parameterized_repo(tmp_path: Path) -> None:
     assert "CLOUD_LAUNCH_ERR" not in proc.stdout
     assert FAKE_KEY not in proc.stdout
     assert FAKE_KEY not in proc.stderr
-    body = api.posts[0]["body"]
-    assert body["model"]["id"] == "grok-4.6"
-    params = {(p["id"], p["value"]) for p in body["model"]["params"]}
-    assert ("effort", "xhigh") in params
-    assert ("fast", "false") in params
-    assert body["repos"] == [{"url": EXAMPLE_REPO, "startingRef": "main"}]
-    assert body["autoCreatePR"] is True
-    assert body["name"] == "gcs-eh-test"
+    _assert_extra_high_create(api.posts[0]["body"], repo=EXAMPLE_REPO, name="gcs-eh-test")
 
 
 def test_launch_fail_closed_without_cloud_repo(tmp_path: Path) -> None:
@@ -263,3 +283,122 @@ def test_sdk_launch_does_not_hardcode_private_repo() -> None:
     assert banned not in common
     assert "cloudRepo()" in common
     assert "GCS_CLOUD_REPO" in common
+
+
+def test_launch_gcs_cloud_repo_beats_process_global_cursor_cloud_repo(tmp_path: Path) -> None:
+    """Per-invocation GCS_CLOUD_REPO wins over a process-global CURSOR_CLOUD_REPO."""
+    with MockCursorAPI(create_http=201) as api:
+        env = _script_env(
+            tmp_path,
+            api.base,
+            CURSOR_API_KEY=FAKE_KEY,
+            GCS_CLOUD_REPO=PALEMON_REPO,
+            CURSOR_CLOUD_REPO=STUDIO_REPO,
+        )
+        proc = _run(LAUNCH, ["--name", "palemon-override", "Implement Palemon. Open a PR."], env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "CLOUD_LAUNCH_OK" in proc.stdout
+    _assert_extra_high_create(api.posts[0]["body"], repo=PALEMON_REPO, name="palemon-override")
+
+
+def test_launch_per_invocation_repo_survives_agent_env_default(tmp_path: Path) -> None:
+    """agent.env may hold the studio default + API key. Do not clobber this launch's repo.
+
+    cloud_load_auth used to `set -a; source agent.env`, which imported GCS_CLOUD_REPO
+    from the file and overwrote the per-invocation Palemon target.
+    """
+    agent_env = _write_agent_env(
+        tmp_path,
+        CURSOR_API_KEY=FAKE_KEY,
+        GCS_CLOUD_REPO=STUDIO_REPO,
+        CURSOR_CLOUD_REPO=STUDIO_REPO,
+    )
+    snapshot = agent_env.read_text(encoding="utf-8")
+    with MockCursorAPI(create_http=201) as api:
+        env = _script_env(
+            tmp_path,
+            api.base,
+            GCS_CLOUD_REPO=PALEMON_REPO,
+            CURSOR_CLOUD_REPO=STUDIO_REPO,
+        )
+        env.pop("CURSOR_API_KEY", None)
+        proc = _run(LAUNCH, ["--name", "palemon-from-env", "Implement Palemon. Open a PR."], env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "CLOUD_LAUNCH_OK" in proc.stdout
+    assert FAKE_KEY not in proc.stdout + proc.stderr
+    _assert_extra_high_create(api.posts[0]["body"], repo=PALEMON_REPO, name="palemon-from-env")
+    assert agent_env.read_text(encoding="utf-8") == snapshot
+    assert PALEMON_REPO not in snapshot
+
+
+def test_launch_reads_quoted_export_key_from_agent_env(tmp_path: Path) -> None:
+    """agent.env `export CURSOR_API_KEY="..."` must authenticate without sourcing GCS_*."""
+    agent_env = tmp_path / ".config" / "cursor" / "agent.env"
+    agent_env.parent.mkdir(parents=True, exist_ok=True)
+    agent_env.write_text(
+        f'export CURSOR_API_KEY="{FAKE_KEY}"\nGCS_CLOUD_REPO={STUDIO_REPO}\n',
+        encoding="utf-8",
+    )
+    with MockCursorAPI(create_http=201) as api:
+        env = _script_env(tmp_path, api.base, GCS_CLOUD_REPO=PALEMON_REPO)
+        env.pop("CURSOR_API_KEY", None)
+        proc = _run(LAUNCH, ["--name", "quoted-key", "Implement Palemon. Open a PR."], env)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert FAKE_KEY not in proc.stdout + proc.stderr
+    _assert_extra_high_create(api.posts[0]["body"], repo=PALEMON_REPO, name="quoted-key")
+
+
+def test_launch_sequential_studio_then_palemon_does_not_leak_global(tmp_path: Path) -> None:
+    """Two launches sharing HOME / agent.env: each honors its own GCS_CLOUD_REPO.
+
+    Process-global default is studio (agent.env + CURSOR_CLOUD_REPO). Launch Palemon,
+    then studio (no Palemon leftover), then Palemon again. agent.env must stay studio.
+    """
+    agent_env = _write_agent_env(
+        tmp_path,
+        CURSOR_API_KEY=FAKE_KEY,
+        GCS_CLOUD_REPO=STUDIO_REPO,
+        CURSOR_CLOUD_REPO=STUDIO_REPO,
+    )
+    snapshot = agent_env.read_text(encoding="utf-8")
+
+    def _env(api: MockCursorAPI, repo: str) -> dict[str, str]:
+        env = _script_env(
+            tmp_path,
+            api.base,
+            GCS_CLOUD_REPO=repo,
+            CURSOR_CLOUD_REPO=STUDIO_REPO,
+        )
+        env.pop("CURSOR_API_KEY", None)
+        return env
+
+    with MockCursorAPI(create_http=201) as api:
+        first = _run(
+            LAUNCH,
+            ["--name", "game-grunt", "Implement Palemon. Open a PR."],
+            _env(api, PALEMON_REPO),
+        )
+        second = _run(
+            LAUNCH,
+            ["--name", "studio-grunt", "Implement studio. Open a PR."],
+            _env(api, STUDIO_REPO),
+        )
+        third = _run(
+            LAUNCH,
+            ["--name", "game-grunt-2", "Implement Palemon again. Open a PR."],
+            _env(api, PALEMON_REPO),
+        )
+
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert second.returncode == 0, second.stdout + second.stderr
+    assert third.returncode == 0, third.stdout + third.stderr
+    assert all("CLOUD_LAUNCH_OK" in p.stdout for p in (first, second, third))
+    assert len(api.posts) == 3
+    _assert_extra_high_create(api.posts[0]["body"], repo=PALEMON_REPO, name="game-grunt")
+    _assert_extra_high_create(api.posts[1]["body"], repo=STUDIO_REPO, name="studio-grunt")
+    _assert_extra_high_create(api.posts[2]["body"], repo=PALEMON_REPO, name="game-grunt-2")
+    assert agent_env.read_text(encoding="utf-8") == snapshot
+    assert PALEMON_REPO not in agent_env.read_text(encoding="utf-8")
+    blob = AUTH.read_text(encoding="utf-8") + LAUNCH.read_text(encoding="utf-8")
+    assert "Bot CloudAgent" not in blob
+    assert "Grok Bot CloudAgent" not in blob

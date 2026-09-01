@@ -37,6 +37,38 @@ def test_cloud_repo_from_env(tmp_path: Path) -> None:
     assert proc.stdout.strip() == "https://github.com/example/control-plane"
 
 
+def test_cloud_repo_gcs_beats_cursor_cloud_repo() -> None:
+    """Per-invocation GCS_CLOUD_REPO wins over a process-global CURSOR_CLOUD_REPO."""
+    studio = "https://github.com/example/grok-cloud-studio"
+    palemon = "https://github.com/example/" + "palemon"
+    env = {**os.environ, "GCS_CLOUD_REPO": palemon, "CURSOR_CLOUD_REPO": studio}
+    proc = subprocess.run(
+        ["python3", str(LIB), "cloud-repo"],
+        cwd=str(ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == palemon
+
+
+def test_cloud_repo_cursor_fallback_when_gcs_unset() -> None:
+    env = {k: v for k, v in os.environ.items() if k not in {
+        "GCS_CLOUD_REPO", "CLOUD_REPO_URL", "CURSOR_CLOUD_REPO",
+    }}
+    env["CURSOR_CLOUD_REPO"] = "https://github.com/example/control-plane"
+    proc = subprocess.run(
+        ["python3", str(LIB), "cloud-repo"],
+        cwd=str(ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "https://github.com/example/control-plane"
+
+
 def test_seat_ports() -> None:
     floor = subprocess.check_output(["python3", str(LIB), "port", "floor"], cwd=str(ROOT), text=True)
     ops = subprocess.check_output(["python3", str(LIB), "port", "ops"], cwd=str(ROOT), text=True)
