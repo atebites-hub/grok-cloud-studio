@@ -60,7 +60,7 @@ See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / 
 
 | Path | When |
 |---|---|
-| Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`) |
+| Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`). GitHub CONFLICTING PRs ping `mergeable=CONFLICTING` (QA HOLD squash). |
 | Webhook | `GCS_WEBHOOK_SECRET` set and `webhook-harness.sh serve` |
 | Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook) |
 
