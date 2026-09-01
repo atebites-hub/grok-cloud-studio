@@ -282,54 +282,20 @@ def test_sdk_launch_does_not_hardcode_private_repo() -> None:
     assert "GCS_CLOUD_REPO" in common
 
 
-# Env values that must not create or send. Unset and exact grok-4.6 remain OK.
-NON_GROK_CURSOR_CLOUD_MODELS = (
-    "auto",
-    "auto-smart",
-    "claude-opus-5",
-    "claude-opus-4.6",
-    "opus",
-    "claude-4-sonnet",
-    "sonnet",
-    "gemini-2.5-pro",
-    "gemini",
-    "composer",
-    "composer-2",
-    "gpt-5",
-    "cursor-grok-4.6-xhigh",
-)
-
-
 def _ts_fn_body(src: str, name: str) -> str:
-    start = -1
-    token = ""
-    for candidate in (f"export function {name}", f"export async function {name}"):
-        found = src.find(candidate)
-        if found != -1 and (start == -1 or found < start):
-            start = found
-            token = candidate
-    if start == -1:
-        raise ValueError(f"export function {name} not found")
-    rest = src[start + len(token) :]
-    nxt_rel: int | None = None
-    for marker in ("\nexport function ", "\nexport async function "):
-        found = rest.find(marker)
-        if found != -1 and (nxt_rel is None or found < nxt_rel):
-            nxt_rel = found
-    end = None if nxt_rel is None else start + len(token) + nxt_rel
-    return src[start:end]
+    token = f"export function {name}"
+    start = src.index(token)
+    nxt = src.find("\nexport function ", start + len(token))
+    return src[start : nxt if nxt != -1 else None]
 
 
 def test_extra_high_model_is_hard_pinned_not_env_overridable() -> None:
     common = (CLOUD / "sdk" / "common.ts").read_text(encoding="utf-8")
     launch = (CLOUD / "sdk" / "launch.ts").read_text(encoding="utf-8")
-    followup = (CLOUD / "sdk" / "followup.ts").read_text(encoding="utf-8")
     body = _ts_fn_body(common, "extraHighModel")
-    send_body = _ts_fn_body(common, "sendPinned")
     assert "function extraHighModel" in common
     assert 'id: "grok-4.6"' in common or "id: EXTRA_HIGH_MODEL_ID" in common
-    assert "CURSOR_CLOUD_MODEL" not in body
-    assert "CURSOR_CLOUD_EFFORT" not in body
+    assert "CURSOR_CLOUD_MODEL" not in common
     assert "CURSOR_CLOUD_EFFORT" not in common
     assert "process.env" not in body
     assert "envFirst" not in body
@@ -338,10 +304,6 @@ def test_extra_high_model_is_hard_pinned_not_env_overridable() -> None:
     assert "extraHighModel()" in launch
     assert "isExtraHighModelId" in common or "createModelRejected" in common
     assert "createModelRejected" in launch or "isExtraHighModelId" in launch
-    assert "requirePinnedCloudModelEnv" in common
-    assert "requirePinnedCloudModelEnv" in send_body
-    assert "requirePinnedCloudModelEnv" in launch
-    assert "requirePinnedCloudModelEnv" in followup
 
 
 def test_sdk_send_pins_extra_high_model_on_first_run_and_followup() -> None:
@@ -359,65 +321,43 @@ def test_sdk_send_pins_extra_high_model_on_first_run_and_followup() -> None:
     assert "agent.send.length < 2" not in common
     assert "createModelRejected(run.model)" in launch
     assert "createModelRejected(run.model)" in followup
-    extra = _ts_fn_body(common, "extraHighModel")
-    assert "CURSOR_CLOUD_MODEL" not in extra
-    assert "CURSOR_CLOUD_EFFORT" not in extra
+    assert "CURSOR_CLOUD_MODEL" not in common
     assert "CURSOR_CLOUD_EFFORT" not in common
-    assert "requirePinnedCloudModelEnv()" in common
-    assert "requirePinnedCloudModelEnv()" in launch
-    assert "requirePinnedCloudModelEnv()" in followup
 
 
-def _pin_cli(
-    monkeypatch: pytest.MonkeyPatch, *argv: str, **env: str
-) -> subprocess.CompletedProcess[str]:
+def test_extra_high_pin_cli_ignores_env_model_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CURSOR_CLOUD_MODEL", "claude-4-sonnet")
+    monkeypatch.setenv("CURSOR_CLOUD_EFFORT", "low")
     monkeypatch.setenv("CLOUD_PROMPT_TEXT", "keep going")
     monkeypatch.setenv("CLOUD_AGENT_NAME", "pin-test")
     monkeypatch.setenv("GCS_CLOUD_REPO", EXAMPLE_REPO)
     monkeypatch.setenv("GCS_CLOUD_REF", "main")
-    for key, value in env.items():
-        monkeypatch.setenv(key, value)
-    return subprocess.run(
-        ["python3", str(CLOUD / "extra_high_model.py"), *argv],
+    script = CLOUD / "extra_high_model.py"
+    follow = subprocess.run(
+        ["python3", str(script), "followup-body"],
         cwd=str(REPO),
         capture_output=True,
         text=True,
         timeout=10,
     )
-
-
-def test_extra_high_pin_cli_rejects_non_grok_env_overrides(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Fail closed: non-grok CURSOR_CLOUD_MODEL must not emit a create/send body."""
-    monkeypatch.setenv("CURSOR_CLOUD_EFFORT", "low")
-    for cmd in ("launch-body", "followup-body", "assert-env"):
-        proc = _pin_cli(monkeypatch, cmd, CURSOR_CLOUD_MODEL="claude-4-sonnet")
-        assert proc.returncode != 0, cmd + proc.stdout + proc.stderr
-        assert "CURSOR_CLOUD_MODEL" in proc.stderr or "claude-4-sonnet" in proc.stderr
-        if proc.stdout.strip():
-            with pytest.raises(json.JSONDecodeError):
-                json.loads(proc.stdout)
-
-
-def test_extra_high_pin_cli_allows_unset_or_grok_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("CURSOR_CLOUD_MODEL", raising=False)
-    monkeypatch.setenv("CURSOR_CLOUD_EFFORT", "low")
-    unset_launch = _pin_cli(monkeypatch, "launch-body")
-    assert unset_launch.returncode == 0, unset_launch.stderr
-    unset_body = json.loads(unset_launch.stdout)
-    assert unset_body["model"]["id"] == "grok-4.6"
-    params = {(p["id"], p["value"]) for p in unset_body["model"]["params"]}
+    assert follow.returncode == 0, follow.stderr
+    follow_body = json.loads(follow.stdout)
+    assert follow_body["model"]["id"] == "grok-4.6"
+    params = {(p["id"], p["value"]) for p in follow_body["model"]["params"]}
     assert ("effort", "xhigh") in params
     assert ("fast", "false") in params
-    grok = _pin_cli(monkeypatch, "followup-body", CURSOR_CLOUD_MODEL="grok-4.6")
-    assert grok.returncode == 0, grok.stderr
-    follow_body = json.loads(grok.stdout)
-    assert follow_body["model"]["id"] == "grok-4.6"
-    assert _pin_cli(monkeypatch, "assert-env").returncode == 0
-    assert _pin_cli(monkeypatch, "assert-env", CURSOR_CLOUD_MODEL="grok-4.6").returncode == 0
+    launch = subprocess.run(
+        ["python3", str(script), "launch-body"],
+        cwd=str(REPO),
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert launch.returncode == 0, launch.stderr
+    launch_body = json.loads(launch.stdout)
+    assert launch_body["model"]["id"] == "grok-4.6"
+    assert launch_body["name"] == "pin-test"
+    assert launch_body["repos"][0]["url"] == EXAMPLE_REPO
 
 
 def test_launch_fail_closed_when_create_returns_non_grok_model(tmp_path: Path) -> None:
@@ -556,90 +496,3 @@ def test_followup_fail_closed_when_run_returns_non_grok_model(tmp_path: Path) ->
     assert "CLOUD_FOLLOWUP_ERR" in proc.stdout
     assert "CLOUD_FOLLOWUP_OK" not in proc.stdout
     assert FAKE_KEY not in proc.stdout + proc.stderr
-
-
-@pytest.mark.parametrize("model_id", NON_GROK_CURSOR_CLOUD_MODELS)
-def test_non_grok_cursor_cloud_model_cannot_create(tmp_path: Path, model_id: str) -> None:
-    """Opus/Auto/Sonnet/Gemini/Composer env must not POST create."""
-    with MockCursorAPI(create_http=201) as api:
-        proc = _run(
-            LAUNCH,
-            ["--name", "must-not-launch", "Implement the assigned outcome. Open a PR."],
-            _script_env(
-                tmp_path,
-                api.base,
-                CURSOR_API_KEY=FAKE_KEY,
-                CURSOR_CLOUD_MODEL=model_id,
-            ),
-        )
-    assert proc.returncode != 0, model_id + proc.stdout + proc.stderr
-    assert "CLOUD_LAUNCH_ERR" in proc.stdout, model_id
-    assert "CLOUD_LAUNCH_OK" not in proc.stdout, model_id
-    assert not api.posts, f"{model_id} still posted create: {api.posts}"
-    assert FAKE_KEY not in proc.stdout + proc.stderr
-
-
-@pytest.mark.parametrize(
-    "model_id",
-    ("auto", "claude-opus-5", "claude-4-sonnet", "gemini-2.5-pro", "composer"),
-)
-def test_non_grok_cursor_cloud_model_cannot_send_followup(
-    tmp_path: Path, model_id: str
-) -> None:
-    """Non-grok env must not POST follow-up /runs."""
-    with MockCursorAPI() as api:
-        proc = _run(
-            FOLLOWUP,
-            ["bc-mock", "Keep the PR; fix the failing check."],
-            _script_env(
-                tmp_path,
-                api.base,
-                CURSOR_API_KEY=FAKE_KEY,
-                CURSOR_CLOUD_MODEL=model_id,
-            ),
-        )
-    assert proc.returncode != 0, model_id + proc.stdout + proc.stderr
-    assert "CLOUD_FOLLOWUP_ERR" in proc.stdout, model_id
-    assert "CLOUD_FOLLOWUP_OK" not in proc.stdout, model_id
-    assert not api.posts, f"{model_id} still posted send: {api.posts}"
-    assert FAKE_KEY not in proc.stdout + proc.stderr
-
-
-def test_cursor_cloud_model_grok_46_still_creates_and_sends(tmp_path: Path) -> None:
-    with MockCursorAPI(create_http=201) as api:
-        launched = _run(
-            LAUNCH,
-            ["--name", "grok-env-ok", "Implement the assigned outcome. Open a PR."],
-            _script_env(
-                tmp_path,
-                api.base,
-                CURSOR_API_KEY=FAKE_KEY,
-                CURSOR_CLOUD_MODEL="grok-4.6",
-            ),
-        )
-        followed = _run(
-            FOLLOWUP,
-            ["bc-mock", "Keep going."],
-            _script_env(
-                tmp_path,
-                api.base,
-                CURSOR_API_KEY=FAKE_KEY,
-                CURSOR_CLOUD_MODEL="grok-4.6",
-            ),
-        )
-    assert launched.returncode == 0, launched.stdout + launched.stderr
-    assert "CLOUD_LAUNCH_OK" in launched.stdout
-    assert followed.returncode == 0, followed.stdout + followed.stderr
-    assert "CLOUD_FOLLOWUP_OK" in followed.stdout
-    assert api.posts
-    for item in api.posts:
-        assert item["body"]["model"]["id"] == "grok-4.6"
-
-
-def test_launch_and_followup_scripts_assert_cloud_model_env() -> None:
-    launch = LAUNCH.read_text(encoding="utf-8")
-    followup = FOLLOWUP.read_text(encoding="utf-8")
-    assert "assert-env" in launch
-    assert "assert-env" in followup
-    assert "extra_high_model.py" in launch
-    assert "extra_high_model.py" in followup

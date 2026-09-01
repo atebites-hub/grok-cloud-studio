@@ -4,9 +4,8 @@
 # with autoCreatePR. Canonical: @cursor/sdk (scripts/cloud/sdk/launch.ts). REST curl is fallback.
 # Prints CLOUD_LAUNCH_OK only on HTTP 200/201 (REST) or SDK create success
 # with model grok-4.6 (or dashboard alias cursor-grok-4.6-xhigh).
-# CURSOR_CLOUD_MODEL unset or grok-4.6 only; any other value is CLOUD_LAUNCH_ERR
-# and does not create. Wrong-model create responses print CLOUD_LAUNCH_ERR
-# and are not workers. Otherwise CLOUD_LAUNCH_ERR. Never prints API keys.
+# Wrong-model create responses print CLOUD_LAUNCH_ERR and are not workers.
+# Otherwise CLOUD_LAUNCH_ERR. Never prints API keys.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,10 +29,8 @@ SDK bootstrap fail, or CURSOR_API_BASE set): POST /v1/agents
 
 Auth: CURSOR_API_KEY, or ~/.config/cursor/agent.env (never printed).
 Prints CLOUD_LAUNCH_OK only on success; any other result is
-CLOUD_LAUNCH_ERR and a non-zero exit. CURSOR_CLOUD_MODEL must be unset
-or grok-4.6; any other value is CLOUD_LAUNCH_ERR (no create). Create
-responses that expose a model other than grok-4.6 are CLOUD_LAUNCH_ERR
-(not counted as workers).
+CLOUD_LAUNCH_ERR and a non-zero exit. Create responses that expose a
+model other than grok-4.6 are CLOUD_LAUNCH_ERR (not counted as workers).
 EOF
 }
 
@@ -108,10 +105,6 @@ export GCS_CLOUD_REPO="$CLOUD_REPO"
 export GCS_CLOUD_REF="$CLOUD_REF"
 export CURSOR_CLOUD_REPO="${CURSOR_CLOUD_REPO:-$CLOUD_REPO}"
 export CURSOR_CLOUD_REF="${CURSOR_CLOUD_REF:-$CLOUD_REF}"
-
-if ! python3 "${SCRIPT_DIR}/cloud/extra_high_model.py" assert-env; then
-  fail_launch "error: CURSOR_CLOUD_MODEL is not grok-4.6"
-fi
 
 if cloud_sdk_exec launch "$prompt" "$name"; then
   exit "$CLOUD_SDK_RC"

@@ -5,7 +5,6 @@ import {
   extraHighModel,
   loadApiKey,
   mapRunStatus,
-  requirePinnedCloudModelEnv,
   safeError,
   sendPinned,
 } from "./common.ts";
@@ -19,7 +18,6 @@ async function main(): Promise<void> {
   const apiKey = loadApiKey();
   let agent: Awaited<ReturnType<typeof Agent.resume>> | undefined;
   try {
-    requirePinnedCloudModelEnv();
     agent = await Agent.resume(agentId, { apiKey, model: extraHighModel() });
     const run = await sendPinned(agent, prompt);
     const runReject = createModelRejected(run.model);

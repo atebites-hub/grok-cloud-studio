@@ -2,10 +2,7 @@
 """Fail-closed Extra High model pin: grok-4.6 (dashboard alias cursor-grok-4.6-xhigh).
 
 Create and follow-up requests always send grok-4.6 / effort=xhigh / fast=false.
-extraHighModel / extra_high_model_object never read env to switch the pin.
-CURSOR_CLOUD_MODEL unset or exactly grok-4.6 is OK. Any other value (auto,
-claude-opus-5, Opus, Sonnet, Gemini, Composer, dashboard alias) is refused
-before create or send — do not ignore it and still launch. If the API exposes a
+No CURSOR_CLOUD_MODEL / CURSOR_CLOUD_EFFORT override. If the API exposes a
 model on the create or send/run response and it is not Extra High, callers must
 print CLOUD_LAUNCH_ERR / CLOUD_FOLLOWUP_ERR and must not count the agent as a
 worker. Missing model on the response is allowed — v1 objects often omit it.
@@ -87,41 +84,6 @@ def extra_high_model_object() -> dict[str, Any]:
     }
 
 
-def cursor_cloud_model_env_value() -> str:
-    raw = os.environ.get("CURSOR_CLOUD_MODEL")
-    if raw is None:
-        return ""
-    return str(raw).strip()
-
-
-def cursor_cloud_model_env_ok() -> tuple[bool, str]:
-    """Unset or exact grok-4.6 is OK. Anything else must not create or send."""
-    value = cursor_cloud_model_env_value()
-    if not value or value == EXTRA_HIGH_MODEL_ID:
-        return True, value
-    return False, value
-
-
-def require_cursor_cloud_model_env() -> str:
-    ok, value = cursor_cloud_model_env_ok()
-    if not ok:
-        raise ValueError(f"CURSOR_CLOUD_MODEL={value} is not grok-4.6")
-    return value
-
-
-def _refuse_non_grok_env() -> int:
-    try:
-        require_cursor_cloud_model_env()
-    except ValueError as err:
-        print(f"error: {err}", file=sys.stderr)
-        return 2
-    return 0
-
-
-def cmd_assert_env() -> int:
-    return _refuse_non_grok_env()
-
-
 def cmd_check(body_path: str) -> int:
     with open(body_path, encoding="utf-8") as fh:
         payload = json.load(fh)
@@ -133,18 +95,12 @@ def cmd_check(body_path: str) -> int:
 
 
 def cmd_followup_body() -> int:
-    refused = _refuse_non_grok_env()
-    if refused:
-        return refused
     prompt = os.environ.get("CLOUD_PROMPT_TEXT") or ""
     print(json.dumps({"prompt": {"text": prompt}, "model": extra_high_model_object()}))
     return 0
 
 
 def cmd_launch_body() -> int:
-    refused = _refuse_non_grok_env()
-    if refused:
-        return refused
     prompt = os.environ.get("CLOUD_PROMPT_TEXT") or ""
     name = os.environ.get("CLOUD_AGENT_NAME") or ""
     repo = os.environ.get("GCS_CLOUD_REPO") or ""
@@ -171,7 +127,6 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("body")
     sub.add_parser("followup-body")
     sub.add_parser("launch-body")
-    sub.add_parser("assert-env")
     args = parser.parse_args(argv)
     if args.cmd == "check":
         return cmd_check(args.body)
@@ -179,8 +134,6 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_followup_body()
     if args.cmd == "launch-body":
         return cmd_launch_body()
-    if args.cmd == "assert-env":
-        return cmd_assert_env()
     return 2
 
 

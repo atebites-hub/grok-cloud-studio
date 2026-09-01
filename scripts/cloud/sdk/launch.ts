@@ -9,7 +9,6 @@ import {
   die,
   extraHighModel,
   loadApiKey,
-  requirePinnedCloudModelEnv,
   safeError,
   sdkCreateFailExitCode,
   sendPinned,
@@ -42,7 +41,6 @@ async function main(): Promise<void> {
   const apiKey = loadApiKey();
   let agent: Awaited<ReturnType<typeof Agent.create>> | undefined;
   try {
-    requirePinnedCloudModelEnv();
     try {
       agent = await Agent.create({
         apiKey,
