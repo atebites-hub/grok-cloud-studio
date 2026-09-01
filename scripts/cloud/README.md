@@ -17,7 +17,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 
 | Script | Purpose |
 |---|---|
-| `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK` |
+| `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK`. **REFUSE** if a live `runStatus=RUNNING` agent already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Never Bot CloudAgent. |
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
@@ -41,7 +41,7 @@ Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 - `repos[0].startingRef` from `GCS_CLOUD_REF` / `CLOUD_REPO_REF` / `CURSOR_CLOUD_REF` (default `main`)
 - `autoCreatePR = true`
 
-`CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, or missing auth prints `CLOUD_LAUNCH_ERR` and exits non-zero.
+`CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, missing auth, or a live `--name` twin (`runStatus=RUNNING`) prints `CLOUD_LAUNCH_ERR` and exits non-zero. Leftover `ACTIVE`+`FINISHED` with the same name does not block. Palemon Linear is Living Sky (`LIV`). Never Bot CloudAgent.
 
 **v1 metadata:** do not send `Agent.create({ cloud: { metadata } })` by default. API v1 returns `feature_unavailable: "API v1 agent metadata is not enabled."` Metadata is gated behind `CLOUD_SDK_METADATA=1` (default off; key `gcs`). Retryable/unavailable SDK create failures exit **75** so `_common.sh` still REST-falls-back.
 
@@ -91,6 +91,9 @@ Fallback may print `CLOUD_SDK_FALLBACK: …` on stderr. Directors should still o
 ```bash
 export GCS_CLOUD_REPO="https://github.com/example/your-repo"
 # 1) Launch grunt
+#    --name REFUSE if a live runStatus=RUNNING Extra High already has that name
+#    (no twin remint). Leftover ACTIVE+FINISHED does not block.
+#    Never Bot CloudAgent (orchestrator/donald is send.sh). Palemon Linear is Living Sky (LIV).
 scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." "seat-short-name"
 # → CLOUD_LAUNCH_OK id=bc-… run=run-… url=…
 # waiter pings this seat when the run is terminal — do not block on watch

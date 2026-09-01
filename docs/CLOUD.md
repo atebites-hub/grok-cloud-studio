@@ -18,4 +18,8 @@ scripts/cloud/watch-cloud-agent.sh bc-...
 scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
+Launch `--name` **REFUSE**s when a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Never Bot CloudAgent.
+
+Palemon Linear is Living Sky (`LIV`).
+
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.

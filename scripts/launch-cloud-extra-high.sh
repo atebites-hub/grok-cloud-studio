@@ -2,6 +2,9 @@
 # Launch a Cursor Cloud Extra High grunt (grok-4.6, effort=xhigh, fast=false)
 # against GCS_CLOUD_REPO / CLOUD_REPO_URL (required) from GCS_CLOUD_REF (default main)
 # with autoCreatePR. Canonical: @cursor/sdk (scripts/cloud/sdk/launch.ts). REST curl is fallback.
+# --name REFUSE if a live runStatus=RUNNING agent already has that name (no twin remint).
+# Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent.
+# Palemon Linear is Living Sky (LIV). Does not remint GCS #49 followup-refuse.
 # Prints CLOUD_LAUNCH_OK only on HTTP 200/201 (REST) or SDK create success.
 # Otherwise CLOUD_LAUNCH_ERR. Never prints API keys.
 set -euo pipefail
@@ -22,6 +25,10 @@ Creates a Cursor Cloud Extra High agent (SDK-first):
   startingRef from GCS_CLOUD_REF (default main)
   autoCreatePR=true
 
+--name REFUSE if a live runStatus=RUNNING Extra High already has that name
+(no twin remint). Leftover ACTIVE+FINISHED does not block.
+Never Bot CloudAgent. Palemon Linear is Living Sky (LIV).
+
 REST fallback (CLOUD_FORCE_REST=1, GCS_CLOUD_BACKEND=rest,
 SDK bootstrap fail, or CURSOR_API_BASE set): POST /v1/agents
 
@@ -37,6 +44,24 @@ fail_launch() {
     printf '%s\n' "$*" >&2
   fi
   exit 1
+}
+
+# Refuse line must include runStatus= so Directors see why create was blocked.
+refuse_live_name_twin() {
+  local wanted="$1"
+  local out="" rc=0
+  set +e
+  out="$(python3 "${SCRIPT_DIR}/cloud/name_twin.py" --name "$wanted")"
+  rc=$?
+  set -e
+  if [[ "$rc" -eq 0 ]]; then
+    printf '%s\n' "CLOUD_LAUNCH_ERR runStatus=RUNNING"
+    printf '%s\n' "error: refuse twin remint ${out}; leftover ACTIVE+FINISHED does not block" >&2
+    exit 1
+  fi
+  if [[ "$rc" -ge 2 ]]; then
+    fail_launch "error: name-twin probe failed rc=${rc}"
+  fi
 }
 
 name=""
@@ -102,6 +127,10 @@ export GCS_CLOUD_REPO="$CLOUD_REPO"
 export GCS_CLOUD_REF="$CLOUD_REF"
 export CURSOR_CLOUD_REPO="${CURSOR_CLOUD_REPO:-$CLOUD_REPO}"
 export CURSOR_CLOUD_REF="${CURSOR_CLOUD_REF:-$CLOUD_REF}"
+
+if [[ -n "$name" ]]; then
+  refuse_live_name_twin "$name"
+fi
 
 if cloud_sdk_exec launch "$prompt" "$name"; then
   exit "$CLOUD_SDK_RC"

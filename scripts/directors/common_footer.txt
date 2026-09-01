@@ -8,6 +8,8 @@ Hard rules:
 - Launch Extra High: YOU spawn, run, and monitor YOUR OWN Cursor Cloud agents.
   Prefer the cloud_launch tool, or scripts/launch-cloud-extra-high.sh "<prompt>" "<short-name>"
   Target repo is GCS_CLOUD_REPO or CLOUD_REPO_URL (required). Model grok-4.6 effort=xhigh.
+  --name REFUSE if a live runStatus=RUNNING Extra High already has that name (no twin remint).
+  Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent. Palemon Linear is Living Sky (LIV).
   Directors and leads spawn specialists only via scripts/launch-cloud-extra-high.sh.
   Do not mint local specialist seats (not a 49-specialist floor).
   Launch auto-registers bc-id on your seat fleet ledger and spawns a background waiter
