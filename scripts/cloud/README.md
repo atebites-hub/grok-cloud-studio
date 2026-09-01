@@ -53,6 +53,42 @@ Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
 `scripts/directors/fleet-shepherd.py` is an **orphan-only** safety net: it skips rows with a live `waiter_pid` or `notified_by` in `{waiter, webhook, shepherd}`.
 
+## Optional Cursor Cloud webhook (statusChange)
+
+`FLEET_DONE` does not have to wait on waiter `get_agent_run` polling. Cursor Cloud documents a signed `statusChange` webhook for `FINISHED` / `ERROR`:
+
+https://cursor.com/docs/cloud-agent/api/webhooks
+
+Point that hook (Cursor dashboard Cloud Agent webhooks, or v0 create `webhook.url`) at this studio:
+
+```
+POST http://127.0.0.1:8788/webhooks/cursor-cloud
+```
+
+Also accepted: `POST /v0/statusChange` and `POST /hook`.
+
+Headers (official):
+
+- `X-Webhook-Signature: sha256=<hex>` — HMAC-SHA256 of the **raw** body with `GCS_WEBHOOK_SECRET`
+- `X-Webhook-Event: statusChange`
+- `User-Agent: Cursor-Agent-Webhook/1.0`
+
+Body (official): `event`, `id` (bc-id), `status`, `target.prUrl`, `target.url`, `summary`.
+
+GCS Extra High create stays **v1** (`POST /v1/agents`, grok-4.6 xhigh `fast=false`) and does **not** attach a v0 `webhook` object (v1 docs have no webhook field). The documented hook is this receiver. Waiter remains the fallback when `GCS_WEBHOOK_SECRET` is unset.
+
+Enable:
+
+```bash
+export GCS_WEBHOOK_SECRET='…'   # never print or commit; 32+ chars for Cursor v0
+export GCS_WEBHOOK_URL='https://your-tunnel.example/webhooks/cursor-cloud'  # tell Cursor
+scripts/a2a/start-studio-bus.sh start   # starts receiver when secret is set
+# or: scripts/cloud/webhook-harness.sh serve
+scripts/cloud/webhook-harness.sh simulate --id bc-test --status FINISHED --pr URL
+```
+
+Do not remint waiter 429 backoff or fleet notify dedupe here. Never print the secret.
+
 Optional signed webhooks (`scripts/cloud/webhook_receiver.py`) are the other completion path. Waiter remains the fallback when `GCS_WEBHOOK_SECRET` is unset.
 
 ## Node >= 22.13
