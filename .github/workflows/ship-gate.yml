@@ -1,0 +1,37 @@
+# PR ship gate: .venv/bin/pytest -q AND python3 scripts/secret_scan.py
+# via scripts/ci/ship-gate.sh (requires N passed, N>=1).
+name: ship-gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ship-gate:
+    name: pytest -q and secret_scan
+    runs-on: ubuntu-latest
+    env:
+      GCS_BOT_BIND_OPTIONAL: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bootstrap venv
+        run: bash ./install.sh
+
+      - name: Ship gate
+        run: bash scripts/ci/ship-gate.sh

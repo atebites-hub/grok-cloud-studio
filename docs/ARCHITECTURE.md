@@ -29,6 +29,11 @@ launch-cloud-extra-high.sh → @cursor/sdk Agent.create
                            → spawn-waiter.sh → wait-notify.ts (run.wait)
                            → A2A ping owning seat (FLEET_DONE / PR_READY)
 
+LIV-41: a director-owns-launch turn without spawning/watching its own grunt
+via `scripts/launch-cloud-extra-high.sh` is FAIL (`reason=no-spawn-watch`).
+Unique `--name`. Refuse twin of RUNNING `gcs-liv59-anti-twin-floor2105`.
+Empty GitHub checks are not merge.
+
 fleet-shepherd.py = orphan-only safety net (no live waiter_pid)
 webhook_receiver.py = optional signed completion path
 ```

@@ -162,6 +162,11 @@ Board is **tcarac/taskboard**. Agent Kanban was removed; do not reconnect `ak`.
 Mind seats for CCGS leads (not a 49-specialist floor). Directors and leads spawn
 specialists only via `scripts/launch-cloud-extra-high.sh`.
 
+LIV-41: a director-owns-launch mind turn without spawning/watching its own
+Cursor Cloud grunt via that launcher is FAIL (`reason=no-spawn-watch`). Unique
+`--name` (example `gcs-liv41-own-grunt-floor2105`). Refuse twin of RUNNING
+`gcs-liv59-anti-twin-floor2105`. Empty GitHub checks are not merge.
+
 | CCGS lead | GCS seat |
 |---|---|
 | producer | `floor-ops` |

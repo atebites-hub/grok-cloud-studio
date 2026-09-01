@@ -121,6 +121,25 @@ if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from lib import canonical_seat, seat_acp_port  # noqa: E402
 
+_OWN_GRUNT_PATH = Path(__file__).resolve().parent / "director_turn_own_grunt.py"
+_OWN_GRUNT_MOD: Any = None
+
+
+def _own_grunt_mod() -> Any:
+    """LIV-41 combined spawn+watch judge. Loaded lazily (stdlib importlib)."""
+    global _OWN_GRUNT_MOD
+    if _OWN_GRUNT_MOD is not None:
+        return _OWN_GRUNT_MOD
+    spec = importlib.util.spec_from_file_location(
+        "gcs_director_turn_own_grunt", _OWN_GRUNT_PATH
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("missing scripts/directors/director_turn_own_grunt.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    _OWN_GRUNT_MOD = mod
+    return mod
+
 try:
     import websockets  # type: ignore
     from websockets.client import connect as ws_connect  # type: ignore
@@ -549,6 +568,7 @@ class AcpClient:
         self._harvested_early = False
         self._tool_events = 0
         self._work_tools = 0
+        self._tool_call_updates: list[dict[str, Any]] = []
         self._prompt_accepted = False
         self._queued = False
         self._accepted: Optional[asyncio.Event] = None
@@ -612,6 +632,8 @@ class AcpClient:
                             self._maybe_signal_accepted()
                     elif kind in _WORK_UPDATES:
                         self._tool_events += 1
+                        if kind == "tool_call" and isinstance(update, dict):
+                            self._tool_call_updates.append(update)
                         if is_this_prompt_work_tool(update):
                             self._work_tools += 1
                         self._maybe_signal_done()
@@ -799,6 +821,7 @@ class AcpClient:
         self._chunks = []
         self._tool_events = 0
         self._work_tools = 0
+        self._tool_call_updates = []
         self._echo_chunks = True
         self._harvested_early = False
         self._prompt_accepted = False
@@ -1156,6 +1179,30 @@ async def inject(
                 f"ACP_INJECT_RESULT_HARVEST seat={seat} session={session_id}",
                 flush=True,
             )
+        try:
+            own = _own_grunt_mod()
+            verdict = own.judge_director_own_grunt(
+                mail=prompt,
+                assistant=reply,
+                tool_updates=list(getattr(client, "_tool_call_updates", []) or []),
+            )
+        except Exception as exc:  # noqa: BLE001 — inject still reports FAIL closed
+            print(
+                f"ACP_INJECT_FAIL seat={seat} session={session_id} "
+                f"reason=no-spawn-watch err={exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 1
+        if verdict.get("fail"):
+            detail = str(verdict.get("detail") or "none")
+            print(
+                f"ACP_INJECT_FAIL seat={seat} session={session_id} "
+                f"reason={verdict.get('reason')} detail={detail}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 1
         if pin_session:
             reason = pin_session_handoff_reason(
                 reply,

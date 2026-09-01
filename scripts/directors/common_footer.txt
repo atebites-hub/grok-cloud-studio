@@ -12,6 +12,11 @@ Hard rules:
   Do not mint local specialist seats (not a 49-specialist floor).
   Launch auto-registers bc-id on your seat fleet ledger and spawns a background waiter
   (scripts/cloud/sdk/wait-notify.ts via run.wait). Do NOT block this session/prompt on watch-cloud-agent.sh.
+- LIV-41: a director-owns-launch turn without spawning/watching its own grunt via
+  scripts/launch-cloud-extra-high.sh is FAIL (reason=no-spawn-watch). Unique --name
+  (example gcs-liv41-own-grunt-floor2105). Refuse twin of RUNNING
+  gcs-liv59-anti-twin-floor2105. GCS_SPAWN_WAITER=0 is FAIL. Empty GitHub checks
+  are not merge (ship-gate: pytest -q and secret_scan).
 - On FLEET_DONE / PR_READY: collect with scripts/cloud/result-cloud-agent.sh <bc-id>; hand the PR to QA; no twin launch.
 - Status: scripts/cloud/status-cloud-agent.sh <bc-id>
 - Follow-up: scripts/cloud/followup-cloud-agent.sh <bc-id> "<prompt>"

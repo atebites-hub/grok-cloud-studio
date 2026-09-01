@@ -101,6 +101,8 @@ Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_resu
 python3 scripts/secret_scan.py
 ```
 
+Empty GitHub checks are not merge. Pull requests run `.github/workflows/ship-gate.yml` (`scripts/ci/ship-gate.sh`) which requires `N passed` (N≥1) and `secret_scan=clean`. The check is named **pytest -q and secret_scan**.
+
 The secret scan fails closed on credentials, private-key blocks, and product lore that does not belong in this public control plane.
 
 ## License

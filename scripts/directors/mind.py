@@ -23,6 +23,7 @@ Stdlib only. Donald/orchestrator (skipSeats) are not mind seats.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -44,6 +45,24 @@ from lib import canonical_seat, skip_seats  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
+_OWN_GRUNT_PATH = Path(__file__).resolve().parent / "director_turn_own_grunt.py"
+_OWN_GRUNT_MOD: Any = None
+
+
+def _own_grunt_mod() -> Any:
+    """LIV-41 own-grunt judge. Lazy load so this file stays import-light."""
+    global _OWN_GRUNT_MOD
+    if _OWN_GRUNT_MOD is not None:
+        return _OWN_GRUNT_MOD
+    spec = importlib.util.spec_from_file_location(
+        "gcs_director_turn_own_grunt_mind", _OWN_GRUNT_PATH
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("missing scripts/directors/director_turn_own_grunt.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    _OWN_GRUNT_MOD = mod
+    return mod
 
 _SECRET_ASSIGN_RE = re.compile(
     r"(?i)\b(CURSOR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
@@ -876,6 +895,8 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
         context_id = str(rec.get("contextId") or "")
         text = _extract_text(rec.get("parts"))
         prompt = text or json.dumps(rec, ensure_ascii=False)
+        own = _own_grunt_mod()
+        prompt = own.wrap_prompt_if_required(prompt)
         try:
             raw = run(prompt, seat=seat)
         except Exception as e:
@@ -898,6 +919,22 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
                 "reason": "runner-fail",
                 "task_id": task_id,
                 "returncode": returncode,
+            }
+
+        verdict = own.judge_director_own_grunt(
+            mail=prompt,
+            assistant=assistant_text,
+        )
+        if verdict.get("fail"):
+            print(
+                f"MIND_FAIL seat={seat} task={task_id} "
+                f"reason={verdict.get('reason')} detail={verdict.get('detail') or 'none'}",
+                file=sys.stderr,
+            )
+            return {
+                "consumed": 0,
+                "reason": str(verdict.get("reason") or "no-spawn-watch"),
+                "task_id": task_id,
             }
 
         backend = ""
