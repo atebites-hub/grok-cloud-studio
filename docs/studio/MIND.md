@@ -34,7 +34,7 @@ Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/laun
 
 No third Python tool loop. No ACP `session/prompt` GROW. No `deliver_wake` overlay.
 
-The grunt is **Cursor Cloud** (not "Extra High" as the noun, not "Cursor Cloud API"). Effort **grok-4.6 xhigh**, `fast=false`. Mind CLI: `--model cursor-grok-4.6-xhigh` only. The PATH launcher stays `scripts/launch-cloud-extra-high.sh`.
+The grunt is **Cursor Cloud** (not "Extra High" as the noun, not "Cursor Cloud API"). Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI: `--model grok-4.6 --reasoning-effort xhigh` (extra-high). Cursor fallback: `--model cursor-grok-4.6-xhigh` only. The PATH launcher stays `scripts/launch-cloud-extra-high.sh`.
 
 ### State (disk only)
 
@@ -61,12 +61,12 @@ Each inbox line (`scripts/directors/mind.py` `grok_cli_argv`). Live clap (2026-0
 # first grok turn (UUID already in mind/session; Cursor has no equivalent flag)
 grok --session-id "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
     --output-format json --always-approve --permission-mode bypassPermissions \
-    --max-turns 40
+    --max-turns 40 --model grok-4.6 --reasoning-effort xhigh
 
 # later grok turns
 grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
     --output-format json --always-approve --permission-mode bypassPermissions \
-    --max-turns 40
+    --max-turns 40 --model grok-4.6 --reasoning-effort xhigh
 ```
 
 - Create the UUID once (`uuid4`), store in `mind/session`. First turn uses `--session-id $UUID` instead of `--resume`. Later turns **only** `--resume` that id.
@@ -106,7 +106,7 @@ not set `GROK_BIN=cursor-grok`. Do not reuse `mind/session` (that UUID is
 grok-only). Do not remint the grok UUID because the runner switched.
 
 Binary: existing `cursor-grok` wrapper if present on PATH, else `agent`.
-Override with `GCS_CURSOR_BIN` (tests/ops). Model is **`cursor-grok-4.6-xhigh` only**. Never another model.
+Override with `GCS_CURSOR_BIN` (tests/ops). Grok runner model is **`grok-4.6`** with **`--reasoning-effort xhigh`** (extra-high). Cursor model is **`cursor-grok-4.6-xhigh` only**. Never another Cursor model.
 
 Auth: `CURSOR_API_KEY` already in the environment, or sourced from `~/.config/cursor/agent.env` (`CURSOR_AGENT_ENV` override). Never print the key. Never put it on argv.
 
@@ -133,7 +133,7 @@ agent --resume "$CURSOR_CHAT_ID" -p --force --output-format json --trust \
 | Seat `GROK_HOME/config.toml` | Taskboard stdio MCP: `taskboard --db $GCS_TASKBOARD_DB mcp` |
 | `grok plugin install --trust` | `plugins/studio-mind` into seat `GROK_HOME` from `seat-mind-loop.sh` (`ticket`, `a2a_send`, `cloud_launch`) |
 
-`--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install "$ROOT/plugins/studio-mind" --trust` with that seat’s `GROK_HOME`. If install is skipped (no grok, missing dir, install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop.
+`--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install "$ROOT/plugins/studio-mind" --trust` with that seat’s `GROK_HOME`. Already-installed / idempotent reinstall is `MIND_PLUGIN_OK` (grok may print `Error: repo studio-mind-... already installed` and exit non-zero). If install is skipped (no grok, missing dir, genuine install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop. Do not copy `GROK_HOME` MCP into Cursor CLI.
 
 Cursor runner: GROK_HOME taskboard MCP and grok `--plugin-dir` **do not transfer**. Two catalogs (see Two-runtime mind law). Cursor CLI uses Cursor builtins plus repo `.cursor/mcp.json`, never a copied `GROK_HOME`. Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`. No third Python tool loop.
 
@@ -156,3 +156,22 @@ Leftover dispatch skips a live `mind/pid` and current `GCS_MIND_SEATS` (`DISPATC
 `docs/A2A.md` GROW wake + `acp_inject.py --pin-session` remain for seats that still use serve. That path is leftover host OS, not this mind.
 
 Board is **tcarac/taskboard**. Agent Kanban was removed; do not reconnect `ak`.
+
+## CCGS leads
+
+Mind seats for CCGS leads (not a 49-specialist floor). Directors and leads spawn
+specialists only via `scripts/launch-cloud-extra-high.sh`.
+
+| CCGS lead | GCS seat |
+|---|---|
+| producer | `floor-ops` |
+| creative | `floor` |
+| technical | `systems` |
+| game-designer | `content` |
+| lead-programmer | `systems` (until split) |
+| art-director | `art` |
+| qa-lead | `qa-a` |
+| release-manager | `studio-ops` |
+| audio | `audio` (first-class) |
+| narrative | `narrative` (first-class) |
+

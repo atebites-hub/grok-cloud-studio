@@ -13,7 +13,8 @@ Cards/registry: `docs/a2a/`. Runtime state lives in `.a2a-state/` (gitignored).
 
 Hub default: `http://127.0.0.1:8732` (`GCS_A2A_HUB` / `GCS_A2A_PORT`).
 Example seats: `floor`, `ops`, `cloud`, plus Palemon-floor first-class
-`floor-ops`, `studio-ops`, `art`, `content`, `systems`, `qa-a`, `qa-b`.
+`floor-ops`, `studio-ops`, `art`, `content`, `systems`, `qa-a`, `qa-b`,
+`audio`, `narrative`.
 ACP / GROW cap: `GCS_ACP_SEATS` / `GCS_GROW_SEATS` (default `floor,studio-ops`; `ops` aliases `studio-ops`). Mail cannot auto-start seats outside that allowlist. `skipSeats` stay skipped. See `docs/studio/GROK_LEADER.md`.
 Opt-in mind: `GCS_MIND_SEATS` (default empty, example `floor,ops`) starts `seat-mind-loop.sh` / `mind.py`. See `docs/studio/MIND.md`.
 
@@ -72,5 +73,25 @@ Reply via `scripts/a2a/send.sh <seat> "…"`. This seat is NOT an ACP inject tar
 ```
 
 Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh donald` still works if you keep that seat name). Do not launch Bot CloudAgent for this path.
+
+## CCGS leads (mind seats)
+
+Role map onto first-class GCS seats. Do not mint 49 specialist seats.
+Directors and leads spawn specialists only via `scripts/launch-cloud-extra-high.sh`.
+
+| CCGS lead | GCS seat |
+|---|---|
+| producer | `floor-ops` |
+| creative | `floor` |
+| technical | `systems` |
+| game-designer | `content` |
+| lead-programmer | `systems` (until split) |
+| art-director | `art` |
+| qa-lead | `qa-a` |
+| release-manager | `studio-ops` |
+| audio | `audio` |
+| narrative | `narrative` |
+
+`audio` and `narrative` are first-class registry seats. The other titles are aliases (`scripts/a2a/lib.py` `CCGS_LEAD_ALIASES`).
 
 Board is **tcarac/taskboard** (ticket CLI + HTTP `/mcp`). See `docs/studio/TASKBOARD.md`. Agent Kanban was removed; do not reconnect `ak`. The local HTML dashboard under `scripts/studio/dashboard/` is LEGACY.

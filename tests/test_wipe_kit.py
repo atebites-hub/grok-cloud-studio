@@ -38,7 +38,9 @@ TB_README = TASKBOARD_DIR / "README.md"
 CURSOR_GROK = REPO / "scripts" / "host" / "cursor-grok"
 SOULS = REPO / "docs" / "studio" / "directors" / "souls"
 
-PALEMON_MIND = "floor-ops,studio-ops,floor,art,content,systems,qa-a,qa-b"
+PALEMON_MIND = (
+    "floor-ops,studio-ops,floor,art,content,systems,qa-a,qa-b,audio,narrative"
+)
 PALEMON_ACP = "floor-ops,floor,studio-ops,art,content,systems"
 LIVE_PORTS = {
     "floor": 8740,
@@ -49,6 +51,8 @@ LIVE_PORTS = {
     "systems": 8744,
     "qa-a": 8748,
     "qa-b": 8751,
+    "audio": 8754,
+    "narrative": 8755,
 }
 
 PRIVATE_GAME = "atebites-hub/" + "palemon"
@@ -102,10 +106,14 @@ def test_wipe_kit_files_exist() -> None:
         REPO / "docs" / "a2a" / "cards" / "content.json",
         REPO / "docs" / "a2a" / "cards" / "systems.json",
         REPO / "docs" / "a2a" / "cards" / "studio-ops.json",
+        REPO / "docs" / "a2a" / "cards" / "audio.json",
+        REPO / "docs" / "a2a" / "cards" / "narrative.json",
         SOULS / "art" / "SOUL.md",
         SOULS / "content" / "SOUL.md",
         SOULS / "floor-ops" / "SOUL.md",
         SOULS / "systems" / "SOUL.md",
+        SOULS / "audio" / "SOUL.md",
+        SOULS / "narrative" / "SOUL.md",
     ):
         assert path.is_file(), f"missing {path.relative_to(REPO)}"
 
@@ -135,6 +143,7 @@ def test_studio_env_example_matches_live_knobs() -> None:
     assert "GCS_MIND_SEATS=" in text
     assert "floor-ops" in text and "studio-ops" in text and "art" in text
     assert "content" in text and "systems" in text and "qa-a" in text and "qa-b" in text
+    assert "audio" in text and "narrative" in text
     assert "GCS_ACP_SEATS=" in text
     assert "GCS_GROW_SEATS=" in text
     assert "GCS_WAKE_SEATS=" in text
@@ -234,7 +243,7 @@ def test_live_registry_ports_and_skip_seats() -> None:
 
 
 def test_souls_are_clean_room_no_pokemon() -> None:
-    for seat in ("art", "content", "floor-ops", "systems"):
+    for seat in ("art", "content", "floor-ops", "systems", "audio", "narrative"):
         soul = (SOULS / seat / "SOUL.md").read_text(encoding="utf-8")
         assert seat.replace("-", " ") in soul.lower() or seat in soul.lower()
         assert _CREATURE_LORE.lower() not in soul.lower()
@@ -251,6 +260,12 @@ def test_souls_are_clean_room_no_pokemon() -> None:
     assert "launch" in floor_ops
     systems = (SOULS / "systems" / "SOUL.md").read_text(encoding="utf-8").lower()
     assert "schema" in systems or "sim" in systems or "math" in systems
+    audio = (SOULS / "audio" / "SOUL.md").read_text(encoding="utf-8").lower()
+    assert "audio" in audio
+    assert "launch-cloud-extra-high" in audio
+    narrative = (SOULS / "narrative" / "SOUL.md").read_text(encoding="utf-8").lower()
+    assert "narrative" in narrative
+    assert "launch-cloud-extra-high" in narrative
 
 
 def test_install_stays_secret_free_and_does_not_auto_install_host_bins() -> None:
