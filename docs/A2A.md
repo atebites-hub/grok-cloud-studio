@@ -72,7 +72,15 @@ When a new wake appears, read the task and act as orchestrator.
 Reply via `scripts/a2a/send.sh <seat> "…"`. This seat is NOT an ACP inject target.
 ```
 
-Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh donald` still works if you keep that seat name). Do not launch Bot CloudAgent for this path.
+Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh donald` still works if you keep that seat name **and** a donald Agent Card exists). Do not launch Bot CloudAgent for this path.
+
+## Duplex RESULT notify (skipSeats)
+
+`scripts/a2a/duplex.py` writes Director `RESULT` onto the working seat's A2A task and may ping the caller with `A2A_REPLY`. That ping must not 404.
+
+`donald` is a skipSeat with no shipped Agent Card (not an ACP inject target). Duplex maps `donald` → `floor-ops` (Palemon Donald-clone Director), then `orchestrator` (Bot card). If neither card exists, **skip notify** (`notify_skipped=skipSeat`) without failing the task reply (`ok` stays true; `director-result` is still stored). A failed `send.sh` is `notify_skipped=send-fail`, still not a failed task reply.
+
+Hub `TASK_STATE_COMPLETED` / `send.sh` `A2A_SEND_OK` is a protocol **receipt** only — not Director RESULT and not proof the seat acted. This is not LIV-85 mail-is-turn. `donald` / `orchestrator` stay `skipSeats`.
 
 ## CCGS leads (mind seats)
 

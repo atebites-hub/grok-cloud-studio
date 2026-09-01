@@ -5,4 +5,4 @@ alwaysApply: false
 
 # A2A seats
 
-Prefer MCP `a2a_list_seats` and `a2a_send` (or `scripts/a2a/send.sh`) for Director-to-Director **new work** pings. Do not use send.sh / a2a_send to ack the caller of an A2A wakeup — print RESULT; duplex notifies. The local hub is protocol-ack; dispatch wakes seats. Never print hub secrets or ACP tokens.
+Prefer MCP `a2a_list_seats` and `a2a_send` (or `scripts/a2a/send.sh`) for Director-to-Director **new work** pings. Do not use send.sh / a2a_send to ack the caller of an A2A wakeup — print RESULT; duplex notifies. Duplex maps skipSeat `donald` → `floor-ops` / `orchestrator` for `A2A_REPLY` (no hub 404); skip notify rather than fail the task reply. Hub `TASK_STATE_COMPLETED` is a receipt. The local hub is protocol-ack; dispatch wakes seats. Never print hub secrets or ACP tokens. Never Bot CloudAgent.
