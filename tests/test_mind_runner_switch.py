@@ -79,7 +79,7 @@ def test_docs_and_source_keep_switch_law() -> None:
     for blob in (src, doc, agents):
         assert "GCS_MIND_RUNNER" in blob
         assert "MIND_SWITCH" in blob
-        assert "mind/runner" in blob or ' / "runner"' in src
+        assert "mind/runner" in blob
         assert "Bot CloudAgent" not in blob
         assert PRIVATE_GAME not in blob
     assert "MIND_FALLBACK" not in src
@@ -101,8 +101,9 @@ def test_tree_does_not_vendor_hermes() -> None:
     assert "hermes-agent" not in gitmodules
     hermes_dirs = list(REPO.glob("**/hermes-agent"))
     assert hermes_dirs == []
+    for marker in HERMES_MARKERS:
+        assert marker not in src
     assert "do not vendor" in feature.lower() or "does not vendor" in feature.lower()
-    assert HERMES_MARKERS[0] not in src
 
 
 def test_explicit_auto_persists_grok_runner_path(
@@ -128,6 +129,17 @@ def test_explicit_auto_persists_grok_runner_path(
     assert tm._flag_value(argv, "--model") == tm.GROK_MIND_MODEL
     assert tm._flag_value(argv, "--reasoning-effort") == tm.GROK_MIND_REASONING_EFFORT
 
+    tm._append_inbox(state, "floor", "task-auto-path-2", "second grok mail")
+    again = mind.process_once("floor")
+    assert again["consumed"] == 1
+    assert tm._runner_name(state, "floor") == "grok"
+    assert len(tm._argv_log(grok_log)) == 2
+    assert tm._argv_log(cursor_log) == []
+    grok_sid = tm._session_id(state, "floor")
+    later = tm._argv_log(grok_log)[1]["argv"]
+    assert "--resume" in later
+    assert tm._flag_value(later, "--resume") == grok_sid
+
 
 def test_garbage_env_and_runner_file_start_as_grok(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -149,6 +161,47 @@ def test_garbage_env_and_runner_file_start_as_grok(
     assert result["consumed"] == 1
     assert tm._runner_name(state, "floor") == "grok"
     assert tm._argv_log(cursor_log) == []
+
+
+def test_after_switch_later_mail_does_not_probe_grok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = tm._write_fake_grok(
+        tmp_path,
+        grok_log,
+        rc=1,
+        stdout="",
+        stderr="Error: HTTP 402 usage balance exhausted",
+    )
+    cursor = tm._write_fake_cursor_agent(tmp_path, cursor_log)
+    monkeypatch.setenv("CURSOR_API_KEY", "test-cursor-api-key-not-leaked")
+    mind, state = tm._prep_mind(
+        tmp_path, monkeypatch, unique="noprobe", grok=grok, cursor=cursor
+    )
+    tm._append_inbox(state, "floor", "task-switch-1", "first mail after 402")
+    first = mind.process_once("floor")
+    assert first["consumed"] == 1
+    assert tm._runner_name(state, "floor") == "cursor"
+    grok_sid = tm._session_id(state, "floor")
+    chat_id = tm._cursor_session_id(state, "floor")
+    captured = capsys.readouterr()
+    assert "MIND_SWITCH" in captured.out + captured.err
+    assert len(tm._argv_log(grok_log)) == 1
+
+    tm._append_inbox(state, "floor", "task-switch-2", "stay on cursor")
+    second = mind.process_once("floor")
+    assert second["consumed"] == 1
+    assert tm._session_id(state, "floor") == grok_sid
+    assert tm._cursor_session_id(state, "floor") == chat_id
+    assert tm._runner_name(state, "floor") == "cursor"
+    assert len(tm._argv_log(grok_log)) == 1
+    cursor_rows = tm._argv_log(cursor_log)
+    assert sum(1 for r in cursor_rows if r["argv"] == ["create-chat"]) == 1
+    tm._assert_cursor_clap(cursor_rows[-1]["argv"], chat_id=chat_id, prompt="stay on cursor")
+    captured2 = capsys.readouterr()
+    assert "MIND_SWITCH" not in captured2.out + captured2.err
 
 
 def test_forced_cursor_does_not_switch_or_rewrite_runner(
