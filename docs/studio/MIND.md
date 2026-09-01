@@ -44,7 +44,7 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 
 | File | Role |
 |---|---|
-| `session` | Pinned grok session UUID (uuid4, created once) |
+| `session` | Pinned grok session UUID (uuid4, created once on stay-up / empty harvest) |
 | `session.minted` | Written after the first grok exit 0 (later grok turns `--resume`) |
 | `cursor-session` | Pinned Cursor chat id (from `agent create-chat`; not the grok UUID) |
 | `mail.txt` | Current inbox line (grok `--prompt-file`; Cursor positional prompt) |
@@ -56,6 +56,20 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 | `runner` | Persisted `grok` or `cursor` for `GCS_MIND_RUNNER=auto`. Missing file means grok. Forced env does not rewrite this file. |
 
 Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Process cwd is `$GCS_ROOT`. Cursor runner does **not** set `GROK_HOME`.
+
+### Pin on stay-up (LIV-62 remaining after #47)
+
+Executable BDD example (Living Sky **LIV-62** remaining after GCS PR #47):
+[`tests/features/liv62_hermes_pin_stay_up.feature`](../../tests/features/liv62_hermes_pin_stay_up.feature).
+Investigation: [`docs/studio/HERMES_REMAINING.md`](HERMES_REMAINING.md).
+
+Hermes named agents keep identity while idle. Grok mind is mailbox + pin +
+stay-up. After #47 (mail-as-a-turn), the remaining gap was: empty harvest
+left `mind/session` missing. `process_once` now pins a uuid4 even when
+`inbox.jsonl` has no new line. A later empty harvest **does not remint**.
+First grok turn uses `--session-id` of that pin. Empty ticks do **not**
+invent `mail.txt`. This is **not** harvest `mind/heartbeat`. Do not land
+#26 and #28. Do not vendor `hermes-agent`.
 
 ### Mail is a turn (grok)
 
@@ -85,7 +99,7 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
     --max-turns 40 --model grok-4.6 --reasoning-effort xhigh
 ```
 
-- Create the UUID once (`uuid4`), store in `mind/session`. First turn uses `--session-id $UUID` instead of `--resume`. Later turns **only** `--resume` that id.
+- Create the UUID once (`uuid4`) on stay-up / empty harvest, store in `mind/session`. First grok turn uses `--session-id $UUID` instead of `--resume`. Later turns **only** `--resume` that id.
 - Never bare `-p` on grok. Live proven 2026-08-21: `-p` before `--resume` is clap rc=2 because `--single` requires `<PROMPT>`. `--prompt-file` is the prompt and also triggers headless mode.
 - Spawn identity (remaining vs construction clap): `grok_cli_runner` asserts `--prompt-file` is `$GCS_A2A_STATE/<seat>/mind/mail.txt` and `--resume` / `--session-id` equals `mind/session`. Refuse `--continue`, `--fork-session`, `--print`, glued `--resume=-1`, and a positional prompt. Executable BDD: [`tests/features/liv62_pinned_mail_spawn.feature`](../../tests/features/liv62_pinned_mail_spawn.feature).
 - `--agent-profile`, `--trust`, and `--plugin-dir` are **grok agent** flags, not grok headless. Do not put them on this argv.
