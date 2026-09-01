@@ -131,9 +131,9 @@ agent --resume "$CURSOR_CHAT_ID" -p --force --output-format json --trust \
 |---|---|
 | Grok builtins | Shell, files, etc. inside grok |
 | Seat `GROK_HOME/config.toml` | Taskboard stdio MCP: `taskboard --db $GCS_TASKBOARD_DB mcp` |
-| `grok plugin install --trust` | `plugins/studio-mind` into seat `GROK_HOME` from `seat-mind-loop.sh` (`ticket`, `a2a_send`, `cloud_launch`) |
+| `grok plugin install --trust` | `plugins/studio-mind` (ticket), `plugins/a2a` (`a2a_list_seats`, `a2a_send`), `plugins/cursor-cloud` (`cloud_launch`, `cloud_status`, `cloud_result`) into seat `GROK_HOME` from `seat-mind-loop.sh` via `install_mind_grok_plugins` |
 
-`--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install "$ROOT/plugins/studio-mind" --trust` with that seat’s `GROK_HOME`. Already-installed / idempotent reinstall is `MIND_PLUGIN_OK` (grok may print `Error: repo studio-mind-... already installed` and exit non-zero). If install is skipped (no grok, missing dir, genuine install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop. Do not copy `GROK_HOME` MCP into Cursor CLI.
+`--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install --trust` for each of `plugins/studio-mind`, `plugins/a2a`, and `plugins/cursor-cloud` with that seat’s `GROK_HOME`. Grok manifests are `plugin.json` (not Hermes `plugin.yaml`). Do **not** vendor `NousResearch/hermes-agent`; `tests/test_liv63_mind_plugins.py` fails if a Hermes tree is copied into the repo. Executable example: [`tests/features/liv63_mind_plugins.feature`](../../tests/features/liv63_mind_plugins.feature). Already-installed / idempotent reinstall is `MIND_PLUGIN_OK` (grok may print `Error: repo <name>-... already installed` and exit non-zero). If install is skipped (no grok, missing dir, genuine install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop. Do not copy `GROK_HOME` MCP into Cursor CLI. Do not restack harvest mailbox PRs #26/#28. Mail-is-a-turn stays grok mailbox + pin + stay-up, not ACP overlay.
 
 Cursor runner: GROK_HOME taskboard MCP and grok `--plugin-dir` **do not transfer**. Two catalogs (see Two-runtime mind law). Cursor CLI uses Cursor builtins plus repo `.cursor/mcp.json`, never a copied `GROK_HOME`. Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`. No third Python tool loop.
 
@@ -174,4 +174,3 @@ specialists only via `scripts/launch-cloud-extra-high.sh`.
 | release-manager | `studio-ops` |
 | audio | `audio` (first-class) |
 | narrative | `narrative` (first-class) |
-
