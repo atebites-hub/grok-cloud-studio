@@ -19,8 +19,10 @@ from urllib.request import pathname2url
 REPO = Path(__file__).resolve().parents[1]
 LAUNCH = REPO / "scripts" / "launch-cloud-extra-high.sh"
 CLOUD = REPO / "scripts" / "cloud"
+FOLLOWUP = CLOUD / "followup.sh"
 LAUNCH_TS = CLOUD / "sdk" / "launch.ts"
 COMMON_TS = CLOUD / "sdk" / "common.ts"
+FOLLOWUP_TS = CLOUD / "sdk" / "followup.ts"
 FOOTER = REPO / "scripts" / "directors" / "common_footer.txt"
 CLOUD_DOC = REPO / "docs" / "CLOUD.md"
 CLOUD_README = CLOUD / "README.md"
@@ -65,12 +67,12 @@ def _assert_extra_high_model(model: dict[str, Any]) -> None:
     assert ("fast", "true") not in params
 
 
-REGISTER_JS = """\
+REGISTER_JS = """\\
 import { register } from "node:module";
 register(process.env.GCS_FAKE_SDK_LOADER, import.meta.url);
 """
 
-LOADER_JS = """\
+LOADER_JS = """\\
 export async function resolve(specifier, context, nextResolve) {
   if (specifier === "@cursor/sdk") {
     return { shortCircuit: true, url: process.env.GCS_FAKE_SDK_URL };
@@ -79,7 +81,7 @@ export async function resolve(specifier, context, nextResolve) {
 }
 """
 
-FAKE_SDK_JS = """\
+FAKE_SDK_JS = """\\
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const logPath = process.env.GCS_SDK_FIELD_LOG || "";
@@ -278,3 +280,51 @@ def test_docs_living_sky_liv_never_bot_or_black_swan() -> None:
         assert EXTRA_HIGH_ID in text, label
         assert EXTRA_HIGH_EFFORT in text, label
         assert "fast=false" in text or 'fast", "value": "false"' in text, label
+
+
+def test_rest_followup_posts_grok_46_xhigh_fast_false_despite_env_override(tmp_path: Path) -> None:
+    with MockCursorAPI(followup_http=201) as api:
+        proc = _run(
+            FOLLOWUP,
+            ["bc-mock", "Keep the PR; pin stays Extra High."],
+            _script_env(
+                tmp_path,
+                api.base,
+                CURSOR_API_KEY=FAKE_KEY,
+                CURSOR_CLOUD_MODEL=OVERRIDE_MODEL,
+                CURSOR_CLOUD_EFFORT=OVERRIDE_EFFORT,
+                GCS_BOT_AGENT_ID=BOT_ID,
+            ),
+        )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "CLOUD_FOLLOWUP_OK" in proc.stdout
+    runs = [p for p in api.posts if str(p["path"]).endswith("/runs")]
+    assert len(runs) == 1, api.posts
+    body = runs[0]["body"]
+    _assert_extra_high_model(body["model"])
+    assert body["prompt"]["text"] == "Keep the PR; pin stays Extra High."
+    assert BOT_ID not in json.dumps(body)
+    assert FAKE_KEY not in proc.stdout + proc.stderr
+    followup_src = FOLLOWUP.read_text(encoding="utf-8")
+    followup_ts = FOLLOWUP_TS.read_text(encoding="utf-8")
+    assert "sendPinned" in followup_ts
+    assert '"id": "grok-4.6"' in followup_src
+    assert '{"id": "effort", "value": "xhigh"}' in followup_src
+    assert '{"id": "fast", "value": "false"}' in followup_src
+
+
+def test_pin_does_not_vendor_hermes_or_launch_bot() -> None:
+    """Follow-up law: never vendor Hermes; never Bot CloudAgent."""
+    assert not (REPO / "vendor" / "hermes-agent").exists()
+    assert not (REPO / "vendor" / "hermes").exists()
+    gitmodules = (REPO / ".gitmodules").read_text(encoding="utf-8")
+    assert "hermes-agent" not in gitmodules.lower()
+    assert "nousresearch" not in gitmodules.lower()
+    pkg = (CLOUD / "sdk" / "package.json").read_text(encoding="utf-8").lower()
+    assert "hermes-agent" not in pkg
+    assert "nousresearch" not in pkg
+    req = (REPO / "requirements.txt").read_text(encoding="utf-8").lower()
+    assert "hermes" not in req
+    launch_sh = LAUNCH.read_text(encoding="utf-8")
+    assert "GCS_BOT_AGENT_ID" not in launch_sh
+    assert "cloud_sdk_exec launch" in launch_sh
