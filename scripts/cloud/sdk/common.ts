@@ -144,6 +144,54 @@ export function safeError(err: unknown): string {
   return message.replace(/\s+/g, " ").trim();
 }
 
+/** Extra High get_agent_run quota is 6000/hour; waiters must not die on the first 429. */
+export function isRateLimitError(err: unknown): boolean {
+  const statusRaw = errorField(err, "status");
+  const status = typeof statusRaw === "number" ? statusRaw : Number(statusRaw);
+  if (status === 429) return true;
+  const code = String(errorField(err, "code") ?? "").toLowerCase();
+  if (code === "rate_limited" || code === "rate_limit" || code === "too_many_requests") {
+    return true;
+  }
+  const msg = safeError(err).toLowerCase();
+  if (/\b429\b/.test(msg)) return true;
+  if (msg.includes("rate limit") || msg.includes("rate-limit") || msg.includes("ratelimit")) {
+    return true;
+  }
+  if (msg.includes("too many requests")) return true;
+  return false;
+}
+
+export function retryAfterFromError(err: unknown): string | null {
+  const direct = errorField(err, "retryAfter");
+  if (typeof direct === "string" && direct.trim()) return direct;
+  return null;
+}
+
+export function parseRetryAfterMs(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (/^\d+(\.\d+)?$/.test(trimmed)) {
+    return Math.max(0, Number(trimmed) * 1000);
+  }
+  const when = Date.parse(trimmed);
+  if (Number.isNaN(when)) return null;
+  return Math.max(0, when - Date.now());
+}
+
+/** Exponential backoff for waiter 429s. Honor Retry-After when it is a positive delay. */
+export function rateLimitBackoffMs(attempt: number, retryAfterHeader?: string | null): number {
+  const initial = Math.max(1, Number(process.env.CLOUD_WAITER_BACKOFF_MS || "2000") || 2000);
+  const cap = Math.max(initial, Number(process.env.CLOUD_WAITER_BACKOFF_CAP_MS || "60000") || 60000);
+  const fromHeader = parseRetryAfterMs(retryAfterHeader ?? undefined);
+  if (fromHeader != null && fromHeader > 0) {
+    return Math.min(cap, fromHeader);
+  }
+  const exp = initial * 2 ** Math.max(0, Math.floor(attempt));
+  return Math.min(cap, exp);
+}
+
 export function die(message: string, code = 1): never {
   console.error(message);
   process.exit(code);

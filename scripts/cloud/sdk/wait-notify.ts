@@ -5,8 +5,11 @@ import { Agent, type Run } from "@cursor/sdk";
 import { collectResult, type DirectorResult } from "./collect.ts";
 import {
   die,
+  isRateLimitError,
   loadApiKey,
   mapRunStatus,
+  rateLimitBackoffMs,
+  retryAfterFromError,
   safeError,
 } from "./common.ts";
 
@@ -63,6 +66,8 @@ function basicAuthHeader(apiKey: string): string {
   return `Basic ${Buffer.from(`${apiKey}:`, "utf8").toString("base64")}`;
 }
 
+type HttpErr = Error & { status?: number; retryAfter?: string | null };
+
 async function restGet(path: string, apiKey: string): Promise<Record<string, unknown>> {
   const base = (process.env.CURSOR_API_BASE || "https://api.cursor.com").replace(/\/$/, "");
   const res = await fetch(`${base}${path}`, {
@@ -72,9 +77,20 @@ async function restGet(path: string, apiKey: string): Promise<Record<string, unk
     },
   });
   if (!res.ok) {
-    throw new Error(`REST ${res.status} ${path}`);
+    const err: HttpErr = new Error(`REST ${res.status} ${path}`);
+    err.status = res.status;
+    err.retryAfter = res.headers.get("retry-after");
+    throw err;
   }
   return (await res.json()) as Record<string, unknown>;
+}
+
+async function pauseForRateLimit(err: unknown, attempt: number, agentId: string): Promise<void> {
+  const delay = rateLimitBackoffMs(attempt, retryAfterFromError(err));
+  process.stdout.write(
+    `CLOUD_WAITER_RETRY id=${agentId} status=429 backoffMs=${delay} attempt=${attempt}\n`,
+  );
+  await sleep(delay);
 }
 
 function unwrap(data: Record<string, unknown>, key: string): Record<string, unknown> {
@@ -91,45 +107,55 @@ async function restPoll(agentId: string, runId: string, apiKey: string): Promise
   const started = Date.now();
   const deadline = timeoutSec > 0 ? started + timeoutSec * 1000 : Number.POSITIVE_INFINITY;
   let last = "unknown";
-  while (Date.now() < deadline) {
-    const agentRaw = unwrap(await restGet(`/v1/agents/${agentId}`, apiKey), "agent");
-    const latest = runId || String(agentRaw.latestRunId || "");
-    let runStatus = "none";
-    let prUrl: string | null = null;
-    let resultText: string | null = null;
-    if (latest) {
-      const runRaw = unwrap(
-        await restGet(`/v1/agents/${agentId}/runs/${latest}`, apiKey),
-        "run",
-      );
-      runStatus = mapRunStatus(String(runRaw.status || ""));
-      last = runStatus;
-      const git = (runRaw.git || {}) as { branches?: Array<{ prUrl?: string; branch?: string }> };
-      const withPr = (git.branches || []).find((b) => b.prUrl);
-      prUrl = withPr?.prUrl || null;
-      resultText = typeof runRaw.result === "string" ? runRaw.result : null;
-      if (TERMINAL.has(runStatus)) {
-        return {
-          agentId: String(agentRaw.id || agentId),
-          name: String(agentRaw.name || ""),
-          url: String(agentRaw.url || `https://cursor.com/agents/${agentId}`),
-          runId: latest,
-          status: runStatus,
-          agentStatus: String(agentRaw.status || ""),
-          runStatus,
-          prUrl,
-          branches: (git.branches || []).map((b) => b.branch).filter((b): b is string => Boolean(b)),
-          branch: (git.branches || []).find((b) => b.branch)?.branch || null,
-          summary: null,
-          result: resultText,
-          error: null,
-        };
+  let rateLimitAttempt = 0;
+  // 429 must not abort the waiter. Resume until the run is terminal even if
+  // the agent row is leftover ACTIVE (membership) with a FINISHED run.
+  while (true) {
+    try {
+      const agentRaw = unwrap(await restGet(`/v1/agents/${agentId}`, apiKey), "agent");
+      const latest = runId || String(agentRaw.latestRunId || "");
+      let runStatus = "none";
+      let prUrl: string | null = null;
+      let resultText: string | null = null;
+      if (latest) {
+        const runRaw = unwrap(
+          await restGet(`/v1/agents/${agentId}/runs/${latest}`, apiKey),
+          "run",
+        );
+        runStatus = mapRunStatus(String(runRaw.status || ""));
+        last = runStatus;
+        const git = (runRaw.git || {}) as { branches?: Array<{ prUrl?: string; branch?: string }> };
+        const withPr = (git.branches || []).find((b) => b.prUrl);
+        prUrl = withPr?.prUrl || null;
+        resultText = typeof runRaw.result === "string" ? runRaw.result : null;
+        if (TERMINAL.has(runStatus)) {
+          return {
+            agentId: String(agentRaw.id || agentId),
+            name: String(agentRaw.name || ""),
+            url: String(agentRaw.url || `https://cursor.com/agents/${agentId}`),
+            runId: latest,
+            status: runStatus,
+            agentStatus: String(agentRaw.status || ""),
+            runStatus,
+            prUrl,
+            branches: (git.branches || []).map((b) => b.branch).filter((b): b is string => Boolean(b)),
+            branch: (git.branches || []).find((b) => b.branch)?.branch || null,
+            summary: null,
+            result: resultText,
+            error: null,
+          };
+        }
       }
+      rateLimitAttempt = 0;
+      process.stdout.write(`CLOUD_WAITER_POLL id=${agentId} runStatus=${runStatus}\n`);
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await sleep(Math.min(pollSec * 1000, remaining));
+    } catch (err) {
+      if (!isRateLimitError(err)) throw err;
+      await pauseForRateLimit(err, rateLimitAttempt, agentId);
+      rateLimitAttempt += 1;
     }
-    process.stdout.write(`CLOUD_WAITER_POLL id=${agentId} runStatus=${runStatus}\n`);
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
-    await sleep(Math.min(pollSec * 1000, remaining));
   }
   throw new Error(`CLOUD_WAITER_TIMEOUT id=${agentId} lastStatus=${last}`);
 }
@@ -149,33 +175,46 @@ async function sdkWait(agentId: string, runId: string, apiKey: string): Promise<
   const started = Date.now();
   const deadline = timeoutSec > 0 ? started + timeoutSec * 1000 : Number.POSITIVE_INFINITY;
   let last = "unknown";
-  while (Date.now() < deadline) {
-    const run = await latestRun(agentId, apiKey, runId || undefined);
-    const runStatus = mapRunStatus(run?.status);
-    last = runStatus;
-    if (run && TERMINAL.has(runStatus)) {
-      return collectResult(agentId, run.id);
-    }
-    if (run && typeof run.supports === "function" && run.supports("wait")) {
+  let rateLimitAttempt = 0;
+  while (true) {
+    try {
+      const run = await latestRun(agentId, apiKey, runId || undefined);
+      const runStatus = mapRunStatus(run?.status);
+      last = runStatus;
+      if (run && TERMINAL.has(runStatus)) {
+        return collectResult(agentId, run.id);
+      }
+      rateLimitAttempt = 0;
+      if (run && typeof run.supports === "function" && run.supports("wait")) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        try {
+          // timeout=0 => remaining is Infinity; sleep(Infinity) hung FLEET_DONE.
+          const slice = Math.min(pollSec * 1000, Number.isFinite(remaining) ? remaining : pollSec * 1000);
+          await Promise.race([
+            run.wait(),
+            sleep(slice).then(() => {
+              throw new Error("wait-poll");
+            }),
+          ]);
+          continue;
+        } catch (err) {
+          if (safeError(err).includes("wait-timeout")) break;
+          if (isRateLimitError(err)) {
+            await pauseForRateLimit(err, rateLimitAttempt, agentId);
+            rateLimitAttempt += 1;
+            continue;
+          }
+        }
+      }
       const remaining = deadline - Date.now();
       if (remaining <= 0) break;
-      try {
-        // timeout=0 => remaining is Infinity; sleep(Infinity) hung FLEET_DONE.
-        const slice = Math.min(pollSec * 1000, Number.isFinite(remaining) ? remaining : pollSec * 1000);
-        await Promise.race([
-          run.wait(),
-          sleep(slice).then(() => {
-            throw new Error("wait-poll");
-          }),
-        ]);
-        continue;
-      } catch (err) {
-        if (safeError(err).includes("wait-timeout")) break;
-      }
+      await sleep(Math.min(pollSec * 1000, remaining));
+    } catch (err) {
+      if (!isRateLimitError(err)) throw err;
+      await pauseForRateLimit(err, rateLimitAttempt, agentId);
+      rateLimitAttempt += 1;
     }
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
-    await sleep(Math.min(pollSec * 1000, remaining));
   }
   throw new Error(`CLOUD_WAITER_TIMEOUT id=${agentId} lastStatus=${last}`);
 }

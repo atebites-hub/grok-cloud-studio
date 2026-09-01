@@ -49,6 +49,10 @@ Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 
 After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.jsonl` and spawns `wait-notify.ts` (SDK `run.wait()`, REST poll when `CURSOR_API_BASE` / `CLOUD_FORCE_REST`). On `FINISHED|ERROR|CANCELLED|EXPIRED` the waiter A2A-pings the owning seat (`FLEET_DONE` / `PR_READY`) and marks `notified_by=waiter`.
 
+`get_agent_run` is capped at 6000/hour. Waiters exponential-backoff on HTTP 429 (`CLOUD_WAITER_RETRY`, `CLOUD_WAITER_BACKOFF_MS` / `CLOUD_WAITER_BACKOFF_CAP_MS`, Retry-After when positive) and resume until the **run** is terminal. Agent `ACTIVE` is durable membership — leftover `ACTIVE`+`FINISHED` is not an in-flight worker.
+
+`spawn-waiter.sh` registers a **supervisor** pid. If `wait-notify` still prints `CLOUD_WAITER_ERR` and exits on a rate-limit, the supervisor restarts it (`CLOUD_WAITER_RESTART`) so fleet-shepherd does not treat a 429 death as an orphan. Tests may set `CLOUD_WAITER_BIN`.
+
 Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
 `scripts/directors/fleet-shepherd.py` is an **orphan-only** safety net: it skips rows with a live `waiter_pid` or `notified_by` in `{waiter, webhook, shepherd}`.
