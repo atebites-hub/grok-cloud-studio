@@ -64,7 +64,8 @@ See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / 
 | Webhook | `GCS_WEBHOOK_SECRET` set and `webhook-harness.sh serve` |
 | Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook) |
 
-Do not double-notify a live waiter.
+Do not double-notify a live waiter. `notify_owner` is idempotent: a second
+notify on a row already `notified_by=waiter` does not A2A-ping again.
 
 ## Prompts
 

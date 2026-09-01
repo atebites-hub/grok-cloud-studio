@@ -159,6 +159,12 @@ def ping_seat(seat: str, text: str) -> bool:
     return proc.returncode == 0
 
 
+def _already_notified_by_waiter(entry: dict[str, Any] | None) -> bool:
+    if entry is None:
+        return False
+    return entry.get("notified_by") == "waiter"
+
+
 def notify_owner(
     bc_id: str,
     payload: dict[str, Any],
@@ -168,10 +174,15 @@ def notify_owner(
 ) -> dict[str, Any]:
     """A2A-ping the owning seat, then mark the ledger closed.
 
-    If the ping fails, the row stays open so fleet-shepherd can retry.
+    Idempotent: a second notify on a row already notified_by=waiter returns
+    that row and does not ping again (waiter+shepherd must not double-fire
+    FLEET_DONE). If the ping fails, the row stays open so fleet-shepherd
+    can retry.
     """
     hit = find_by_bc(bc_id)
     seat_name = seat or (hit[0] if hit else _seat_name())
+    if hit is not None and _already_notified_by_waiter(hit[1]):
+        return hit[1]
     text = notify_text(bc_id, payload)
     ok = ping_seat(seat_name, text)
     if not ok:
