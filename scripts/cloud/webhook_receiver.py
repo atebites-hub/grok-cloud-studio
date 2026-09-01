@@ -213,6 +213,21 @@ class WebhookHandler(BaseHTTPRequestHandler):
             return
         hit = find_by_bc(bc_id)
         seat = hit[0] if hit else os.environ.get("GCS_DIRECTOR_SEAT", "ops")
+        if hit is not None and hit[1].get("notified"):
+            # Cursor retries statusChange. Do not A2A-ping FLEET_DONE twice.
+            # Handler-level; does not change fleet_ledger.notify_owner (#34).
+            self._json(
+                200,
+                {
+                    "ok": True,
+                    "duplicate": True,
+                    "id": bc_id,
+                    "seat": seat,
+                    "notified_by": hit[1].get("notified_by"),
+                    "status": status,
+                },
+            )
+            return
         normalized = normalize_payload(payload, bc_id)
         try:
             row = notify_owner(bc_id, normalized, notified_by="webhook", seat=seat)

@@ -269,7 +269,9 @@ def test_launch_posts_parameterized_repo(tmp_path: Path) -> None:
     assert "CLOUD_LAUNCH_ERR" not in proc.stdout
     assert FAKE_KEY not in proc.stdout
     assert FAKE_KEY not in proc.stderr
-    _assert_extra_high_create(api.posts[0]["body"], repo=EXAMPLE_REPO, name="gcs-eh-test")
+    body = api.posts[0]["body"]
+    _assert_extra_high_create(body, repo=EXAMPLE_REPO, name="gcs-eh-test")
+    assert "webhook" not in body
 
 
 def test_launch_rejects_non_grok_cursor_cloud_model(tmp_path: Path) -> None:
