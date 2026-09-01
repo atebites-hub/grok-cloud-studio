@@ -81,6 +81,34 @@ def _offset(state: Path, seat: str) -> int:
     return int(path.read_text(encoding="utf-8").strip() or "0")
 
 
+def _write_task(state: Path, seat: str, task_id: str, status: str) -> None:
+    path = state / seat / "tasks.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tasks: dict = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            loaded = {}
+        if isinstance(loaded, dict):
+            tasks = loaded
+    tasks[task_id] = {
+        "id": task_id,
+        "status": {"state": status, "timestamp": "2026-01-01T00:00:00+00:00"},
+        "history": [],
+        "artifacts": [],
+    }
+    path.write_text(json.dumps(tasks, indent=2) + "\n", encoding="utf-8")
+
+
+def _task_state(state: Path, seat: str, task_id: str) -> str:
+    path = state / seat / "tasks.json"
+    if not path.is_file():
+        return ""
+    tasks = json.loads(path.read_text(encoding="utf-8"))
+    return str(((tasks.get(task_id) or {}).get("status") or {}).get("state") or "")
+
+
 def _runner_name(state: Path, seat: str) -> str:
     path = state / seat / "mind" / "runner"
     if not path.is_file():
@@ -379,6 +407,13 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "deliver_wake" in doc
     assert "fast=false" in doc
     assert "cursor cloud" in doc.lower()
+    assert "TASK_STATE_SUBMITTED" in doc
+    assert "TASK_STATE_COMPLETED" in doc
+    assert "Bot CloudAgent" not in src
+    arch = ARCH_DOC.read_text(encoding="utf-8")
+    assert "TASK_STATE_SUBMITTED" in arch
+    a2a = A2A_DOC.read_text(encoding="utf-8")
+    assert "TASK_STATE_SUBMITTED" in a2a or "SUBMITTED until mind" in a2a
 
 
 def test_fake_grok_mints_then_resumes_same_uuid(
@@ -1598,4 +1633,140 @@ def test_cursor_runner_sources_agent_env_without_printing_key(
     assert key not in captured.err
     transcript = (state / "floor" / "mind" / "transcript.jsonl").read_text(encoding="utf-8")
     assert key not in transcript
+
+
+def test_mind_marks_completed_only_after_grok_cli_exit_0(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Mail is a turn: COMPLETE only when grok actually ran the line and exited 0."""
+    log = tmp_path / "grok.argv.json"
+    grok = _write_fake_grok(tmp_path, log)
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="complete0", grok=grok)
+    task_id = "task-complete-1"
+    _append_inbox(state, "floor", task_id, "do the mail line")
+    _write_task(state, "floor", task_id, "TASK_STATE_SUBMITTED")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 1
+    assert result.get("reason") == "ok"
+    assert _task_state(state, "floor", task_id) == "TASK_STATE_COMPLETED"
+    assert _offset(state, "floor") > 0
+    rows = _argv_log(log)
+    assert len(rows) == 1, "grok CLI must actually run the mail line"
+    argv = rows[0]["argv"]
+    _assert_no_banned_flags(argv)
+    assert "--prompt-file" in argv
+    mail = Path(_flag_value(argv, "--prompt-file"))
+    assert "do the mail line" in mail.read_text(encoding="utf-8")
+    assert "--model" in argv
+    assert _flag_value(argv, "--model") == GROK_MIND_MODEL
+    assert _flag_value(argv, "--reasoning-effort") == GROK_MIND_REASONING_EFFORT
+    src = MIND_PY.read_text(encoding="utf-8")
+    assert "HANDOFF" not in src
+    assert "Bot CloudAgent" not in src
+
+
+def test_mind_does_not_complete_when_grok_cli_nonzero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "grok.argv.json"
+    grok = _write_fake_grok(tmp_path, log, rc=1, stdout="", stderr="boom")
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="completefail", grok=grok)
+    task_id = "task-complete-fail"
+    _append_inbox(state, "floor", task_id, "keep queued")
+    _write_task(state, "floor", task_id, "TASK_STATE_SUBMITTED")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 0
+    assert result.get("reason") == "runner-fail"
+    assert _task_state(state, "floor", task_id) == "TASK_STATE_SUBMITTED"
+    assert _offset(state, "floor") == 0
+    assert _transcript_rows(state, "floor") == []
+    assert _argv_log(log), "CLI ran but failed; that is not success"
+
+
+def test_empty_harvest_does_not_complete_or_invoke_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Empty harvest is not a turn. Do not remint. Do not fake COMPLETE."""
+    log = tmp_path / "grok.argv.json"
+    grok = _write_fake_grok(tmp_path, log)
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="emptycomplete", grok=grok)
+    leftover = "task-leftover-submitted"
+    _write_task(state, "floor", leftover, "TASK_STATE_SUBMITTED")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 0
+    assert result.get("reason") == "empty"
+    assert _argv_log(log) == []
+    assert _task_state(state, "floor", leftover) == "TASK_STATE_SUBMITTED"
+    assert not (state / "floor" / "mind" / "session").is_file()
+    assert _offset(state, "floor") == 0
+
+
+def test_none_runner_is_not_harvest_fake_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A runner that did not run (None) must not advance offset or mark COMPLETE."""
+
+    def silent(_prompt: str, **_kwargs: object):
+        return None
+
+    mind, state = _prep_mind(tmp_path, monkeypatch, unique="nonerunner", runner=silent)
+    task_id = "task-none-1"
+    _append_inbox(state, "floor", task_id, "must not fake success")
+    _write_task(state, "floor", task_id, "TASK_STATE_SUBMITTED")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 0
+    assert result.get("reason") == "runner-fail"
+    assert _task_state(state, "floor", task_id) == "TASK_STATE_SUBMITTED"
+    assert _offset(state, "floor") == 0
+    assert _transcript_rows(state, "floor") == []
+
+
+def test_cursor_cli_exit_0_marks_completed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = _write_fake_grok(tmp_path, grok_log)
+    cursor = _write_fake_cursor_agent(tmp_path, cursor_log)
+    monkeypatch.setenv("CURSOR_API_KEY", "test-cursor-api-key-not-leaked")
+    mind, state = _prep_mind(
+        tmp_path, monkeypatch, unique="curcomplete", grok=grok, cursor=cursor
+    )
+    monkeypatch.setenv("GCS_MIND_RUNNER", "cursor")
+    task_id = "task-cur-complete"
+    _append_inbox(state, "floor", task_id, "cursor mail line")
+    _write_task(state, "floor", task_id, "TASK_STATE_SUBMITTED")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 1
+    assert _task_state(state, "floor", task_id) == "TASK_STATE_COMPLETED"
+    assert _argv_log(grok_log) == []
+    cursor_rows = _argv_log(cursor_log)
+    assert cursor_rows[0]["argv"] == ["create-chat"]
+    _assert_cursor_clap(cursor_rows[1]["argv"], chat_id=_CURSOR_CHAT_ID, prompt="cursor mail line")
+    assert _flag_value(cursor_rows[1]["argv"], "--model") == CURSOR_MIND_MODEL
+
+
+def test_cursor_cli_nonzero_leaves_task_queued(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = _write_fake_grok(tmp_path, grok_log)
+    cursor = _write_fake_cursor_agent(
+        tmp_path, cursor_log, rc=1, stdout="", stderr="cursor boom"
+    )
+    monkeypatch.setenv("CURSOR_API_KEY", "test-cursor-api-key-not-leaked")
+    mind, state = _prep_mind(
+        tmp_path, monkeypatch, unique="curfailq", grok=grok, cursor=cursor
+    )
+    monkeypatch.setenv("GCS_MIND_RUNNER", "cursor")
+    task_id = "task-cur-fail"
+    _append_inbox(state, "floor", task_id, "cursor fail mail")
+    _write_task(state, "floor", task_id, "TASK_STATE_SUBMITTED")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 0
+    assert result.get("reason") == "runner-fail"
+    assert _task_state(state, "floor", task_id) == "TASK_STATE_SUBMITTED"
+    assert _offset(state, "floor") == 0
+    assert _argv_log(cursor_log), "Cursor CLI ran but failed"
 

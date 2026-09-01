@@ -2,8 +2,11 @@
 """Grok Build seat mind: mailbox + pin + stay-up.
 
 Python is not the agent. It harvests one inbox line, pins a grok session UUID,
-runs one `grok --prompt-file` turn, persists json stdout, and stays up. Grok is
-the agent for that turn (its own tool loop, `--max-turns 40`). Default
+runs one `grok --prompt-file` turn, persists json stdout, marks the hub
+task COMPLETED, and stays up. Grok is the agent for that turn (its own
+tool loop, `--max-turns 40`). send.sh / hub enqueue is SUBMITTED; mail
+stays queued until this harvest finishes. Failed runner does not complete
+the task and does not advance offset. Default
 `GCS_MIND_RUNNER=auto` persists `$GCS_A2A_STATE/<seat>/mind/runner` (`grok` or
 `cursor`). Each mail line uses that file. On quota / HTTP 402, flip the file
 and retry that same mail line once on the other runner (`MIND_SWITCH`). Forced
@@ -40,6 +43,7 @@ from typing import Any, Callable
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
+from duplex import set_task_state  # noqa: E402
 from lib import canonical_seat, skip_seats  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
@@ -833,7 +837,7 @@ DEFAULT_RUNNER: Callable[..., Any] = mind_turn_runner
 
 def _runner_payload(raw: Any) -> tuple[str, int, str]:
     if raw is None:
-        return "", 0, ""
+        return "", 1, ""
     if isinstance(raw, dict):
         text = str(raw.get("text") or "")
         stderr = str(raw.get("stderr") or "")
@@ -855,7 +859,12 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """One inbox line → one agent turn. Offset advances only on runner exit 0."""
+    """One inbox line → one agent turn. Offset advances only on runner exit 0.
+
+    That same success marks the hub task TASK_STATE_COMPLETED. Enqueue stays
+    TASK_STATE_SUBMITTED until then. Runner fail leaves mail queued. A runner
+    that did not run (None) is not success.
+    """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
         print(f"MIND_SKIP seat={seat} reason=skipSeats", flush=True)
@@ -923,6 +932,14 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             },
         )
         _write_offset(seat, end_offset)
+        if task_id:
+            set_task_state(
+                STATE_DIR,
+                seat,
+                task_id,
+                "TASK_STATE_COMPLETED",
+                text=f"MIND_TURN seat={seat} task={task_id}",
+            )
         print(
             f"MIND_TURN seat={seat} task={task_id} offset={end_offset}",
             flush=True,
