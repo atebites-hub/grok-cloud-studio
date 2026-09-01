@@ -60,7 +60,14 @@ def hub(tmp_path: Path):
 
 
 def test_registry_example_seats() -> None:
-    seats = subprocess.check_output(["python3", str(LIB), "launch-seats"], cwd=str(ROOT), text=True)
+    env = {**os.environ, "GCS_ROOT": str(ROOT), "GCS_ACP_SEATS": "floor,studio-ops"}
+    env.pop("GCS_SKIP_SEATS", None)
+    seats = subprocess.check_output(
+        ["python3", str(LIB), "hive-seats"],
+        cwd=str(ROOT),
+        text=True,
+        env=env,
+    )
     names = seats.strip().splitlines()
     for seat in (
         "floor",
@@ -153,3 +160,38 @@ def test_hub_send_canonicalizes_producer_and_accepts_audio(hub: dict) -> None:
     assert audio_inbox.is_file()
     arec = json.loads(audio_inbox.read_text(encoding="utf-8").splitlines()[-1])
     assert arec["parts"][0]["text"] == "mix pass via first-class seat"
+
+    body = json.dumps(
+        {
+            "message": {
+                "messageId": "http-producer-1",
+                "role": "ROLE_USER",
+                "parts": [{"kind": "text", "text": "direct http CCGS alias"}],
+            }
+        }
+    ).encode()
+    req = urllib.request.Request(
+        f"{hub['url']}/a2a/producer/message:send",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=3) as resp:
+        assert resp.status == 200
+    http_inbox = Path(hub["state"]) / "floor-ops" / "inbox.jsonl"
+    lines = http_inbox.read_text(encoding="utf-8").splitlines()
+    assert any("direct http CCGS alias" in line for line in lines)
+    assert not (Path(hub["state"]) / "producer" / "inbox.jsonl").exists()
+
+    from_alias = subprocess.run(
+        ["bash", str(SEND), "--from", "producer", "audio", "from CCGS alias"],
+        cwd=str(ROOT),
+        env=hub["env"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert from_alias.returncode == 0, from_alias.stdout + from_alias.stderr
+    audio_rec = json.loads(audio_inbox.read_text(encoding="utf-8").splitlines()[-1])
+    assert audio_rec.get("from") == "floor-ops"
+    assert audio_rec["parts"][0]["text"] == "from CCGS alias"

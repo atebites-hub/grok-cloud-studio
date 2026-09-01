@@ -234,12 +234,14 @@ class A2AHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         seat, action, task_id, _ = _parse_path(self.path)
-        if action == "message-send" and seat:
+        if seat:
             resolved = _resolve_seat(seat)
-            if resolved is None:
+            if resolved is not None:
+                seat = resolved
+            elif action in {"message-send"}:
                 _json_response(self, 404, {"error": f"unknown seat: {seat}"})
                 return
-            seat = resolved
+        if action == "message-send" and seat:
             try:
                 body = _read_json(self)
             except json.JSONDecodeError as e:

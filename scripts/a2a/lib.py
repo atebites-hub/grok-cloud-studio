@@ -115,16 +115,26 @@ def grow_seats(root: Path | None = None) -> frozenset[str]:
 
     Default GCS_GROW_SEATS / GCS_ACP_SEATS is floor,studio-ops. The example
     registry names ops `ops`; both aliases are included so dispatch skip and
-    wake loops agree.
+    wake loops agree. CCGS lead titles fold onto first-class hive seats.
     """
     raw = env_first("GCS_GROW_SEATS", "GCS_ACP_SEATS", default="floor,studio-ops")
-    seats = {normalize_seat(s) for s in raw.split(",") if s.strip()}
-    if "studio-ops" in seats:
-        seats.add("ops")
-    if "ops" in seats:
-        seats.add("studio-ops")
     skipped = skip_seats(root)
-    return frozenset(s for s in seats if s and s not in skipped)
+    known = set(_seat_entries(root))
+    out: set[str] = set()
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        key = canonical_seat(token, root)
+        if not key or key in skipped:
+            continue
+        if key in known:
+            out.add(key)
+    if "studio-ops" in out and "ops" in known and "ops" not in skipped:
+        out.add("ops")
+    if "ops" in out and "studio-ops" in known and "studio-ops" not in skipped:
+        out.add("studio-ops")
+    return frozenset(out)
 
 
 def mind_seats(root: Path | None = None) -> frozenset[str]:

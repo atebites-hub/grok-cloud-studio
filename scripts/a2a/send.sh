@@ -39,6 +39,9 @@ ROOT="$(cd "${GCS_ROOT:-$SCRIPT_DIR/../..}" && pwd)"
 if [[ -n "$SEAT" ]]; then
   SEAT="$(python3 "$ROOT/scripts/a2a/lib.py" canonical "$SEAT" 2>/dev/null || echo "$SEAT")"
 fi
+if [[ -n "$FROM_SEAT" ]]; then
+  FROM_SEAT="$(python3 "$ROOT/scripts/a2a/lib.py" canonical "$FROM_SEAT" 2>/dev/null || echo "$FROM_SEAT")"
+fi
 
 if [[ -z "$SEAT" || -z "$TEXT" ]]; then
   echo "usage: $0 [--from SEAT] <seat> \"<text>\" [optional-data-json]" >&2

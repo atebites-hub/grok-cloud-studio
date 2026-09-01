@@ -415,3 +415,52 @@ def test_optional_mind_seats_still_accept_audio_narrative() -> None:
     assert opted.returncode == 0, opted.stderr
     seats = {s.strip() for s in opted.stdout.splitlines() if s.strip()}
     assert seats == {"audio", "narrative", "floor-ops"}
+
+
+def test_grow_and_acp_allowlist_canonicalize_ccgs_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GCS_ROOT", str(REPO))
+    monkeypatch.setenv("GCS_GROW_SEATS", "producer,qa-lead")
+    monkeypatch.delenv("GCS_ACP_SEATS", raising=False)
+    monkeypatch.delenv("GCS_SKIP_SEATS", raising=False)
+    lib = _load_lib()
+    grow = lib.grow_seats(REPO)
+    assert "floor-ops" in grow
+    assert "qa-a" in grow
+    assert "producer" not in grow
+    assert "qa-lead" not in grow
+    monkeypatch.setenv("GCS_ACP_SEATS", "producer,audio")
+    dispatch = _load_dispatch("gcs_dispatch_ccgs_acp_alias")
+    allow = dispatch._acp_seat_allowlist()
+    assert "floor-ops" in allow
+    assert "audio" in allow
+    assert "producer" not in allow
+
+
+def test_leftover_dispatch_does_not_skip_narrative_as_not_in_launch_map(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("GCS_ACP_SEATS", ACP_CAP)
+    monkeypatch.setenv("GCS_ROOT", str(REPO))
+    monkeypatch.delenv("GCS_MIND_SEATS", raising=False)
+    monkeypatch.delenv("GCS_SKIP_SEATS", raising=False)
+    dispatch = _load_dispatch("gcs_dispatch_ccgs_hive_narrative")
+    state = tmp_path / "a2a-state"
+    monkeypatch.setattr(dispatch, "STATE_DIR", state)
+    monkeypatch.setattr(dispatch, "GROW_SEATS", frozenset())
+    seat_dir = state / "narrative"
+    seat_dir.mkdir(parents=True)
+    rec = {
+        "taskId": "t-narrative-hive",
+        "contextId": "c-narrative",
+        "parts": [{"kind": "text", "text": "STATUS ping leftover hive"}],
+    }
+    (seat_dir / "inbox.jsonl").write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    started = dispatch._process_seat("narrative", dry_run=True)
+    out = capsys.readouterr().out
+    assert started == 0
+    assert "not-in-launch-map" not in out
+    assert "DISPATCH_DRY_RUN seat=narrative" in out

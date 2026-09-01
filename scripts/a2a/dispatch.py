@@ -35,6 +35,7 @@ _LIB_DIR = Path(__file__).resolve().parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from lib import hive_seats as _hive_seats_fn  # noqa: E402
+from lib import canonical_seat as _canonical_seat  # noqa: E402
 from lib import skip_seats as _skip_seats_fn  # noqa: E402
 from lib import grow_seats as _grow_seats_fn  # noqa: E402
 from lib import mind_seats as _mind_seats_fn  # noqa: E402
@@ -533,11 +534,19 @@ def _acp_seat_allowlist() -> frozenset[str]:
     raw = os.environ.get("GCS_ACP_SEATS")
     if raw is None or not str(raw).strip():
         raw = _studio_env().get("GCS_ACP_SEATS", "floor,studio-ops")
-    seats = {s.strip() for s in raw.split(",") if s.strip()}
+    seats: set[str] = set()
+    known = set(_hive_seats_fn(ROOT))
+    for part in str(raw).split(","):
+        token = part.strip()
+        if not token:
+            continue
+        key = _canonical_seat(token, ROOT)
+        if key in known:
+            seats.add(key)
     # GCS example registry names the ops seat "ops"; product floors use studio-ops.
-    if "studio-ops" in seats:
+    if "studio-ops" in seats and "ops" in known:
         seats.add("ops")
-    if "ops" in seats:
+    if "ops" in seats and "studio-ops" in known:
         seats.add("studio-ops")
     return frozenset(seats) - _skip_seats()
 
