@@ -55,7 +55,7 @@ bash scripts/studio/taskboard/setup-taskboard.sh status
 # 2. Then the bus (NO --daemons) with GCS_MIND_SEATS from studio.env
 scripts/a2a/start-studio-bus.sh start
 
-# 3. Optional Tailscale Serve only if the node is already joined
+# 3. Optional Tailscale Serve — also started by ./setup.sh after the bus
 #    PALEMON_TAILSCALE_SERVE=0 skips. Funnel stays off.
 #    Host default: palemon-studio.panther-arctic.ts.net
 bash scripts/studio/taskboard/start-tailscale-serve.sh start
@@ -64,6 +64,7 @@ bash scripts/studio/taskboard/start-tailscale-serve.sh start
 Stop / board-only wipe (inboxes stay; Living Sky Linear is LIV, never Black Swan):
 
 ```bash
+bash scripts/studio/taskboard/start-tailscale-serve.sh stop
 bash scripts/studio/taskboard/setup-taskboard.sh stop
 GCS_TASKBOARD_WIPE=1 bash scripts/studio/taskboard/setup-taskboard.sh wipe
 # Leaf:

@@ -34,7 +34,7 @@ export GCS_BOT_AGENT_ID='your-grok-bot-agent-id'   # from Grok Bot settings
 
 ### Palemon studio wipe
 
-Disaster recovery: `./setup.sh` (deploy) and `./cleanup.sh` (teardown). Live DR loop: `./health_check.sh` + `./recover.sh`. See **[docs/studio/WIPE.md](docs/studio/WIPE.md)**. Clone with `--recurse-submodules` (or `git submodule update --init --recursive`) so `vendor/taskboard` is the v0.6.0 source pin.
+Disaster recovery: `./setup.sh` (deploy, including optional Tailscale Serve) and `./cleanup.sh` (teardown). Live DR loop: `./health_check.sh` + `./recover.sh`. Optional boot timer: `scripts/studio/systemd/install-systemd.sh`. See **[docs/studio/WIPE.md](docs/studio/WIPE.md)**. Clone with `--recurse-submodules` (or `git submodule update --init --recursive`) so `vendor/taskboard` is the v0.6.0 source pin.
 
 Recover today's Palemon floor (first-class mind including CCGS audio/narrative leads, taskboard UI/MCP, no `--daemons`) from a clean machine. Copy `studio.env.example` to `$GCS_A2A_STATE/studio.env` (not committed). Host board: `scripts/studio/taskboard/`.
 

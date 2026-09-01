@@ -25,9 +25,12 @@ Restart only what health_check would mark down:
                          is not a default start)
   taskboard :3010 down -> scripts/studio/taskboard/start-taskboard.sh start
   mcp-http :3011 down  -> scripts/studio/taskboard/mcp-http.sh start
+  tailscale on PATH and PALEMON_TAILSCALE_SERVE != 0
+      -> scripts/studio/taskboard/start-tailscale-serve.sh start
 
 Does not remint sessions, wipe studio.env / inboxes / pins, reconnect
-Agent Kanban, or launch Cursor Cloud.
+Agent Kanban, or launch Cursor Cloud. Does not invoke leftover systemd
+units (including Agent Kanban). Boot hook: scripts/studio/systemd/.
 
 Fails closed (no restarts) if Higgsfield/Sentry art MCP would leak keys
 (argv / literal env), or if the LIV-84 Extra High Cursor catalog is merged
@@ -80,6 +83,7 @@ fi
 need_bus=0
 need_tb=0
 need_mcp=0
+need_ts=0
 
 if ! gcs_health_hub_ok; then
   need_bus=1
@@ -96,6 +100,9 @@ if ! gcs_health_taskboard_ok; then
 fi
 if ! gcs_health_mcp_http_ok; then
   need_mcp=1
+fi
+if gcs_want_tailscale_serve && command -v tailscale >/dev/null 2>&1; then
+  need_ts=1
 fi
 
 recover_start() {
@@ -135,6 +142,9 @@ if [[ "$need_tb" -eq 1 ]]; then
 fi
 if [[ "$need_mcp" -eq 1 ]]; then
   recover_start mcp-http "$ROOT/scripts/studio/taskboard/mcp-http.sh" start
+fi
+if [[ "$need_ts" -eq 1 ]]; then
+  recover_start tailscale "$ROOT/scripts/studio/taskboard/start-tailscale-serve.sh" start
 fi
 
 echo "RECOVER_OK"

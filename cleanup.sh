@@ -17,6 +17,7 @@ Usage: cleanup.sh [--help]
 One-command teardown (idempotent). Disaster recovery entrypoint with setup.sh.
 
 Default (soft): stop the bus WITHOUT --daemons, then
+start-tailscale-serve.sh stop, then
 scripts/studio/taskboard/setup-taskboard.sh stop (UI + MCP HTTP;
 leaf processes remain start-taskboard.sh and mcp-http.sh).
 Does not delete .env, studio.env, grok login, Cursor login, inboxes, or pins.
@@ -32,6 +33,7 @@ Does not delete .env, studio.env, grok login, Cursor login, inboxes, or pins.
                         studio.env, repo .env, grok login, and Cursor login are kept.
 
 Never print secrets. Never reconnect Agent Kanban.
+See docs/studio/WIPE.md.
 EOF
 }
 
@@ -61,6 +63,7 @@ else
   bash "$ROOT/scripts/a2a/start-studio-bus.sh" stop || true
 fi
 
+bash "$ROOT/scripts/studio/taskboard/start-tailscale-serve.sh" stop || true
 if [[ "${CLEANUP_WIPE_STATE:-0}" == "1" ]]; then
   bash "$ROOT/scripts/studio/taskboard/setup-taskboard.sh" wipe || true
 else

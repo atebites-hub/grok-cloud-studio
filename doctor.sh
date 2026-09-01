@@ -64,6 +64,9 @@ for p in \
   scripts/studio/taskboard/start-tailscale-serve.sh \
   scripts/studio/taskboard/health-taskboard.sh \
   scripts/studio/taskboard/maintainer.sh \
+  scripts/studio/systemd/install-systemd.sh \
+  scripts/studio/systemd/gcs-recover.service.in \
+  scripts/studio/systemd/gcs-recover.timer.in \
   scripts/host/cursor-grok \
   scripts/launch-cloud-extra-high.sh \
   scripts/cloud/spawn-waiter.sh \

@@ -24,13 +24,16 @@ One-command deploy (idempotent). Disaster recovery entrypoint with cleanup.sh.
   4. Board: scripts/studio/taskboard/setup-taskboard.sh start
      (host ticket/tb PATH links, start-taskboard.sh UI :3010, mcp-http.sh :3011).
   5. Start scripts/a2a/start-studio-bus.sh start   (NO --daemons)
-  6. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if Agent Kanban returns)
-  7. Print SETUP_OK with hub/board ports and mind seat list.
-  8. Run ./health_check.sh (HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN).
+  6. Optional Tailscale Serve (scripts/studio/taskboard/start-tailscale-serve.sh start).
+     Skip if PALEMON_TAILSCALE_SERVE=0, tailscale missing, or not joined.
+  7. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if Agent Kanban returns)
+  8. Print SETUP_OK with hub/board ports and mind seat list.
+  9. Run ./health_check.sh (HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN).
 
 Never auto-spawn a 13-seat grok serve floor. Do not pass --daemons.
 GCS_ACP_SEATS comes from env (studio.env) only; this script does not set it.
 Never print secrets. Never git-add studio.env.
+See docs/studio/WIPE.md.
 
 Optional skips (already-bootstrapped box / tests):
   GCS_SETUP_SKIP_INSTALL=1    skip ./install.sh
@@ -92,6 +95,9 @@ if [[ "${GCS_SETUP_SKIP_START:-0}" != "1" ]]; then
   bash "$ROOT/scripts/studio/taskboard/setup-taskboard.sh" start
   # Crash-safe: never pass --daemons. Do not start a 13-seat serve.
   bash "$ROOT/scripts/a2a/start-studio-bus.sh" start
+  # Optional Tailscale Serve: already-joined only. Missing is WARN, not FAIL.
+  bash "$ROOT/scripts/studio/taskboard/start-tailscale-serve.sh" start \
+    || echo "SETUP_WARN tailscale serve failed (missing/not-joined is skip)" >&2
 fi
 
 if [[ "${GCS_SETUP_SKIP_DOCTOR:-0}" != "1" ]]; then
