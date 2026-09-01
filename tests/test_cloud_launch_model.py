@@ -237,7 +237,7 @@ def test_sdk_intercept_js_parses_in_node(tmp_path: Path) -> None:
     for path in (register, loader, fake_sdk):
         text = path.read_text(encoding="utf-8").lstrip("\n")
         assert not text.startswith("\\"), f"{path.name} starts with backslash; invalid JS"
-        assert text.startswith("import "), path.name
+        assert text.startswith(("import ", "export ")), path.name
         proc = subprocess.run(
             ["node", "--check", str(path)],
             capture_output=True,
