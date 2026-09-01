@@ -30,7 +30,7 @@ export GCS_BOT_AGENT_ID='your-grok-bot-agent-id'   # from Grok Bot settings
 ./doctor.sh
 ```
 
-`./install.sh` without `GCS_BOT_AGENT_ID` still bootstraps Python, then **WARN**s. Re-run install or `scripts/a2a/bind-bot-agent.sh` after setting the id. `./doctor.sh` **FAIL**s while `docs/a2a/bot-agents.json` still has an empty or `REPLACE_WITH_YOUR_GROK_BOT_AGENT_ID` agentId. Pure CI clone checks may set `GCS_BOT_BIND_OPTIONAL=1`.
+`./install.sh` without `GCS_BOT_AGENT_ID` still bootstraps Python, then **WARN**s. Re-run install or `scripts/a2a/bind-bot-agent.sh` after setting the id. `./doctor.sh` **FAIL**s while `docs/a2a/bot-agents.json` still has an empty or `REPLACE_WITH_YOUR_GROK_BOT_AGENT_ID` agentId. Pure CI clone checks may set `GCS_BOT_BIND_OPTIONAL=1`. `./doctor.sh` also **FAIL**s closed if Cursor Cloud launch-plane is missing (`GCS_CLOUD_REPO` / `CLOUD_REPO_URL`, `CURSOR_API_KEY` env or `~/.config/cursor/agent.env`, `scripts/launch-cloud-extra-high.sh`). It reports `CURSOR_API_KEY` as set/unset only (never prints the key) and does not spawn Extra High or Bot CloudAgent.
 
 ### Palemon studio wipe
 
@@ -61,7 +61,7 @@ scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." 
 
 See `.env.example`. Prefix is **`GCS_*`**. Important:
 
-- `GCS_CLOUD_REPO` / `CLOUD_REPO_URL` — **required** for Extra High create (fail closed)
+- `GCS_CLOUD_REPO` / `CLOUD_REPO_URL` — **required** for Extra High create (fail closed); `./doctor.sh` **FAIL**s if unset
 - `GCS_BOT_AGENT_ID` — Grok Bot orchestrator id (binds into A2A on install)
 - `GCS_BOT_SEAT` — default `orchestrator` (`donald` still works; kept in `skipSeats` for back-compat)
 - `GCS_BOT_BIND_OPTIONAL=1` — doctor will not FAIL on placeholder agentId (CI clones only)

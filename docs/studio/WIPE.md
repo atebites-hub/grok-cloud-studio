@@ -183,7 +183,11 @@ python3 scripts/secret_scan.py
 ```
 
 `./doctor.sh` **WARN**s (does not FAIL) if `grok`, `agent`/`cursor-grok`, or
-`taskboard` is missing. It **FAIL**s if `scripts/studio/agent-kanban` reappears.
+`taskboard` is missing. It **FAIL**s if Cursor Cloud launch-plane is missing
+(`GCS_CLOUD_REPO` / `CLOUD_REPO_URL`, `CURSOR_API_KEY` set boolean-only via
+env or `~/.config/cursor/agent.env`, or `scripts/launch-cloud-extra-high.sh`)
+or if `scripts/studio/agent-kanban` reappears. It never prints `CURSOR_API_KEY`.
+It does not spawn Extra High or Bot CloudAgent.
 
 ## Seats (first-class)
 
