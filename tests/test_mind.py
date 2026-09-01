@@ -1025,7 +1025,12 @@ def _bus_env(state: Path, extra: dict[str, str] | None = None) -> dict[str, str]
     env = {
         k: v
         for k, v in os.environ.items()
-        if k not in {"GCS_MIND_SEATS", "GCS_START_SEAT_DAEMONS", "GCS_ACP_STOP_WITH_BUS"}
+        if k not in {
+            "GCS_MIND_SEATS",
+            "GCS_START_SEAT_DAEMONS",
+            "GCS_ACP_STOP_WITH_BUS",
+            "GCS_BOT_BRIDGE",
+        }
     }
     env.update(
         {

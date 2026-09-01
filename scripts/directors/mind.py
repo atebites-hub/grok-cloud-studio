@@ -402,7 +402,11 @@ def plugin_a2a_send(arguments: dict[str, Any]) -> str:
 
 
 def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
-    """scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT."""
+    """scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT.
+
+    --name REFUSE if a live runStatus=RUNNING Extra High already has that name.
+    Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent.
+    """
     script = ROOT / "scripts" / "launch-cloud-extra-high.sh"
     if not script.is_file():
         return "PLUGIN_ERR cloud_launch: missing scripts/launch-cloud-extra-high.sh"
@@ -448,7 +452,13 @@ CLOUD_LAUNCH_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "prompt": {"type": "string"},
-        "name": {"type": "string", "description": "Short Extra High agent name"},
+        "name": {
+            "type": "string",
+            "description": (
+                "Short Extra High agent name. REFUSE if a live runStatus=RUNNING "
+                "agent already has that name (no twin remint)."
+            ),
+        },
     },
     "required": ["prompt"],
     "additionalProperties": False,

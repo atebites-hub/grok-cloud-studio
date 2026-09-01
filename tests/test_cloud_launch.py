@@ -67,8 +67,12 @@ class MockCursorAPI:
     create_body: dict[str, Any] | None = None
     list_items: list[dict[str, Any]] = field(default_factory=list)
     run_statuses: list[str] = field(default_factory=lambda: ["FINISHED"])
+    run_status_by_id: dict[str, str] = field(default_factory=dict)
+    run_not_found_ids: set[str] = field(default_factory=set)
     followup_http: int = 201
+    list_http: int = 200
     posts: list[dict[str, Any]] = field(default_factory=list)
+    gets: list[str] = field(default_factory=list)
     auth_users: list[str] = field(default_factory=list)
     _run_i: int = 0
     _httpd: ThreadingHTTPServer | None = None
@@ -100,34 +104,67 @@ class MockCursorAPI:
             def do_GET(self) -> None:
                 api.auth_users.append(_basic_user(self.headers.get("Authorization")))
                 parsed = urlparse(self.path)
+                api.gets.append(parsed.path)
                 parts = [p for p in parsed.path.split("/") if p]
                 if parts == ["v1", "agents"]:
-                    self._send(200, {"items": api.list_items})
+                    if api.list_http != 200:
+                        self._send(api.list_http, {"error": "list_failed"})
+                        return
+                    items = []
+                    for raw in api.list_items:
+                        item = {k: v for k, v in raw.items() if k != "detailLatestRunId"}
+                        items.append(item)
+                    self._send(200, {"items": items})
                     return
                 if len(parts) == 3 and parts[:2] == ["v1", "agents"]:
                     agent_id = parts[2]
+                    listed = next(
+                        (
+                            row
+                            for row in api.list_items
+                            if str(row.get("id") or row.get("agentId") or "") == agent_id
+                        ),
+                        None,
+                    )
+                    # Do not invent a run id for a listed agent. Skipping that
+                    # row in production would remint a live RUNNING twin.
+                    if listed is None:
+                        latest = "run-mock"
+                    elif "latestRunId" in listed:
+                        latest = listed.get("latestRunId") or ""
+                    elif "detailLatestRunId" in listed:
+                        latest = listed.get("detailLatestRunId") or ""
+                    else:
+                        latest = ""
                     self._send(
                         200,
                         {
                             "id": agent_id,
-                            "name": "mock-agent",
-                            "status": "ACTIVE",
-                            "url": f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": "run-mock",
+                            "name": (listed or {}).get("name") or "mock-agent",
+                            "status": (listed or {}).get("status") or "ACTIVE",
+                            "url": (listed or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
+                            "latestRunId": latest,
                         },
                     )
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
-                    seq = api.run_statuses or ["RUNNING"]
-                    if api._run_i < len(seq):
-                        status = seq[api._run_i]
-                        api._run_i += 1
+                    run_id = parts[4]
+                    if run_id in api.run_not_found_ids:
+                        self._send(404, {"error": "not_found"})
+                        return
+                    if run_id in api.run_status_by_id:
+                        status = api.run_status_by_id[run_id]
                     else:
-                        status = seq[-1]
+                        seq = api.run_statuses or ["RUNNING"]
+                        if api._run_i < len(seq):
+                            status = seq[api._run_i]
+                            api._run_i += 1
+                        else:
+                            status = seq[-1]
                     self._send(
                         200,
                         {
-                            "id": parts[4],
+                            "id": run_id,
                             "agentId": parts[2],
                             "status": status,
                         },

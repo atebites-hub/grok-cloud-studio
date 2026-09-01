@@ -7,6 +7,10 @@ Each owning seat keeps `.a2a-state/<seat>/fleet.jsonl` rows:
 
 The per-launch waiter is the primary completion path. fleet-shepherd is an
 orphan-only safety net (no live waiter_pid, never notified_by=waiter).
+
+Presence of waiter_pid is not liveness. A pid that names a dead process is
+evicted durably (waiter_pid null, waiter_tombstone) so a reused pid cannot
+look live and shepherd can orphan-notify once.
 """
 from __future__ import annotations
 
@@ -92,6 +96,7 @@ def register(
                 entry["name"] = name
             if waiter_pid:
                 entry["waiter_pid"] = waiter_pid
+                entry["waiter_tombstone"] = False
             entry["updated_at"] = _now()
             write_entries(path, entries)
             return entry
@@ -116,6 +121,7 @@ def set_waiter_pid(bc_id: str, waiter_pid: int, seat: str | None = None) -> None
     for entry in entries:
         if entry.get("bc_id") == bc_id:
             entry["waiter_pid"] = waiter_pid
+            entry["waiter_tombstone"] = False
             entry["updated_at"] = _now()
             write_entries(path, entries)
             return
@@ -129,6 +135,47 @@ def waiter_alive(entry: dict[str, Any]) -> bool:
     except (TypeError, ValueError):
         return False
     return pid_alive(pid_i)
+
+
+def evict_stale_waiter_pid(entry: dict[str, Any], *, now: str | None = None) -> bool:
+    """Clear a waiter_pid that names a dead process. Durable membership leave.
+
+    Presence of waiter_pid is not liveness. Returns True if the entry was mutated.
+    """
+    raw = entry.get("waiter_pid")
+    if raw is None:
+        return False
+    try:
+        pid_i = int(raw)
+    except (TypeError, ValueError):
+        entry["waiter_pid_evicted"] = raw
+        entry["waiter_pid"] = None
+        entry["waiter_tombstone"] = True
+        entry["waiter_evicted_at"] = now or _now()
+        return True
+    if pid_i > 0 and pid_alive(pid_i):
+        return False
+    entry["waiter_pid_evicted"] = pid_i
+    entry["waiter_pid"] = None
+    entry["waiter_tombstone"] = True
+    entry["waiter_evicted_at"] = now or _now()
+    return True
+
+
+def sweep_stale_waiters(path: Path) -> int:
+    """Persist eviction of dead waiter_pid rows on one fleet.jsonl path.
+
+    An in-memory is_orphan / pid_alive check is not eviction. Returns the
+    number of rows mutated and written.
+    """
+    entries = load_entries(path)
+    n = 0
+    for entry in entries:
+        if evict_stale_waiter_pid(entry):
+            n += 1
+    if n:
+        write_entries(path, entries)
+    return n
 
 
 def is_orphan(entry: dict[str, Any]) -> bool:
@@ -302,7 +349,9 @@ def main(argv: list[str]) -> int:
             for seat_dir in sorted(state.iterdir()):
                 if not seat_dir.is_dir() or seat_dir.name.startswith("."):
                     continue
-                for entry in load_entries(seat_dir / "fleet.jsonl"):
+                path = seat_dir / "fleet.jsonl"
+                sweep_stale_waiters(path)
+                for entry in load_entries(path):
                     if is_orphan(entry):
                         found.append(entry)
         print(json.dumps(found))
