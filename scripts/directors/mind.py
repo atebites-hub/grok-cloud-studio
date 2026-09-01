@@ -23,6 +23,8 @@ CLI uses `-p` (print mode) and a positional prompt. `--agent-profile`,
 
 Stdlib only. Donald/orchestrator (skipSeats) are not mind seats.
 RESULT is duplex, not success. RESULT-only / PONG is a bug. Never Bot CloudAgent.
+Capacity beat (LIV-41): count only runStatus=RUNNING (>=8 per bound repo);
+MUST scripts/launch-cloud-extra-high.sh; never leftover agent ACTIVE.
 """
 from __future__ import annotations
 
@@ -42,12 +44,16 @@ from pathlib import Path
 from typing import Any, Callable
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
+_DIRECTORS_DIR = Path(__file__).resolve().parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
+if str(_DIRECTORS_DIR) not in sys.path:
+    sys.path.insert(0, str(_DIRECTORS_DIR))
 from duplex import set_task_state  # noqa: E402
 from lib import canonical_seat, skip_seats  # noqa: E402
 from mind_bot_like import prepare_mail_turn  # noqa: E402
 import duplex as a2a_duplex  # noqa: E402
+from cloud_capacity import is_capacity_beat, run_capacity_beat  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
@@ -78,7 +84,8 @@ class Plugin:
     """Fallback helper callable plus JSON schema. Not a second agent loop.
 
     Grok sees tools via builtins, seat GROK_HOME taskboard MCP, and
-    `grok plugin install --trust` of `plugins/studio-mind` into that GROK_HOME.
+    `grok plugin install --trust` of `plugins/studio-mind` into that GROK_HOME
+    (`ticket`, `a2a_send`, `cloud_launch`, `cloud_capacity`).
     This dict stays for `call_plugin` / tests / the studio-mind MCP server.
     """
 
@@ -425,6 +432,60 @@ def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
     return _run_cmd(cmd, timeout=180)
 
 
+def plugin_cloud_capacity(arguments: dict[str, Any]) -> str:
+    """Launch Extra High until runStatus RUNNING >= GCS_CLOUD_MIN_RUNNING per bound repo.
+
+    Count only latest-run RUNNING. Agent ACTIVE leftovers are not workers.
+    Must call scripts/launch-cloud-extra-high.sh. Never Bot CloudAgent.
+    """
+    prompt = str(arguments.get("prompt") or "").strip()
+    raw_repos = arguments.get("repos")
+    repos: list[str] | None = None
+    if isinstance(raw_repos, list):
+        repos = [str(x).strip() for x in raw_repos if str(x).strip()]
+    elif isinstance(raw_repos, str) and raw_repos.strip():
+        repos = [p.strip() for p in raw_repos.replace(";", ",").split(",") if p.strip()]
+    try:
+        return run_capacity_beat(prompt=prompt, repos=repos, root=ROOT)
+    except Exception as e:
+        return f"PLUGIN_ERR cloud_capacity: {e}"
+
+
+def apply_capacity_beat(seat: str, rec: dict[str, Any], prompt: str) -> str:
+    """Mailbox side-effect: capacity beat MUST launch before the runner thinks.
+
+    Same taskId is not filled twice (runner-fail retry). Errors are prepended
+    onto the grok prompt; they do not skip the turn.
+    """
+    if not is_capacity_beat(prompt):
+        return prompt
+    task_id = str(rec.get("taskId") or "")
+    stamp = mind_dir(seat) / "capacity-task"
+    if task_id:
+        try:
+            prev = stamp.read_text(encoding="utf-8").strip() if stamp.is_file() else ""
+        except OSError:
+            prev = ""
+        if prev == task_id:
+            skipped = "CLOUD_CAPACITY skipped=already-filled-this-beat"
+            print(f"MIND_CAPACITY seat={seat} {skipped}", flush=True)
+            return skipped + "\n\n" + prompt
+    try:
+        cap = run_capacity_beat(prompt=prompt, root=ROOT)
+    except Exception as e:
+        cap = f"CLOUD_CAPACITY_ERR {e}"
+    cap = redact(cap)
+    if not cap.startswith("CLOUD_CAPACITY_ERR") and task_id:
+        try:
+            stamp.write_text(task_id + "\n", encoding="utf-8")
+        except OSError:
+            pass
+    for line in cap.splitlines():
+        if line.startswith("CLOUD_CAPACITY"):
+            print(f"MIND_CAPACITY seat={seat} {line}", flush=True)
+    return cap.rstrip() + "\n\n" + prompt
+
+
 TICKET_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -468,10 +529,30 @@ CLOUD_LAUNCH_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+CLOUD_CAPACITY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "prompt": {
+            "type": "string",
+            "description": "Optional Extra High prompt for deficit launches",
+        },
+        "repos": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Bound git remotes. Default: GCS_CLOUD_REPOS / GCS_CLOUD_REPO "
+                "/ GCS_GAME_REPO."
+            ),
+        },
+    },
+    "additionalProperties": False,
+}
+
 PLUGINS: dict[str, Plugin] = {
     "ticket": Plugin(schema=TICKET_SCHEMA, call=plugin_ticket),
     "a2a_send": Plugin(schema=A2A_SEND_SCHEMA, call=plugin_a2a_send),
     "cloud_launch": Plugin(schema=CLOUD_LAUNCH_SCHEMA, call=plugin_cloud_launch),
+    "cloud_capacity": Plugin(schema=CLOUD_CAPACITY_SCHEMA, call=plugin_cloud_capacity),
 }
 
 
@@ -932,6 +1013,7 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
         context_id = str(rec.get("contextId") or "")
         raw_text = prepare_mail_turn(STATE_DIR, seat, rec)
         prompt = wrap_mind_mail(task_id, context_id, raw_text)
+        prompt = apply_capacity_beat(seat, rec, prompt)
         try:
             raw = run(prompt, seat=seat)
         except Exception as e:

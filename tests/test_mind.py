@@ -379,6 +379,10 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "deliver_wake" in doc
     assert "fast=false" in doc
     assert "cursor cloud" in doc.lower()
+    assert "cloud_capacity" in src
+    assert "CAPACITY_BEAT" in src or "capacity beat" in doc.lower()
+    assert "runStatus" in doc
+    assert "GCS_CLOUD_MIN_RUNNING" in src or "GCS_CLOUD_MIN_RUNNING" in doc
 
 
 def test_fake_grok_mints_then_resumes_same_uuid(
@@ -594,6 +598,7 @@ def test_injected_runner_inbox_grows_transcript_and_offset(
     assert "ticket" in mind.PLUGINS
     assert "a2a_send" in mind.PLUGINS
     assert "cloud_launch" in mind.PLUGINS
+    assert "cloud_capacity" in mind.PLUGINS
 
 
 def test_missing_ticket_binary_returns_error_string_not_crash(
@@ -1325,7 +1330,7 @@ def test_bus_keeps_dispatch_when_mind_seats_file_missing_and_current_empty(
 
 def test_plugin_schemas_are_json_objects() -> None:
     mind = _load(MIND_PY, "gcs_mind_schema")
-    for name in ("ticket", "a2a_send", "cloud_launch"):
+    for name in ("ticket", "a2a_send", "cloud_launch", "cloud_capacity"):
         plugin = mind.PLUGINS[name]
         schema = plugin["schema"] if isinstance(plugin, dict) else plugin.schema
         assert isinstance(schema, dict)
@@ -1349,7 +1354,7 @@ def test_studio_mind_plugin_lists_tools() -> None:
     assert proc.returncode == 0, proc.stderr
     reply = json.loads(proc.stdout.splitlines()[0])
     names = {t["name"] for t in reply["result"]["tools"]}
-    assert names == {"ticket", "a2a_send", "cloud_launch"}
+    assert names == {"ticket", "a2a_send", "cloud_launch", "cloud_capacity"}
 
 
 def test_cursor_cli_argv_pins_model_and_never_continues() -> None:

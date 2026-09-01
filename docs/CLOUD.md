@@ -70,3 +70,9 @@ RUNNING. Pick a new Extra High name.
 Palemon Linear is **Living Sky** (`LIV`), never Black Swan.
 
 Helper: `scripts/cloud/directors_spawn.py` (`cloud_mind_spawn_if_required`).
+
+## Capacity beat (mind / studio-mind)
+
+Count only latest-run **`runStatus=RUNNING`**. Agent `status=ACTIVE` leftovers (`FINISHED` shells) are not workers. Bound remotes (`GCS_CLOUD_REPO` / `GCS_CLOUD_REPOS` and `GCS_GAME_REPO`) are counted separately. Floor is `GCS_CLOUD_MIN_RUNNING` (default 8). Opted-in mind seats **MUST** call `scripts/launch-cloud-extra-high.sh` on a capacity beat (`ACP_PING`, `CAPACITY_BEAT`, studio-mind `cloud_capacity`) until that floor. `CREATING` is not `RUNNING`. Never Bot CloudAgent. Living Sky Linear is **LIV**, not Black Swan.
+
+This is the mind / studio-mind slice. It does not remint `list.sh --repo`.
