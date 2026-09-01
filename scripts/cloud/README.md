@@ -21,6 +21,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents |
+| `count-running.sh [--limit N] [--repo org/name]` | `CLOUD_RUNNING repo=… running=N` from `runStatus=RUNNING` per bound repo |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
@@ -104,6 +105,28 @@ scripts/cloud/result-cloud-agent.sh bc-…
 # 4) Follow-up if needed (agent idle)
 scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check."
 ```
+
+## Running counts per bound repo
+
+Cloud agents stay `ACTIVE` until archive. Execution state lives on the latest
+run. Directors count live workers with `scripts/cloud/count-running.sh`:
+
+```bash
+scripts/cloud/count-running.sh
+scripts/cloud/count-running.sh --repo org/name
+```
+
+Each line is `CLOUD_RUNNING repo=org/name running=N` from
+`runStatus=RUNNING` on the bound git remote (`GET /v1/agents/{id}`
+`repos[0].url`, fallback run `git.branches[].repoUrl`). Leftover
+`ACTIVE`+`FINISHED` is not capacity. `CREATING` is not `RUNNING`.
+
+`--repo` accepts `org/name`, `https://github.com/org/name`, a `.git` suffix, or
+`git@github.com:org/name.git`. Unbound agents are dropped.
+
+This script does not remint `list.sh --repo` (GCS #50) or list `runStatus`
+rows (GCS #29). Palemon Linear is **Living Sky** (`LIV`), not Black Swan.
+Never Bot CloudAgent.
 
 ## Terminal run statuses
 
