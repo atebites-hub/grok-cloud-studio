@@ -6,7 +6,7 @@ or LIV-86 PIN/upgrade. Does not vendor a compiled taskboard binary.
 """
 from __future__ import annotations
 
-import os
+import socket
 import stat
 import subprocess
 from pathlib import Path
@@ -30,6 +30,12 @@ GITIGNORE = REPO / ".gitignore"
 
 PRIVATE_GAME = "atebites-hub/" + "palemon"
 BLACK_SWAN = "blackswan" + ".money"
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 def _write_exec(path: Path, text: str) -> Path:
@@ -288,6 +294,59 @@ def test_setup_taskboard_wipe_clears_db_keeps_inbox_and_studio_env(
         assert PRIVATE_GAME not in blob
     finally:
         _stop(env)
+
+
+def test_setup_taskboard_wipe_removes_sqlite_sidecars(tmp_path: Path) -> None:
+    fake, _log = _fake_taskboard(tmp_path)
+    env = _base_env(tmp_path, taskboard_bin=fake)
+    env["GCS_TASKBOARD_WIPE"] = "1"
+    state = Path(env["GCS_A2A_STATE"])
+    db = state / "taskboard" / "taskboard.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    db.write_text("db\n", encoding="utf-8")
+    wal = Path(str(db) + "-wal")
+    shm = Path(str(db) + "-shm")
+    journal = Path(str(db) + "-journal")
+    wal.write_text("wal\n", encoding="utf-8")
+    shm.write_text("shm\n", encoding="utf-8")
+    journal.write_text("journal\n", encoding="utf-8")
+    try:
+        proc = _run(SETUP_TB, ["wipe"], env)
+        blob = proc.stdout + proc.stderr
+        assert proc.returncode == 0, blob
+        assert "TASKBOARD_WIPE_OK" in blob
+        assert not db.exists()
+        assert not wal.exists()
+        assert not shm.exists()
+        assert not journal.exists()
+    finally:
+        _stop(env)
+
+
+def test_setup_taskboard_ready_fail_stops_board(tmp_path: Path) -> None:
+    fake, _log = _fake_taskboard(tmp_path)
+    env = _base_env(tmp_path, taskboard_bin=fake)
+    env.pop("GCS_TASKBOARD_SKIP_READY", None)
+    env["GCS_TASKBOARD_READY_TRIES"] = "2"
+    env["GCS_TASKBOARD_UI_PORT"] = str(_free_port())
+    env["GCS_TASKBOARD_MCP_PORT"] = str(_free_port())
+    state = Path(env["GCS_A2A_STATE"])
+    try:
+        proc = _run(SETUP_TB, ["start"], env)
+        blob = proc.stdout + proc.stderr
+        assert proc.returncode != 0, blob
+        assert "TASKBOARD_SETUP_FAIL" in blob
+        assert "TASKBOARD_SETUP_OK" not in blob
+        assert not (state / "taskboard" / "ui.pid").exists()
+        assert not (state / "taskboard" / "mcp-http.pid").exists()
+    finally:
+        _stop(env)
+
+
+def test_setup_forwards_submodule_skip_to_board_setup() -> None:
+    text = SETUP.read_text(encoding="utf-8")
+    assert "GCS_SETUP_SKIP_SUBMODULE" in text
+    assert "GCS_TASKBOARD_SKIP_SUBMODULE" in text
 
 
 def test_setup_taskboard_wipe_refuses_without_flag(tmp_path: Path) -> None:

@@ -80,7 +80,10 @@ wipe_runtime_state() {
     rm -rf "$d"
   done
   shopt -u nullglob
-  rm -f "$state/taskboard/taskboard.db"
+  rm -f "$state/taskboard/taskboard.db" \
+    "$state/taskboard/taskboard.db-wal" \
+    "$state/taskboard/taskboard.db-shm" \
+    "$state/taskboard/taskboard.db-journal"
 }
 
 if [[ "${CLEANUP_WIPE_STATE:-0}" == "1" ]]; then

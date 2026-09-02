@@ -63,7 +63,7 @@ board_start() {
   mkdir -p "$(dirname "$db")" "$(gcs_studio_state_dir)/taskboard"
   export GCS_A2A_STATE="$(gcs_studio_state_dir)"
 
-  if [[ "${GCS_TASKBOARD_SKIP_SUBMODULE:-0}" != "1" ]]; then
+  if [[ "${GCS_TASKBOARD_SKIP_SUBMODULE:-${GCS_SETUP_SKIP_SUBMODULE:-0}}" != "1" ]]; then
     gcs_ensure_taskboard_submodule || true
   fi
   if [[ "${GCS_TASKBOARD_SKIP_INSTALL:-0}" != "1" ]]; then
@@ -79,10 +79,12 @@ board_start() {
   if [[ "${GCS_TASKBOARD_SKIP_READY:-0}" != "1" ]]; then
     if ! gcs_wait_listen "$HOST" "$PORT"; then
       echo "TASKBOARD_SETUP_FAIL reason=ui-not-ready url=http://${HOST}:${PORT}" >&2
+      board_stop
       return 1
     fi
     if ! gcs_wait_listen "$MCP_HOST" "$MCP_PORT"; then
       echo "TASKBOARD_SETUP_FAIL reason=mcp-not-ready url=http://${MCP_HOST}:${MCP_PORT}/mcp" >&2
+      board_stop
       return 1
     fi
   fi
@@ -113,7 +115,7 @@ board_wipe() {
   if bin="$(gcs_taskboard_bin)"; then
     "$bin" --db "$db" clear -f || true
   fi
-  rm -f "$db"
+  rm -f "$db" "${db}-wal" "${db}-shm" "${db}-journal"
   echo "TASKBOARD_WIPE_OK db=$db"
 }
 

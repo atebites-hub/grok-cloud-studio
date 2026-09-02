@@ -83,6 +83,10 @@ if [[ "${GCS_SETUP_SKIP_SUBMODULE:-0}" != "1" ]]; then
   fi
 fi
 
+if [[ "${GCS_SETUP_SKIP_SUBMODULE:-0}" == "1" ]]; then
+  export GCS_TASKBOARD_SKIP_SUBMODULE=1
+fi
+
 if [[ "${GCS_SETUP_SKIP_START:-0}" != "1" ]]; then
   # Board-only path: host ticket/tb + start-taskboard.sh UI + mcp-http.sh MCP.
   bash "$ROOT/scripts/studio/taskboard/setup-taskboard.sh" start

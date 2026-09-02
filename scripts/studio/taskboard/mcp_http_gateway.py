@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -190,6 +191,11 @@ def main(argv: list[str] | None = None) -> int:
         f"TASKBOARD_MCP_HTTP_LISTEN host={args.host} port={args.port} db={args.db}",
         flush=True,
     )
+
+    def _shutdown(_signum: int, _frame: object) -> None:
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _shutdown)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

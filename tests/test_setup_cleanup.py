@@ -114,6 +114,7 @@ def test_setup_is_crash_safe_no_daemons() -> None:
     assert "mcp-http.sh" in text
     assert "doctor.sh" in text
     assert "SETUP_OK" in text
+    assert "setup-taskboard.sh" in text
     assert "studio.env.example" in text
     assert "13-seat" in text or "13 seat" in text.lower() or "--daemons" in text
     assert "GCS_ACP_SEATS" in text
