@@ -33,7 +33,18 @@ CCGS_LEAD_MAP = {
     "art-director": "art",
     "qa-lead": "qa-a",
     "release-manager": "studio-ops",
+    # Remaining first-class title aliases (art already has art-director).
+    "audio-director": "audio",
+    "audio-lead": "audio",
+    "narrative-director": "narrative",
+    "narrative-lead": "narrative",
 }
+
+PALEMON_MIND = (
+    "floor-ops,studio-ops,floor,art,content,systems,qa-a,qa-b,audio,narrative"
+)
+FEATURE = REPO / "tests" / "features" / "ccgs_audio_seat_map.feature"
+BUS = REPO / "scripts" / "a2a" / "start-studio-bus.sh"
 
 FIRST_CLASS_LEADS = (
     "floor",
@@ -172,7 +183,8 @@ def test_mind_seats_accepts_audio_narrative_and_ccgs_aliases() -> None:
         "GCS_ROOT": str(REPO),
         "GCS_MIND_SEATS": (
             "floor-ops,studio-ops,floor,art,content,systems,qa-a,qa-b,"
-            "audio,narrative,producer,creative,composer,narrative-designer"
+            "audio,narrative,producer,creative,audio-director,narrative-lead,"
+            "composer,narrative-designer"
         ),
     }
     env.pop("GCS_SKIP_SEATS", None)
@@ -190,8 +202,71 @@ def test_mind_seats_accepts_audio_narrative_and_ccgs_aliases() -> None:
         assert name in seats, name
     assert "producer" not in seats
     assert "creative" not in seats
+    assert "audio-director" not in seats
+    assert "narrative-lead" not in seats
     assert "composer" not in seats
+    assert "narrative-designer" not in seats
     assert "donald" not in seats
+
+
+def test_mind_seats_folds_audio_narrative_titles_without_first_class_names() -> None:
+    env = {
+        **os.environ,
+        "GCS_ROOT": str(REPO),
+        "GCS_MIND_SEATS": "audio-director,narrative-lead,producer",
+    }
+    env.pop("GCS_SKIP_SEATS", None)
+    proc = subprocess.run(
+        ["python3", str(LIB), "mind-seats"],
+        cwd=str(REPO),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert proc.returncode == 0, proc.stderr
+    seats = {s.strip() for s in proc.stdout.splitlines() if s.strip()}
+    assert seats == {"audio", "narrative", "floor-ops"}
+
+
+def test_grow_seats_folds_audio_narrative_title_aliases() -> None:
+    """Remaining alias work: GROW lists fold CCGS titles, not mint them."""
+    env = {
+        **os.environ,
+        "GCS_ROOT": str(REPO),
+        "GCS_GROW_SEATS": "audio-director,narrative-lead,producer,floor",
+    }
+    env.pop("GCS_SKIP_SEATS", None)
+    proc = subprocess.run(
+        ["python3", str(LIB), "grow-seats"],
+        cwd=str(REPO),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert proc.returncode == 0, proc.stderr
+    seats = {s.strip() for s in proc.stdout.splitlines() if s.strip()}
+    assert "audio" in seats
+    assert "narrative" in seats
+    assert "floor-ops" in seats
+    assert "floor" in seats
+    assert "audio-director" not in seats
+    assert "narrative-lead" not in seats
+    assert "producer" not in seats
+
+
+def test_audio_narrative_title_aliases_resolve_director_prompts() -> None:
+    lib = _load_lib()
+    for title, seat in (
+        ("audio-director", "audio"),
+        ("audio-lead", "audio"),
+        ("narrative-director", "narrative"),
+        ("narrative-lead", "narrative"),
+    ):
+        path = lib.resolve_director_prompt(title, REPO)
+        assert path is not None, title
+        assert path.name == f"{seat.replace('-', '_')}_director_prompt.txt"
 
 
 def test_directors_and_leads_spawn_specialists_via_cloud_launcher() -> None:
@@ -221,3 +296,52 @@ def test_ccgs_map_is_documented() -> None:
     assert LAUNCH in blob
     assert "49" in blob or "specialist" in low
     assert PRIVATE_GAME not in blob
+
+
+def test_wipe_and_mind_name_palemon_audio_narrative_seats() -> None:
+    """Remaining WIPE/MIND seats: Palemon mind list includes first-class leads."""
+    wipe = WIPE.read_text(encoding="utf-8")
+    mind = MIND_DOC.read_text(encoding="utf-8")
+    studio = STUDIO_ENV.read_text(encoding="utf-8")
+    assert f"GCS_MIND_SEATS={PALEMON_MIND}" in studio
+    assert PALEMON_MIND in mind
+    assert "audio" in wipe and "narrative" in wipe
+    assert "8754" in wipe and "8755" in wipe
+    for role in (
+        "audio-director",
+        "audio-lead",
+        "narrative-director",
+        "narrative-lead",
+    ):
+        assert role in wipe, role
+        assert role in mind, role
+    assert "CCGS_LEAD_ALIASES" in mind or "lib.py" in mind
+    assert LAUNCH in wipe and LAUNCH in mind
+    assert "49" in wipe or "specialist" in wipe.lower()
+    assert PRIVATE_GAME not in wipe and PRIVATE_GAME not in mind
+
+
+def test_bdd_feature_file_is_remaining_seat_map_not_the_finished_twin() -> None:
+    assert FEATURE.is_file(), FEATURE
+    text = FEATURE.read_text(encoding="utf-8")
+    low = text.lower()
+    assert "audio" in low and "narrative" in low
+    assert "alias" in low or "aliases" in low
+    assert "wipe" in low and "mind" in low
+    assert "launch-cloud-extra-high" in low
+    assert "49" in text or "specialist" in low
+    assert "gcs-ccgs-audio-narrative-map-beat1849" in text
+    assert "do not twin" in low or "distinct from" in low
+    assert PRIVATE_GAME not in text
+    assert "hive_seats" not in text
+    assert "must_launch" not in low
+
+
+def test_bus_acp_and_wake_canonicalize_ccgs_titles() -> None:
+    bus = BUS.read_text(encoding="utf-8")
+    acp = bus.split("acp_seats()", 1)[1].split("wake_seats()", 1)[0]
+    wake = bus.split("wake_seats()", 1)[1].split("mind_seats()", 1)[0]
+    assert "canonical" in acp
+    assert "canonical" in wake
+    assert "audio-director" not in acp
+    assert "composer" not in acp
