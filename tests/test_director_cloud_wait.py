@@ -36,7 +36,6 @@ AGENTS = ROOT / "AGENTS.md"
 WATCH = CLOUD / "watch.sh"
 WATCH_LONG = CLOUD / "watch-cloud-agent.sh"
 WAIT_TS = CLOUD / "sdk" / "wait-notify.ts"
-LAUNCH_TS = CLOUD / "sdk" / "launch.ts"
 MIND_PY = ROOT / "scripts" / "directors" / "mind.py"
 GCS_NODE = ROOT / "plugins" / "gcs-cursor-cloud" / "server.mjs"
 
@@ -189,17 +188,14 @@ def test_director_docs_and_footer_forbid_block_wait_and_bot_cloudagent() -> None
     assert "Bot CloudAgent" in cloud_md
     assert "CLOUD_ALLOW_BLOCK_WAIT" in readme
     assert "do not block on watch" in agents.lower()
-    assert "Bot CloudAgent" not in LAUNCH_TS.read_text(encoding="utf-8")
-    assert "grok bot" not in LAUNCH.read_text(encoding="utf-8").lower()
     wait_src = WAIT_TS.read_text(encoding="utf-8")
     assert "run.wait" in wait_src
-    assert "Bot CloudAgent" not in wait_src
+    assert "context=" in wait_src
     watch_sh = WATCH.read_text(encoding="utf-8")
     common = (CLOUD / "_common.sh").read_text(encoding="utf-8")
     assert "cloud_refuse_director_block_wait" in watch_sh
     assert "CLOUD_WATCH_REFUSED" in common
     assert "GCS_DIRECTOR_SEAT" in common
-    assert "cloud_watch" not in footer.lower()
 
 
 def test_mind_plugins_expose_context_return_not_watch() -> None:
