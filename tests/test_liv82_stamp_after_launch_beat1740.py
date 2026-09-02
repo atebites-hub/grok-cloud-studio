@@ -31,6 +31,7 @@ REPO = Path(__file__).resolve().parents[1]
 STAMP = REPO / "scripts" / "studio" / "linear_stamp_after_launch_beat1740.sh"
 SPAWN_WAITER = REPO / "scripts" / "cloud" / "spawn-waiter.sh"
 SDK_LAUNCH = REPO / "scripts" / "cloud" / "sdk" / "launch.ts"
+SHIP_GATE_WF = REPO / ".github" / "workflows" / "liv82-stamp-after-launch-beat1740.yml"
 MIND_PY = REPO / "scripts" / "directors" / "mind.py"
 LINEAR_HIVE = REPO / "scripts" / "directors" / "linear_hive.py"
 LIV_STAMP = REPO / "scripts" / "studio" / "linear" / "liv_stamp.py"
@@ -202,6 +203,25 @@ def test_spawn_waiter_wires_stamp_hook() -> None:
     assert "linear_stamp_after_launch_beat1740.sh" in waiter
     assert "linear_stamp_after_launch_beat1740.sh" in launch or "LINEAR_STAMP" in launch or "stamp" in waiter.lower()
     assert "spawn-waiter" in waiter
+
+
+def test_unique_github_ship_gate_is_not_empty_checks() -> None:
+    """Donald HOLD: missing GitHub checks are not ship-gate. Unique vs LIV-94 twins."""
+    assert SHIP_GATE_WF.is_file(), f"missing {SHIP_GATE_WF.relative_to(REPO)}"
+    text = SHIP_GATE_WF.read_text(encoding="utf-8")
+    assert "pytest -q" in text
+    assert "secret_scan" in text
+    assert "install.sh" in text
+    assert "GCS_BOT_BIND_OPTIONAL" in text
+    assert "submodules" in text
+    assert "fetch-depth" in text
+    assert "[1-9][0-9]* passed" in text or "N passed" in text
+    assert "secret_scan=clean" in text
+    assert "runs-on:" in text
+    assert "echo skip" not in text.lower()
+    # Do not remint #92/#121 ship-gate.yml or #109 ci.yml on this unique remaining slice.
+    assert SHIP_GATE_WF.name != "ship-gate.yml"
+    assert SHIP_GATE_WF.name != "ci.yml"
 
 
 def test_bare_id_without_launch_evidence_is_fail(tmp_path: Path) -> None:

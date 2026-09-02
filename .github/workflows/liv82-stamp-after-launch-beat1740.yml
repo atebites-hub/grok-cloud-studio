@@ -1,0 +1,55 @@
+# Unique remaining vs OPEN LIV-94 ship-gate.yml twins (#92/#121) and #109 ci.yml.
+# Real GitHub check for this LIV-82 after-launch stamp PR.
+# Empty checks are not ship-gate evidence (LIV-94). Never Bot CloudAgent.
+name: liv82-stamp-after-launch-beat1740
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ship-gate:
+    name: pytest -q and secret_scan
+    runs-on: ubuntu-latest
+    env:
+      GCS_BOT_BIND_OPTIONAL: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bootstrap venv
+        run: bash ./install.sh
+
+      - name: pytest -q (need N passed, N>=1)
+        run: |
+          set +e
+          out="$(.venv/bin/pytest -q 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$rc" -ne 0 ]; then exit "$rc"; fi
+          printf '%s\n' "$out" | grep -Eq '[1-9][0-9]* passed'
+
+      - name: secret_scan
+        run: |
+          set +e
+          out="$(python3 scripts/secret_scan.py 2>&1)"
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$rc" -ne 0 ]; then exit "$rc"; fi
+          printf '%s\n' "$out" | grep -q 'secret_scan=clean'
