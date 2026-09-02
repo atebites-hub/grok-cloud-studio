@@ -28,7 +28,7 @@ host-ticker.py → ACP_PING STATUS/CONTINUE inbox lines (work turns, tools allow
 
 launch-cloud-extra-high.sh → @cursor/sdk Agent.create
                            → spawn-waiter.sh → wait-notify.ts (run.wait)
-                           → A2A ping owning seat (FLEET_DONE / PR_READY)
+                           → A2A ping owning seat + REPORT_TO (default studio-ops)
 
 fleet-shepherd.py = orphan-only safety net (no live waiter_pid; dead waiter_pid is evicted)
 webhook_receiver.py = optional signed completion path
