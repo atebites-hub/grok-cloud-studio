@@ -250,6 +250,8 @@ def test_shepherd_orphan_notifies_once_after_eviction(
     monkeypatch.setenv("GCS_ROOT", str(ROOT))
     monkeypatch.setenv("GCS_A2A_STATE", str(tmp_path))
     monkeypatch.setenv("GCS_DIRECTOR_SEAT", "ops")
+    monkeypatch.delenv("REPORT_TO", raising=False)
+    monkeypatch.delenv("GCS_REPORT_TO", raising=False)
     dead = _dead_pid()
     _plant(
         tmp_path / "ops",
@@ -289,9 +291,8 @@ def test_shepherd_orphan_notifies_once_after_eviction(
     mod.notify_owner = fl.notify_owner  # type: ignore[assignment]
 
     assert mod._cycle() == 1
-    assert len(pings) == 1
-    assert pings[0][0] == "ops"
-    assert "FLEET_DONE" in pings[0][1]
+    assert [seat for seat, _text in pings] == ["ops", "studio-ops"]
+    assert all("FLEET_DONE" in text for _seat, text in pings)
     after = _reload_ops(tmp_path)
     assert after.get("waiter_pid") is None
     assert after.get("waiter_tombstone") is True

@@ -30,9 +30,13 @@ catalog). See `docs/studio/MIND.md`.
 
 ```bash
 scripts/launch-cloud-extra-high.sh "Implement X. Open a PR." "short-name"
-scripts/cloud/watch-cloud-agent.sh bc-...
+# CLOUD_LAUNCH_OK — do not watch. The SDK waiter A2A-pings the owning seat
+# and REPORT_TO (default studio-ops). Collect on FLEET_DONE:
 scripts/cloud/result-cloud-agent.sh bc-...
 ```
+
+Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` from
+`watch.sh` / `watch-cloud-agent.sh` unless `CLOUD_ALLOW_BLOCK_WAIT=1`.
 
 Launch `--name` **REFUSE**s when a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Name-matched Extra High whose latest runStatus cannot be read is fail-closed (no create). Never Bot CloudAgent.
 

@@ -32,6 +32,14 @@ async function main(): Promise<void> {
   if (!agentId) {
     die("usage: watch.ts <bc-id> [timeout_sec=1800] [poll_sec=30]", 2);
   }
+  const directorSeat = (process.env.GCS_DIRECTOR_SEAT || "").trim();
+  const allowBlock = (process.env.CLOUD_ALLOW_BLOCK_WAIT || "").trim() === "1";
+  if (directorSeat && !allowBlock) {
+    console.error(
+      `CLOUD_WATCH_REFUSED seat=${directorSeat} use=spawn-waiter/result-cloud-agent.sh override=CLOUD_ALLOW_BLOCK_WAIT=1`,
+    );
+    process.exit(2);
+  }
   if (!Number.isFinite(timeoutSec) || !Number.isFinite(pollSec) || timeoutSec < 0) {
     die("usage: watch.ts <bc-id> [timeout_sec=1800] [poll_sec=30]", 2);
   }
