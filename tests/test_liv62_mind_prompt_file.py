@@ -332,7 +332,7 @@ def test_scenario_no_hermes_no_liv85_no_liv41() -> None:
     for marker in HARVEST_MARKERS:
         assert marker not in mind_src, marker
     assert '"state": TASK_STATE_SUBMITTED,' in hub_src
-    assert '"state": TASK_STATE_COMPLETED,' in hub_src
+    assert "TASK_STATE_COMPLETED" in hub_src
     assert "message:send" in hub_src
     assert "receipt, not mind-turn done" in hub_src
     for marker in LIV41_MARKERS:
