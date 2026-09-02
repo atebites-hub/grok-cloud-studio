@@ -35,7 +35,7 @@ def test_a2a_tools_list() -> None:
 def test_cloud_tools_list() -> None:
     reply = _rpc("cloud", "tools/list")
     names = {t["name"] for t in reply["result"]["tools"]}
-    assert names == {"cloud_launch", "cloud_status", "cloud_result"}
+    assert names == {"cloud_launch", "cloud_list", "cloud_status", "cloud_result"}
 
 
 def test_a2a_list_seats_tool() -> None:

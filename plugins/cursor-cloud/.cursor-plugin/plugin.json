@@ -2,7 +2,7 @@
   "name": "gcs-cursor-cloud",
   "displayName": "Grok Cloud Studio Cursor Cloud",
   "version": "1.0.0",
-  "description": "MCP tools for Extra High launch/status/result. Target repo is GCS_CLOUD_REPO / CLOUD_REPO_URL.",
+  "description": "MCP tools for Extra High launch/list/status/result. List rows include latest-run runStatus. Target repo is GCS_CLOUD_REPO / CLOUD_REPO_URL.",
   "author": {
     "name": "atebites-hub"
   },
