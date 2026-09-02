@@ -341,6 +341,17 @@ def test_hub_donald_404s_but_duplex_notify_uses_floor_ops(
     task = tasks["task-skip-hub"]
     assert task["status"]["state"] == "TASK_STATE_COMPLETED"
     assert "director-result" in json.dumps(task)
+    floor_ops_tasks = json.loads(
+        (Path(hub["state"]) / "floor-ops" / "tasks.json").read_text(encoding="utf-8")
+    )
+    ping_task = None
+    for candidate in floor_ops_tasks.values():
+        if "A2A_REPLY" in json.dumps(candidate):
+            ping_task = candidate
+            break
+    assert ping_task is not None
+    assert ping_task["status"]["state"] == "TASK_STATE_SUBMITTED"
+    assert ping_task["id"] != "task-skip-hub"
 
 
 def test_hub_enqueue_is_submitted_receipt_not_director_result(hub: dict) -> None:
@@ -390,3 +401,11 @@ def test_donald_orchestrator_remain_skip_seats_not_launchable(
     reply = f"A2A_REPLY seat=floor task=task-skip-1 context=ctx-1 {RESULT_LINE}"
     assert "A2A_REPLY" in dispatch._INJECT_ONLY_KINDS
     assert dispatch._is_cloud_launch_message(reply) is False
+    mind_src = (REPO / "scripts" / "directors" / "mind.py").read_text(encoding="utf-8")
+    inject_src = (REPO / "scripts" / "directors" / "acp_inject.py").read_text(
+        encoding="utf-8"
+    )
+    for blob in (mind_src, inject_src):
+        assert "notify_seat=" in blob
+        assert "notified=" in blob
+        assert "notify_skipped=" in blob

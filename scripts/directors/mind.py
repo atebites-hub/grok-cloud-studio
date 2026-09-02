@@ -965,7 +965,10 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
         if duplex_info.get("ok") and not duplex_info.get("skipped"):
             print(
                 f"MIND_DUPLEX seat={seat} task={duplex_info.get('taskId')} "
-                f"caller={duplex_info.get('caller') or 'none'}",
+                f"caller={duplex_info.get('caller') or 'none'} "
+                f"notify_seat={duplex_info.get('notify_seat') or 'none'} "
+                f"notified={duplex_info.get('notified')} "
+                f"notify_skipped={duplex_info.get('notify_skipped') or 'none'}",
                 flush=True,
             )
         _append_transcript(
