@@ -21,13 +21,15 @@ Agent Kanban (`ak`, AMA, `scripts/studio/agent-kanban/`) was removed from this c
 `start-seat-daemon.sh` / `seat-daemon-common.sh` install thin wrappers on the grok serve PATH (`$GROK_HOME/bin` and `~/.grok/bin`) so a Director can exec these against the studio SQLite file without a box-local symlink:
 
 ```bash
-taskboard ticket move <ID> --status in_progress
+taskboard ticket move 01ARZ3NDEKTSV4RRFFQ69G5FAV --status in_progress
 taskboard ticket create --title "…" --priority medium
 ticket list
-ticket move <ID> --status done
-tb move <ID> --status done
+ticket move 01ARZ3NDEKTSV4RRFFQ69G5FAV --status done
+tb move 01ARZ3NDEKTSV4RRFFQ69G5FAV --status done
 tb create --title "…"
 ```
+
+`ticket move` takes the **Crockford ULID** primary key (`oklog/ulid`, 26 chars). `ticket list` prints `[PREFIX-N] title - status (priority, ULID)` — move the ULID, not `T-1`, not `PAL-1`, not the display key. Seat wrappers fail closed if `move` is not a ULID.
 
 Wrappers always pass `--db "$GCS_TASKBOARD_DB"` (default `$GCS_A2A_STATE/taskboard/taskboard.db`). Set `TASKBOARD_BIN` if the host binary is not already discoverable (`$GCS_ROOT/bin/taskboard` or `command -v`). Floor keep-alives still say `taskboard ticket move`.
 
@@ -64,4 +66,18 @@ bash scripts/studio/taskboard/maintainer.sh docs
 
 Never reconnect Agent Kanban (`ak start`, `scripts/studio/agent-kanban`). Studio Linear is Living Sky (`linear.app/livingsky`, team Livingsky / `LIV`). NEVER Black Swan Money. Never print `CURSOR_API_KEY`. Never vendor Hermes. Never Bot CloudAgent.
 
-The HTML files under `scripts/studio/dashboard/` remain LEGACY and are not the board.
+The HTML files under `scripts/studio/dashboard/` remain LEGACY and are not the board. Do not rebuild a snowflake dashboard.
+
+## studio-ops pin bump (LIV-86)
+
+Source of truth is `scripts/studio/taskboard/PIN` (**v0.6.0** on main; matches `.gitmodules` `branch = v0.6.0`). Do not remint that pin unless you are applying a newer `vX.Y.Z` release. Do not float `main`.
+
+```bash
+bash scripts/studio/taskboard/upgrade-taskboard.sh --check
+bash scripts/studio/taskboard/upgrade-taskboard.sh --dry-run v0.7.0
+# apply writes PIN + .gitmodules branch, then:
+bash scripts/studio/taskboard/upgrade-taskboard.sh --apply vX.Y.Z
+bash scripts/studio/taskboard/install-taskboard.sh
+```
+
+`--apply` does **not** compile (`go build` / `make build`), does **not** vendor a binary blob, does **not** reconnect Agent Kanban, and does **not** copy `GROK_HOME` MCP into Cursor CLI. Seat stdio MCP stays `taskboard --db $GCS_TASKBOARD_DB mcp` in isolated `GROK_HOME/config.toml`. This is not the fleet-shepherd health probe.

@@ -17,6 +17,10 @@ bash scripts/studio/taskboard/health-taskboard.sh    # DB + UI + ticket list OR 
 bash scripts/studio/taskboard/maintainer.sh docs
 ```
 
+Pin file: `PIN` (single source of truth). studio-ops upgrades with
+`upgrade-taskboard.sh` then `install-taskboard.sh`. Do not compile. Do not
+rebuild a snowflake dashboard. Ticket move uses a Crockford ULID.
+
 Do not vendor the `taskboard` binary into git. Source pin:
 `vendor/taskboard` (submodule, **v0.6.0**). Clone with
 `--recurse-submodules`, or `git submodule update --init --recursive`.
@@ -87,3 +91,16 @@ proxies `http://127.0.0.1:3010` and `:3011`.
 | `PALEMON_TAILSCALE_SERVE=0` | Skip Tailscale Serve |
 
 Never print or commit `CURSOR_API_KEY` or Tailscale auth keys.
+
+## Upgrade (studio-ops)
+
+```bash
+bash scripts/studio/taskboard/upgrade-taskboard.sh --check
+bash scripts/studio/taskboard/upgrade-taskboard.sh --dry-run vX.Y.Z
+bash scripts/studio/taskboard/upgrade-taskboard.sh --apply vX.Y.Z
+bash scripts/studio/taskboard/install-taskboard.sh
+```
+
+`--apply` writes `PIN` and `.gitmodules` `branch` for `vendor/taskboard`.
+It does not float `main`, compile from source, vendor a blob, reconnect
+`ak`, promote the LEGACY dashboard, or copy `GROK_HOME` into Cursor CLI.

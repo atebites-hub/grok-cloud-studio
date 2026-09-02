@@ -110,7 +110,7 @@ command -v taskboard >/dev/null
 command -v ticket >/dev/null
 command -v tb >/dev/null
 taskboard ticket list
-ticket move T-1 --status done
+ticket move 01ARZ3NDEKTSV4RRFFQ69G5FAV --status done
 tb create --title "demo"
 printf 'DB=%s\n' "${GCS_TASKBOARD_DB}"
 printf 'STATE=%s\n' "${GCS_A2A_STATE}"
@@ -123,7 +123,7 @@ printf 'STATE=%s\n' "${GCS_A2A_STATE}"
     assert str(db) in argv, argv or blob
     lines = [ln.strip() for ln in argv.splitlines() if ln.strip()]
     assert any(ln.startswith(f"--db {db} ticket list") for ln in lines), argv
-    assert any("ticket move T-1 --status done" in ln for ln in lines), argv
+    assert any("ticket move 01ARZ3NDEKTSV4RRFFQ69G5FAV --status done" in ln for ln in lines), argv
     assert any("ticket create --title demo" in ln or 'ticket create --title "demo"' in ln for ln in lines), argv
     assert f"DB={db}" in proc.stdout, blob
     assert f"STATE={tmp_path / 'a2a-state'}" in proc.stdout, blob

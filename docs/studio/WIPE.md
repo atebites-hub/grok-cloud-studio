@@ -160,6 +160,12 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
 
    DB is `$GCS_A2A_STATE/taskboard/taskboard.db` (`PALEMON_A2A_STATE` alias
    accepted). Details: `scripts/studio/taskboard/README.md`.
+
+   studio-ops maintainer (do not remint v0.6.0 unless applying a newer
+   `vX.Y.Z`): `bash scripts/studio/taskboard/upgrade-taskboard.sh --check`.
+   Bump: `upgrade-taskboard.sh --apply vX.Y.Z` then `install-taskboard.sh`.
+   Ticket move uses Crockford ULID. Do not reconnect Agent Kanban. Dashboard
+   stays LEGACY.
    Cursor CLI sees the board via checkout `.cursor/mcp.json` (wrapper
    `scripts/studio/taskboard/run-mcp.sh`) plus Linear HTTP. Linear +
    taskboard only. Do not copy `GROK_HOME` MCP.
