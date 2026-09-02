@@ -1,6 +1,8 @@
 # PAL-25. Executable binding: tests/test_health_recover.py
 # BDD in Action: demonstrate, don't theatre. Looks Good to Me: no LGTM without evidence.
-# Distinct from GCS #36 (live leftover bot-bridge.pid). This ticket is default-off spawn.
+# Distinct from GCS #36 (live leftover bot-bridge.pid keep-alive).
+# This ticket is default-off spawn when the pidfile is missing.
+# Leftover live pid remaining: tests/features/pal25_bot_bridge_pid_not_start.feature
 
 Feature: wipe/recover must not resurrect bot-bridge
   Bot seats stay standby. GCS_BOT_BRIDGE defaults off.

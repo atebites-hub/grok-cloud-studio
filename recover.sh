@@ -18,7 +18,9 @@ Usage: recover.sh [--help]
 
 Restart only what health_check would mark down:
   hub or mind pid down -> scripts/a2a/start-studio-bus.sh start   (NO --daemons;
-                         bot-bridge stays off unless GCS_BOT_BRIDGE=1)
+                         bot-bridge stays off unless GCS_BOT_BRIDGE=1.
+                         leftover live bot-bridge.pid is evicted; ALREADY
+                         is not a default start)
   taskboard :3010 down -> scripts/studio/taskboard/start-taskboard.sh start
   mcp-http :3011 down  -> scripts/studio/taskboard/mcp-http.sh start
 
@@ -91,6 +93,21 @@ recover_start() {
   echo "RECOVER_START $label"
   bash "$@" || echo "RECOVER_WARN $label failed" >&2
 }
+
+# PAL-25 remaining: leftover live bot-bridge.pid is not a default start.
+# STUDIO_BUS_BOT_BRIDGE_ALREADY still requires kill-after-RECOVER. Evict
+# unless GCS_BOT_BRIDGE=1, even when the bus itself is already up.
+if [[ "${GCS_BOT_BRIDGE:-0}" != "1" ]]; then
+  leftover_bridge="$(gcs_read_pid "$STATE/bot-bridge.pid")"
+  if gcs_pid_alive "$leftover_bridge"; then
+    if [[ "${GCS_RECOVER_DRY_RUN:-0}" == "1" ]]; then
+      echo "RECOVER_DRY cmd=evict leftover bot-bridge pid=$leftover_bridge"
+    else
+      echo "RECOVER_BOT_BRIDGE_EVICT reason=standby pid=$leftover_bridge"
+      gcs_stop_pid_file "$STATE/bot-bridge.pid" "RECOVER_BOT_BRIDGE"
+    fi
+  fi
+fi
 
 if [[ "$need_bus" -eq 1 ]]; then
   # Crash-safe: never pass --daemons. Do not remint. Do not wipe state.
