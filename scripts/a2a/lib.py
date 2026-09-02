@@ -293,6 +293,16 @@ def daemon_healthy(seat_path: Path) -> bool:
         return False
 
 
+def host_tick_text(seat: str, token: str) -> str:
+    """ACP_PING STATUS/CONTINUE work-turn body. Tools allowed. Not PONG. Not LAUNCH."""
+    return (
+        f"ACP_PING STATUS/CONTINUE seat={seat} token={token}. "
+        "Keep-alive turn: do work, do not idle. Quote token in STATUS. "
+        "Tools are allowed (taskboard ticket move, send.sh, "
+        "scripts/launch-cloud-extra-high.sh). RESULT-only / PONG is a bug."
+    )
+
+
 def compose_extra(task_id: str | None, context: str | None, message: str | None) -> str:
     return (
         f"A2A_TASK_ID={task_id or 'none'}\n"

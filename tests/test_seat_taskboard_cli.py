@@ -19,6 +19,7 @@ FOOTER = REPO / "scripts" / "directors" / "common_footer.txt"
 TASKBOARD_DOC = REPO / "docs" / "studio" / "TASKBOARD.md"
 HOST_TICKER = REPO / "scripts" / "a2a" / "host-ticker.py"
 HOST_CLOCK = REPO / "scripts" / "directors" / "host-clock-ticker.sh"
+LIB_PY = REPO / "scripts" / "a2a" / "lib.py"
 
 
 def _write_exec(path: Path, text: str) -> Path:
@@ -176,9 +177,11 @@ def test_start_scripts_fail_closed_without_taskboard_on_path() -> None:
     footer = FOOTER.read_text(encoding="utf-8")
     ticker = HOST_TICKER.read_text(encoding="utf-8")
     clock = HOST_CLOCK.read_text(encoding="utf-8")
+    lib = LIB_PY.read_text(encoding="utf-8")
     assert "taskboard ticket move" in footer or "ticket move" in footer
-    assert "taskboard ticket move" in ticker
-    assert "taskboard ticket move" in clock
+    assert "host_tick_text" in ticker
+    assert "host_tick_text" in clock
+    assert "taskboard ticket move" in lib
     doc = TASKBOARD_DOC.read_text(encoding="utf-8")
     assert "GCS_TASKBOARD_DB" in doc
     assert "ticket move" in doc
