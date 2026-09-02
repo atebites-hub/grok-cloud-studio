@@ -27,8 +27,9 @@ send.sh → hub.py (enqueue SUBMITTED + inbox JSONL; ACK is a receipt, not mind-
 host-ticker.py → ACP_PING STATUS/CONTINUE inbox lines (work turns, tools allowed)
 
 launch-cloud-extra-high.sh → @cursor/sdk Agent.create
-                           → spawn-waiter.sh → wait-notify.ts (run.wait)
+                           → spawn-waiter.sh → wait-notify.ts (GET latest runStatus)
                            → A2A ping owning seat + REPORT_TO (default studio-ops)
+                           leftover FINISHED is not done while a newer run is CREATING/RUNNING
 
 fleet-shepherd.py = orphan-only Extra High safety net (no live waiter_pid; dead waiter_pid is evicted)
 Host board maintainer kit = scripts/studio/taskboard/maintainer.sh (start/health/docs); not shepherd, not seat MCP

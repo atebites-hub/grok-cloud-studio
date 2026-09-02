@@ -55,6 +55,8 @@ Empty GitHub leftover-green is not MERGE_REQUEST evidence. QA squash requires pa
 
 `scripts/cloud/list.sh` / `list-cloud-agents.sh` print agent `status` (membership, often `ACTIVE`) and latest-run `runStatus` (`RUNNING` vs `FINISHED`). Agent `ACTIVE` is not a live worker. Leftover `ACTIVE`+`FINISHED` must not count as live.
 
+Wait-notify (`scripts/cloud/sdk/wait-notify.ts`) GETs `GET /v1/agents/{id}/runs` and A2A-pings `FLEET_DONE` only when the **latest** run is terminal. Leftover `FINISHED` while a newer run is `CREATING`/`RUNNING` is not done. Distinct from occupancy listRuns counts and paginated agent catalog. Never Bot CloudAgent.
+
 ## Directors-spawn law (LIV-41)
 
 Directors and leads spawn specialists only via
