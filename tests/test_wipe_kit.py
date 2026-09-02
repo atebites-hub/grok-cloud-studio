@@ -97,6 +97,8 @@ def test_wipe_kit_files_exist() -> None:
         INSTALL_TB,
         TS_SERVE,
         TB_README,
+        TASKBOARD_DIR / "maintainer.sh",
+        TASKBOARD_DIR / "health-taskboard.sh",
         RUN_MCP,
         CURSOR_MCP,
         MIND_DOC,

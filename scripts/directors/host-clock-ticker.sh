@@ -24,7 +24,12 @@ enqueue_continue() {
     return 2
   fi
   if [[ -f "$LIB_PY" ]]; then
-    seat="$(python3 "$LIB_PY" canonical "$seat" 2>/dev/null || echo "$seat")"
+    mapped="$(python3 "$LIB_PY" known "$seat" 2>/dev/null || true)"
+    if [[ -z "$mapped" ]]; then
+      echo "HOST_CLOCK_SKIP seat=$seat reason=not-a-registry-seat"
+      return 0
+    fi
+    seat="$mapped"
   fi
   now="$(date +%s)"
   token="tick-${seat}-${now}"

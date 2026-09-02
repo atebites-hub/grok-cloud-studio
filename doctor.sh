@@ -39,6 +39,7 @@ for p in \
   cleanup.sh \
   health_check.sh \
   recover.sh \
+  scripts/studio/higgsfield_sentry.py \
   .gitmodules \
   .cursor/mcp.json \
   scripts/studio/taskboard/run-mcp.sh \
@@ -47,6 +48,8 @@ for p in \
   scripts/studio/taskboard/mcp_http_gateway.py \
   scripts/studio/taskboard/install-taskboard.sh \
   scripts/studio/taskboard/start-tailscale-serve.sh \
+  scripts/studio/taskboard/health-taskboard.sh \
+  scripts/studio/taskboard/maintainer.sh \
   scripts/host/cursor-grok \
   scripts/launch-cloud-extra-high.sh \
   scripts/cloud/spawn-waiter.sh \
@@ -151,6 +154,21 @@ fi
 # Isolated GROK_HOME does not inherit ~/.grok/config.toml. Cursor
 # ${workspaceFolder} never expands under grok serve — WARN, do not FAIL.
 STATE="${GCS_A2A_STATE:-$ROOT/.a2a-state}"
+
+# Art Higgsfield/Sentry: fail-closed if MCP would leak keys (argv / literals).
+# Never print values. Distinct from WIPE leftover-green / empty GitHub CI.
+_sentry_args=(--root "$ROOT")
+if [[ -d "$STATE" ]]; then
+  _sentry_args+=(--state "$STATE")
+fi
+if [[ -n "${GROK_HOME:-}" ]]; then
+  _sentry_args+=(--grok-home "$GROK_HOME")
+fi
+if python3 "$ROOT/scripts/studio/higgsfield_sentry.py" "${_sentry_args[@]}"; then
+  ok "higgsfield_sentry=clean"
+else
+  bad "higgsfield_sentry failed (art MCP would leak keys; values not printed)"
+fi
 _gcs_warn_workspace_folder_mcp() {
   local f="$1"
   [[ -f "$f" ]] || return 0

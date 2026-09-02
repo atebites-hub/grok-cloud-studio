@@ -27,8 +27,8 @@ Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/of
 
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
-- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio `taskboard --db $GCS_TASKBOARD_DB mcp` plus Linear HTTP `https://mcp.linear.app/mcp`). Grok minds get Linear via this GROK_HOME catalog, not via Cursor `.cursor/mcp.json`. Studio Linear is **Living Sky** (`linear.app/livingsky`, team Livingsky / `LIV`). **NEVER Black Swan Money.** `${LINEAR_API_KEY}` expands at grok load time (never print, never commit). Linear tools: `save_issue`, `save_comment`, `prepare_attachment_upload`. Plus `grok plugin install --trust` of grok-bot-like `plugins/studio-mind` (ticket), `plugins/a2a`, and `plugins/cursor-cloud` (`install_mind_grok_plugins` stamps `GROK_HOME/gcs-root`). Grok-home Higgsfield is grok-only, for when grok usage is back.
-- Cursor CLI catalog: repo `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no `GROK_HOME`) **and** Linear HTTP at `https://mcp.linear.app/mcp` with `Authorization: Bearer ${LINEAR_API_KEY}`. Linear + taskboard only — do not copy the Grok MCP catalog into Cursor. Higgsfield is Cursor catalog login when the runner is Cursor CLI (Art generate). Grok Bot Higgsfield is a different catalog.
+- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio `taskboard --db $GCS_TASKBOARD_DB mcp` plus Linear HTTP `https://mcp.linear.app/mcp`). Grok minds get Linear via this GROK_HOME catalog, not via Cursor `.cursor/mcp.json`. Studio Linear is **Living Sky** (`linear.app/livingsky`, team Livingsky / `LIV`). **NEVER Black Swan Money.** `${LINEAR_API_KEY}` expands at grok load time (never print, never commit). Linear tools: `save_issue`, `save_comment`, `prepare_attachment_upload`. Plus `grok plugin install --trust` of grok-bot-like `plugins/studio-mind` (ticket), `plugins/a2a`, and `plugins/cursor-cloud` (`install_mind_grok_plugins` stamps `GROK_HOME/gcs-root`). Grok-home Higgsfield is grok-only, for when grok usage is back. Do not put Higgsfield keys on MCP argv.
+- Cursor CLI catalog: repo `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no `GROK_HOME`) **and** Linear HTTP at `https://mcp.linear.app/mcp` with `Authorization: Bearer ${LINEAR_API_KEY}`. Linear + taskboard only — do not copy the Grok MCP catalog into Cursor. Higgsfield is Cursor catalog login when the runner is Cursor CLI (Art generate). Grok Bot Higgsfield is a different catalog. `doctor.sh` / `recover.sh` fail-closed if art MCP would leak keys.
 
 Cursor Cloud Extra High agents cannot scrape `GROK_HOME`. Give them Linear via cloud-env: snapshot / dashboard Secrets / process env `LINEAR_API_KEY`, plus checkout `.cursor/mcp.json` (Linear + taskboard). RUNNING specialists `save_comment` on Living Sky (`LIV`). They never inherit seat GROK_HOME `config.toml`.
 
@@ -178,7 +178,7 @@ A missing binary returns an error string from the MCP tool. Plugin output is red
 
 Leftover dispatch skips a live `mind/pid` and current `GCS_MIND_SEATS` (`DISPATCH_SKIP reason=mind-owns-inbox`) and does not steal `mind/offset`. It re-reads `mind_seats()` on each poll (does not freeze the set at import), so a long-lived process still skips a newly staffed mind seat even before a bounce.
 
-`start-studio-bus.sh start` recycles leftover dispatch **only** when `.a2a-state/dispatch.mind-seats` differs from the current env / `studio.env` set (missing file is the empty set). Matching keeps `STUDIO_BUS_DISPATCH_ALREADY`. Recycle does not kill hub, leftover bot-bridge, fleet-shepherd, seat minds, host ticker, or `grok agent serve`. `start` / `recover.sh` do not start bot-bridge unless `GCS_BOT_BRIDGE=1`.
+`start-studio-bus.sh start` recycles leftover dispatch **only** when `.a2a-state/dispatch.mind-seats` differs from the current env / `studio.env` set (missing file is the empty set). Matching keeps `STUDIO_BUS_DISPATCH_ALREADY`. Recycle does not kill hub, fleet-shepherd, seat minds, host ticker, or `grok agent serve`. Default-off `start` / `recover.sh` evict leftover live `bot-bridge.pid` (`ALREADY` only when `GCS_BOT_BRIDGE=1`; do not remint). `start` / `recover.sh` do not start bot-bridge unless `GCS_BOT_BRIDGE=1`.
 
 ## Leftover ACP
 
@@ -203,4 +203,8 @@ specialists only via `scripts/launch-cloud-extra-high.sh`.
 | release-manager | `studio-ops` |
 | audio | `audio` (first-class) |
 | narrative | `narrative` (first-class) |
+
+Unmapped specialist titles do not mint mind or GROW seats (`lib.py known`
+fails closed). Aliases live in `scripts/a2a/lib.py` `CCGS_LEAD_ALIASES`.
+FAT: [`tests/features/ccgs_audio_narrative_map.feature`](../../tests/features/ccgs_audio_narrative_map.feature).
 

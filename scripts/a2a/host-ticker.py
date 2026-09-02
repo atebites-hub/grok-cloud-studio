@@ -29,7 +29,7 @@ INTERVAL_SEC = float(os.environ.get("GCS_TICKER_SEC", "600"))
 _LIB_DIR = Path(__file__).resolve().parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
-from lib import canonical_seat  # noqa: E402
+from lib import known_seat  # noqa: E402
 from mind_bot_like import default_tick_seats  # noqa: E402
 
 
@@ -59,10 +59,11 @@ def tick_once(seats: Iterable[str] | None = None, now: float | None = None) -> i
     written = 0
     seen: set[str] = set()
     for seat in chosen:
-        seat = canonical_seat(str(seat).strip(), ROOT)
-        if not seat or seat in seen:
+        mapped = known_seat(str(seat).strip(), ROOT)
+        if not mapped or mapped in seen:
             continue
-        seen.add(seat)
+        seen.add(mapped)
+        seat = mapped
         if CLOCK_SH.is_file():
             proc = subprocess.run(
                 ["bash", str(CLOCK_SH), "enqueue_continue", seat],
@@ -139,7 +140,14 @@ def main() -> int:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     seats: tuple[str, ...] | None = None
     if args.seats.strip():
-        seats = tuple(s.strip() for s in args.seats.split(",") if s.strip())
+        mapped: list[str] = []
+        seen: set[str] = set()
+        for part in args.seats.split(","):
+            key = known_seat(part.strip(), ROOT)
+            if key and key not in seen:
+                seen.add(key)
+                mapped.append(key)
+        seats = tuple(mapped)
     if args.once:
         tick_once(seats=seats)
         return 0

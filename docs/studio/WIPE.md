@@ -148,7 +148,15 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    bash scripts/studio/taskboard/install-taskboard.sh
    bash scripts/studio/taskboard/start-taskboard.sh start   # UI 127.0.0.1:3010
    bash scripts/studio/taskboard/mcp-http.sh start          # MCP 127.0.0.1:3011
+   # or one-shot: bash scripts/studio/taskboard/maintainer.sh start
+   bash scripts/studio/taskboard/health-taskboard.sh       # board-only; GET /health is not enough
+   bash scripts/studio/taskboard/maintainer.sh docs
    ```
+
+   `health-taskboard.sh` is the host maintainer probe (DB + UI + ticket list
+   or POST `/mcp`). It is not `./health_check.sh` (studio DR) and not
+   fleet-shepherd (GCS #112). Seat stdio MCP is GCS #100. Agent Kanban stays
+   gone. Studio Linear is Living Sky; NEVER Black Swan Money.
 
    DB is `$GCS_A2A_STATE/taskboard/taskboard.db` (`PALEMON_A2A_STATE` alias
    accepted). Details: `scripts/studio/taskboard/README.md`.
@@ -167,6 +175,8 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
 
    That is hub + leftover dispatch + shepherd + **mind loops**.
    **bot-bridge stays off** unless `GCS_BOT_BRIDGE=1` (Bot seats standby).
+   Leftover live `bot-bridge.pid` is not a default start; recover/start
+   evict it unless opted in (`ALREADY` only when `GCS_BOT_BRIDGE=1`).
    Bot is not a Cursor CloudAgent.
    It does **not** spawn `grok agent serve` per seat. Never auto-spawn a
    13-seat grok serve floor on a ~15GB box.
@@ -184,7 +194,12 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
 9. Higgsfield: Cursor catalog login when the runner is Cursor CLI (Art
    generate). Grok Bot Higgsfield is a different catalog. Grok-home
    Higgsfield is grok-only, for when grok usage is back. Do not encode
-   OAuth secrets. Do not fake a transfer between catalogs.
+   OAuth secrets. Do not fake a transfer between catalogs. Required env
+   names live in `studio.env.example` (`HIGGSFIELD_API_KEY`,
+   `HIGGSFIELD_SECRET`, `SENTRY_DSN`, `GCS_SENTRY_DSN`) — never print
+   values, never commit them. `./doctor.sh` and `./recover.sh` fail-closed
+   if art MCP would leak keys (argv / literal env). Ship gate remains
+   pytest -q + secret_scan.
 
 10. Grok Build HTTP 402: `mind.py` **switches** the persisted runner
     (`$GCS_A2A_STATE/<seat>/mind/runner`) and retries that same mail line
@@ -202,7 +217,8 @@ python3 scripts/secret_scan.py
 ```
 
 `./doctor.sh` **WARN**s (does not FAIL) if `grok`, `agent`/`cursor-grok`, or
-`taskboard` is missing. It **FAIL**s if `scripts/studio/agent-kanban` reappears.
+`taskboard` is missing. It **FAIL**s if `scripts/studio/agent-kanban` reappears
+or if Higgsfield/Sentry art MCP would leak keys (`scripts/studio/higgsfield_sentry.py`).
 
 ## Seats (first-class)
 
@@ -216,5 +232,7 @@ python3 scripts/secret_scan.py
 CCGS lead map (aliases in `scripts/a2a/lib.py`): producer=`floor-ops`,
 creative=`floor`, technical=`systems`, game-designer=`content`,
 lead-programmer=`systems` until split, art-director=`art`, qa-lead=`qa-a`,
-release-manager=`studio-ops`. Directors and leads spawn specialists only via
+release-manager=`studio-ops`. First-class `audio` and `narrative` are
+registry seats, not aliases. Unmapped specialist titles do not mint seats.
+Directors and leads spawn specialists only via
 `scripts/launch-cloud-extra-high.sh`. Do not add 49 specialists.

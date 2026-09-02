@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # After CLOUD_LAUNCH_OK: register the run in the fleet ledger and spawn a
 # detached waiter that blocks on SDK run.wait() (or REST poll) then A2A-pings
-# the owning seat. Disable with GCS_SPAWN_WAITER=0 / CLOUD_SPAWN_WAITER=0.
+# the owning seat and REPORT_TO (default studio-ops). Directors must not
+# block-wait on watch.sh. Disable with GCS_SPAWN_WAITER=0 / CLOUD_SPAWN_WAITER=0.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

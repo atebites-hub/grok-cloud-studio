@@ -172,7 +172,7 @@ def test_mind_seats_accepts_audio_narrative_and_ccgs_aliases() -> None:
         "GCS_ROOT": str(REPO),
         "GCS_MIND_SEATS": (
             "floor-ops,studio-ops,floor,art,content,systems,qa-a,qa-b,"
-            "audio,narrative,producer,creative"
+            "audio,narrative,producer,creative,composer,narrative-designer"
         ),
     }
     env.pop("GCS_SKIP_SEATS", None)
