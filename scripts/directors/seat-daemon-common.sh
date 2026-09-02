@@ -66,13 +66,23 @@ port_listening() {
 
 daemon_healthy() {
   local seat="$1"
-  local sd pid port
+  local sd pid port url_port
   sd="$(seat_state_dir "$seat")"
   pid="$(read_pid_file "$sd/daemon.pid")"
   port="$(seat_port "$seat")" || return 1
   pid_alive "$pid" || return 1
-  port_listening "$port" || return 1
   [[ -f "$sd/acp.url" && -f "$sd/acp.secret" ]] || return 1
+  url_port="$(python3 -c 'from urllib.parse import urlparse; import sys
+p=urlparse(sys.argv[1]); print(p.port or 0)' "$(tr -d '[:space:]' <"$sd/acp.url")" 2>/dev/null || true)"
+  if [[ -z "${url_port:-}" || "$url_port" == "0" ]]; then
+    url_port="$port"
+  fi
+  port_listening "$url_port" || return 1
+  # Leftover live daemon.pid is not the ACP listener. session/prompt must
+  # hit this serve pid (or a descendant). Never grok --resume.
+  if [[ -f "$ROOT/scripts/a2a/wake-daemon.py" ]]; then
+    python3 "$ROOT/scripts/a2a/wake-daemon.py" --owns-listen "$pid" "$url_port" >/dev/null || return 1
+  fi
   return 0
 }
 
