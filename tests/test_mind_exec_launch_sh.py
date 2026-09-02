@@ -284,6 +284,7 @@ def test_wrapper_runtime_execs_launcher_as_argv0(tmp_path: Path) -> None:
         scripts / "launch-cloud-extra-high.sh",
         "#!/bin/sh\n"
         f'printf "%s\\n" "$0" > "{marker}"\n'
+        'printf "BASH_VERSION=%s\\n" "${BASH_VERSION-none}"\n'
         'printf "LAUNCH_ARGV:%s\\n" "$*"\n',
     )
     _write_exec(
@@ -299,12 +300,16 @@ def test_wrapper_runtime_execs_launcher_as_argv0(tmp_path: Path) -> None:
     )
     assert launch.returncode == 0, launch.stdout + launch.stderr
     assert "LAUNCH_ARGV:--name grunt-x do the work" in launch.stdout
+    assert "BASH_VERSION=none" in launch.stdout, (
+        "exec bash would leak BASH_VERSION; PATH wrapper must exec the launcher"
+    )
     argv0 = marker.read_text(encoding="utf-8").strip()
     assert argv0.endswith("launch-cloud-extra-high.sh"), argv0
     assert Path(argv0).name == "launch-cloud-extra-high.sh"
 
 
 def test_launcher_and_sdk_never_grok_resume_for_cloud_create() -> None:
+    """Keep-out fence: Cloud create stays Agent.create, not grok --resume."""
     sh = LAUNCH.read_text(encoding="utf-8")
     ts = LAUNCH_TS.read_text(encoding="utf-8")
     assert "grok --resume" not in sh
@@ -319,6 +324,7 @@ def test_launcher_and_sdk_never_grok_resume_for_cloud_create() -> None:
 
 
 def test_do_not_vendor_hermes_or_merge_harvest_26_28() -> None:
+    """Keep-out fence: unique remaining must not restack #26+#28 or Hermes."""
     assert not (REPO / "vendor" / "hermes-agent").exists()
     assert not (REPO / "vendor" / "hermes").exists()
     modules = GITMODULES.read_text(encoding="utf-8")

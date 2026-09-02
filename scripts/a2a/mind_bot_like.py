@@ -114,7 +114,7 @@ def _write_exec_wrapper(dest: Path, script: Path) -> None:
     quoted = shlex.quote(str(script.resolve()))
     dest.write_text(
         "#!/bin/bash\n"
-        "# gcs-mind-bot-like-wrapper: exec Extra High launcher\n"
+        "# gcs-mind-bot-like-wrapper: exec target script\n"
         "set -euo pipefail\n"
         f"exec {quoted} \"$@\"\n",
         encoding="utf-8",

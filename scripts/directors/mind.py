@@ -255,8 +255,8 @@ def wrap_mind_mail(task_id: str, context_id: str, text: str) -> str:
         "RESULT-only / PONG is a bug. Remain this seat. "
         "Do not send.sh / a2a_send to ack the caller — duplex notifies. "
         "A2A_REPLY is a duplex caller ping — never launch a Cursor Cloud agent "
-        "or Bot CloudAgent for it. You own Extra High spawn: exec cloud_launch "
-        "or scripts/launch-cloud-extra-high.sh. Never grok --resume for Cloud "
+        "or Bot CloudAgent for it. You own Extra High spawn: call cloud_launch "
+        "or exec scripts/launch-cloud-extra-high.sh. Never grok --resume for Cloud "
         "create. Never Bot CloudAgent. Extra High is grok-4.6 xhigh fast=false.\n"
         f"MESSAGE:\n{text}\n"
     )
@@ -424,8 +424,9 @@ def extra_high_spawn_argv(prompt: str, name: str = "") -> list[str]:
 
 
 def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
-    """Exec scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT.
+    """Invoke scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT as argv0.
 
+    PATH cloud_launch execs this launcher. This helper captures output.
     --name REFUSE if a live runStatus=RUNNING Extra High already has that name.
     Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent.
     Never grok --resume for Cloud create.
