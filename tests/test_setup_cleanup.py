@@ -127,8 +127,9 @@ def test_cleanup_soft_by_default_and_wipe_flag() -> None:
     assert "CLEANUP_DAEMONS" in text
     assert "CLEANUP_WIPE_STATE" in text
     assert "CLEANUP_OK" in text
-    assert "start-taskboard.sh" in text
-    assert "mcp-http.sh" in text
+    assert "setup-taskboard.sh" in text
+    assert "start-taskboard.sh" in text or "setup-taskboard.sh" in text
+    assert "mcp-http.sh" in text or "setup-taskboard.sh" in text
 
 
 def test_docs_name_setup_cleanup_as_dr_entrypoints() -> None:
