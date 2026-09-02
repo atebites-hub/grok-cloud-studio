@@ -1,6 +1,17 @@
 # Plugins
 
-Two Cursor/Grok MCP plugins ship in-tree. Both speak JSON-RPC stdio (Content-Length; set `GCS_MCP_NDJSON=1` for newline JSON). Shared implementation: `scripts/mcp/gcs_mcp.py`.
+Two Cursor/Grok MCP plugins ship in-tree plus seat-mind `studio-mind`. All
+speak JSON-RPC stdio (Content-Length; set `GCS_MCP_NDJSON=1` for newline JSON).
+Shared A2A/cloud implementation: `scripts/mcp/gcs_mcp.py`.
+
+Grok-bot-like remaining (Living Sky **LIV-63**, after #76 on main): each
+plugin has grok `plugin.json` at the plugin root (not Hermes `plugin.yaml`).
+`seat-mind-loop.sh` `install_mind_grok_plugins` runs `grok plugin install
+--trust` of `plugins/studio-mind`, `plugins/a2a`, and `plugins/cursor-cloud`
+into seat `GROK_HOME`. Copied servers honor `GCS_ROOT`. Do **not** vendor
+[NousResearch/hermes-agent](https://github.com/NousResearch/hermes-agent).
+BDD: [`tests/features/liv63_mind_plugins.feature`](../tests/features/liv63_mind_plugins.feature).
+Do not restack #47 `cloud_list` / `cloud_followup` into `mind.py` `PLUGINS`.
 
 ## A2A (`plugins/a2a`)
 
@@ -32,7 +43,7 @@ Requires `GCS_CLOUD_REPO` / `CLOUD_REPO_URL` for create. `CURSOR_API_KEY` is rea
 
 ## Cursor local plugins
 
-Each plugin has `.cursor-plugin/plugin.json` with relative `mcpServers` (`./mcp.json`) and `./server.py`. No `..` path traversal in manifests.
+Each plugin has grok `plugin.json` and Cursor `.cursor-plugin/plugin.json` with relative `mcpServers` (`./mcp.json`) and `./server.py`. No `..` path traversal in manifests.
 
 Workspace umbrella (both planes):
 

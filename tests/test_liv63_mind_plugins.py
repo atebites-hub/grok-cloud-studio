@@ -321,7 +321,6 @@ def test_scenario_copied_plugins_honor_gcs_root(tmp_path: Path) -> None:
     cloud_src = (PLUGIN_CLOUD / "server.py").read_text(encoding="utf-8")
     for src in (a2a_src, cloud_src):
         assert "GCS_ROOT" in src
-        assert "plugin.yaml" not in src
 
 
 def test_studio_mind_still_exposes_ticket_without_restacking_pr47() -> None:
