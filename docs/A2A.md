@@ -85,6 +85,8 @@ Directors use `scripts/a2a/send.sh orchestrator "…"` like any seat (`send.sh d
 
 Hub enqueue is `TASK_STATE_SUBMITTED` until mind harvests (LIV-85). Later `TASK_STATE_COMPLETED` / `send.sh` `A2A_SEND_OK` is a protocol **receipt**, not mind-turn done — not Director RESULT and not proof the seat acted. This is not a LIV-85 clone. `donald` / `orchestrator` stay `skipSeats`.
 
+`start-seat-daemon.sh` / `seat-prompt-acp.sh` refuse skipSeats (`reason=bot-not-acp-target`). Bind strips any leftover `acpPort` on the Bot registry seat. `scripts/launch-cloud-extra-high.sh --name donald|orchestrator|grok-bot|bot` fails closed (`CLOUD_LAUNCH_ERR`, never Bot CloudAgent). Extra High stays `grok-4.6` `effort=xhigh` `fast=false`. Palemon Linear is Living Sky (`LIV`). Bot-bridge pid/standby harvest is a different slice (GCS #36 / #74 / #77).
+
 ## CCGS leads (mind seats)
 
 Role map onto first-class GCS seats. Do not mint 49 specialist seats.

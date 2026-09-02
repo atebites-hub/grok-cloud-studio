@@ -25,6 +25,7 @@ Creates a Cursor Cloud Extra High agent (SDK-first):
   repo from GCS_CLOUD_REPO or CLOUD_REPO_URL (required)
   startingRef from GCS_CLOUD_REF (default main)
   autoCreatePR=true
+  --name donald|orchestrator|grok-bot|bot is refused (never Bot CloudAgent)
 
 Prompt is exactly one of: command-line text, stdin `-`, or --prompt-file PATH.
 
@@ -151,6 +152,12 @@ fi
 
 if [[ -z "${prompt//[$'\t\n\r ']/}" ]]; then
   fail_launch "error: prompt is required"
+fi
+
+# Bot seats are Grok Bot orchestrators. Extra High is never a Bot CloudAgent.
+LIB_PY="${SCRIPT_DIR}/a2a/lib.py"
+if [[ -n "$name" ]] && ! python3 "$LIB_PY" cloudagent-ok "$name"; then
+  fail_launch "error: never Bot CloudAgent"
 fi
 
 if ! cloud_load_auth; then

@@ -49,6 +49,10 @@ CCGS_LEAD_ALIASES = {
     "narrative-lead": "narrative",
 }
 
+# Extra High --name values that would mint a Bot CloudAgent. Exact match
+# after normalize_seat (not substring — gcs-install-bind-bot stays allowed).
+BOT_CLOUDAGENT_NAMES = frozenset({"donald", "orchestrator", "grok-bot", "bot"})
+
 
 def env_first(*names: str, default: str = "") -> str:
     for name in names:
@@ -198,6 +202,25 @@ def skip_seats(root: Path | None = None) -> frozenset[str]:
     return frozenset(n for n in names if n)
 
 
+def cloudagent_name_ok(name: str, root: Path | None = None) -> bool:
+    """False when Extra High --name would mint a Bot CloudAgent.
+
+    Bot seats are Grok Bot orchestrators, never Cursor CloudAgents.
+    Empty name is allowed (create without an explicit --name).
+    """
+    key = normalize_seat(name)
+    if not key:
+        return True
+    if key in BOT_CLOUDAGENT_NAMES:
+        return False
+    if key in skip_seats(root):
+        return False
+    bot_seat = env_first("GCS_BOT_SEAT")
+    if bot_seat and key == normalize_seat(bot_seat):
+        return False
+    return True
+
+
 def launch_seats(root: Path | None = None) -> tuple[str, ...]:
     skipped = skip_seats(root)
     ordered = tuple(name for name in _seat_entries(root) if name not in skipped)
@@ -217,6 +240,8 @@ def launch_seats(root: Path | None = None) -> tuple[str, ...]:
 
 def seat_acp_port(seat: str, root: Path | None = None) -> int:
     key = canonical_seat(seat, root)
+    if key in skip_seats(root):
+        raise KeyError(f"bot seat is not an ACP target: {seat}")
     entries = _seat_entries(root)
     if key not in entries:
         raise KeyError(f"unknown seat: {seat}")
@@ -611,7 +636,7 @@ def main(argv: list[str]) -> int:
         print(
             "usage: lib.py <launch-seats|skip-seats|grow-seats|mind-seats|port SEAT|"
             "normalize SEAT|canonical SEAT|known SEAT|root|state|registry|cloud-repo|"
-            "cloud-ref|prompts-dir|prompt-file SEAT|ensure-prompts>",
+            "cloud-ref|prompts-dir|prompt-file SEAT|ensure-prompts|cloudagent-ok NAME>",
             file=sys.stderr,
         )
         return 2
@@ -632,7 +657,11 @@ def main(argv: list[str]) -> int:
         if len(argv) < 2:
             print("usage: lib.py port SEAT", file=sys.stderr)
             return 2
-        print(seat_acp_port(argv[1]))
+        try:
+            print(seat_acp_port(argv[1]))
+        except KeyError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         return 0
     if cmd == "normalize":
         if len(argv) < 2:
@@ -693,6 +722,12 @@ def main(argv: list[str]) -> int:
         for path in ensure_prompt_links():
             print(path)
         return 0
+    if cmd == "cloudagent-ok":
+        name = argv[1] if len(argv) > 1 else ""
+        if cloudagent_name_ok(name):
+            return 0
+        print("never Bot CloudAgent", file=sys.stderr)
+        return 2
     print(f"unknown command: {cmd}", file=sys.stderr)
     return 2
 

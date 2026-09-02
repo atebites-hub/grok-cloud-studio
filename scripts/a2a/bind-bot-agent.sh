@@ -264,6 +264,7 @@ def _bind() -> int:
     seat_reg.setdefault("card", card_rel)
     seat_reg.setdefault("endpoint", f"{hub_url}/a2a/{seat}")
     seat_reg.setdefault("wellKnown", f"{hub_url}/a2a/{seat}/.well-known/agent-card.json")
+    seat_reg.pop("acpPort", None)
     reg_seats[seat] = seat_reg
     registry["seats"] = reg_seats
     _dump(registry_path, registry)

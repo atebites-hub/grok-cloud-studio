@@ -4,7 +4,7 @@ Public control plane for Grok Build CLI Directors and Cursor Cloud Extra High gr
 
 - Studio Linear is Living Sky (`linear.app/livingsky`, team Livingsky / `LIV`). NEVER Black Swan Money.
 - Extra High target repo: set `GCS_CLOUD_REPO` or `CLOUD_REPO_URL` (required).
-- Bind Grok Bot orchestrator: set `GCS_BOT_AGENT_ID` then `./install.sh` or `scripts/a2a/bind-bot-agent.sh`. Bot seats are not ACP inject targets.
+- Bind Grok Bot orchestrator: set `GCS_BOT_AGENT_ID` then `./install.sh` or `scripts/a2a/bind-bot-agent.sh`. Bot seats are not ACP inject targets. Never Bot CloudAgent.
 - Never print or commit credentials (`CURSOR_API_KEY`, `LINEAR_API_KEY`, `HIGGSFIELD_API_KEY`, Sentry DSNs, webhook secrets, ACP tokens).
 - Higgsfield for Art is Cursor catalog login (`https://mcp.higgsfield.ai/mcp`); do not copy GROK_HOME Higgsfield into `.cursor/mcp.json`. `./doctor.sh` and `./recover.sh` fail-closed if art MCP would leak keys, and fail-closed if the LIV-84 Cursor catalog is merged (Higgsfield/Sentry MCP even with `${...}` expansions) or cloud-env is reminted.
 - ACP daemons are opt-in: `scripts/a2a/start-studio-bus.sh start --daemons`. That starts one `grok agent serve` per GROW seat plus `seat-wake-loop.sh` / `wake-daemon.py` (inbox → `session/prompt` inside that serve pid; `daemon.pid` or a descendant must own the ACP listen socket; never `grok --resume`) and `host-ticker.py` ACP_PING STATUS/CONTINUE work turns (tools allowed; not PONG; not a LAUNCH kind).
