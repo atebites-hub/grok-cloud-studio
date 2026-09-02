@@ -5,8 +5,10 @@ Python is not the agent. It harvests one inbox line, pins a grok session UUID,
 runs one `grok --prompt-file` turn, persists json stdout, marks the hub
 task COMPLETED, and stays up. Grok is the agent for that turn (its own
 tool loop, `--max-turns 40`). send.sh / hub enqueue is SUBMITTED; mail
-stays queued until this harvest finishes. Failed runner does not complete
-the task and does not advance offset. Default
+stays queued until this harvest finishes. Hub TASK_STATE_COMPLETED / A2A
+ACK is a receipt, not mind-turn done; offset (mail consumed) only on
+runner exit 0. A runner that did not run is not success. Failed runner
+does not complete the task and does not advance offset. Default
 `GCS_MIND_RUNNER=auto` persists `$GCS_A2A_STATE/<seat>/mind/runner` (`grok` or
 `cursor`). Each mail line uses that file. On quota / HTTP 402, flip the file
 and retry that same mail line once on the other runner (`MIND_SWITCH`). Forced
@@ -884,7 +886,7 @@ DEFAULT_RUNNER: Callable[..., Any] = mind_turn_runner
 
 def _runner_payload(raw: Any) -> tuple[str, int, str]:
     if raw is None:
-        return "", 0, ""
+        return "", 1, ""
     if isinstance(raw, dict):
         text = str(raw.get("text") or "")
         stderr = str(raw.get("stderr") or "")
@@ -910,7 +912,9 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
 
     Mailbox harvest writes mind/mail.txt + mind/turn.txt before the runner
     (Bot-like disk turn). Empty harvest does not remint and does not invent
-    a turn file.
+    a turn file. Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not
+    mind-turn done. Do not treat a COMPLETE hub task as mail consumed. A
+    runner that did not run (None) is runner-fail, not harvest-fake success.
     """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
@@ -995,7 +999,7 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
                 seat,
                 task_id,
                 "TASK_STATE_COMPLETED",
-                text=f"MIND_TURN seat={seat} task={task_id}",
+                text=f"ACK seat={seat} task={task_id} kind=receipt",
             )
         print(
             f"MIND_TURN seat={seat} task={task_id} offset={end_offset}",

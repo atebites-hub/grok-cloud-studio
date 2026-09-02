@@ -155,6 +155,35 @@ def _get_task(hub: dict, seat: str, task_id: str) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _receipt_note(task: dict) -> str:
+    for art in task.get("artifacts") or []:
+        if art.get("name") != "receipt":
+            continue
+        for part in art.get("parts") or []:
+            if not isinstance(part, dict):
+                continue
+            data = part.get("data") or {}
+            if isinstance(data, dict) and data.get("note"):
+                return str(data["note"])
+    return ""
+
+
+def _status_text(task: dict) -> str:
+    parts = ((task.get("status") or {}).get("message") or {}).get("parts") or []
+    bits: list[str] = []
+    for part in parts:
+        if isinstance(part, dict) and part.get("text"):
+            bits.append(str(part["text"]))
+    return " ".join(bits)
+
+
+def _mind_offset(state: Path, seat: str) -> int:
+    path = state / seat / "mind" / "offset"
+    if not path.is_file():
+        return 0
+    return int(path.read_text(encoding="utf-8").strip() or "0")
+
+
 def test_hub_send_stays_submitted_until_mind_not_completed_ack(hub: dict) -> None:
     """Enqueue is not done. send.sh + hub must not fake COMPLETED or HANDOFF."""
     proc = _send(hub, "floor", "queued until mind harvests")
@@ -266,3 +295,129 @@ def test_mind_runner_fail_leaves_hub_task_queued(
     offset_path = Path(hub["state"]) / "floor" / "mind" / "offset"
     if offset_path.is_file():
         assert int(offset_path.read_text(encoding="utf-8").strip() or "0") == 0
+
+
+def test_hub_send_ack_is_receipt_not_mind_turn(hub: dict) -> None:
+    """Unique remaining vs #27: A2A ACK / kind=receipt is not mind-turn done.
+
+    Enqueue stays TASK_STATE_SUBMITTED (GCS #27). send.sh binds kind=receipt
+    from the hub receipt artifact. That ACK is not MIND_TURN and not COMPLETE.
+    """
+    proc = _send(hub, "floor", "ack is a receipt")
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    assert "A2A_SEND_OK" in proc.stdout
+    assert "TASK_STATE_SUBMITTED" in proc.stdout
+    assert "kind=receipt" in proc.stdout
+    assert "TASK_STATE_COMPLETED" not in blob
+    assert "HANDOFF" not in blob
+    assert "ACP_INJECT_HANDOFF" not in blob
+    assert "MIND_TURN" not in blob
+    assert "hermes" not in blob.lower()
+
+    state = Path(hub["state"])
+    inbox = state / "floor" / "inbox.jsonl"
+    assert inbox.is_file()
+    task_id = _task_id_from_send(proc.stdout, inbox)
+    task = _get_task(hub, "floor", task_id)
+    assert (task.get("status") or {}).get("state") == "TASK_STATE_SUBMITTED"
+    note = _receipt_note(task).lower()
+    assert "receipt" in note
+    assert "not mind-turn" in note or "not mind turn" in note
+    assert _mind_offset(state, "floor") == 0
+    assert not (state / "floor" / "mind" / "transcript.jsonl").is_file()
+    send_src = SEND.read_text(encoding="utf-8")
+    assert "kind=receipt" in send_src or "kind={kind}" in send_src
+    assert "MIND_TURN" not in send_src
+    hub_src = HUB.read_text(encoding="utf-8")
+    assert "not mind-turn" in hub_src or "not mind turn" in hub_src
+    assert "TASK_STATE_SUBMITTED" in hub_src
+    assert "format_mail_turn" not in hub_src
+
+
+def test_hub_completed_after_harvest_is_receipt_not_mind_turn_status(
+    hub: dict, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """After runner exit 0, COMPLETED is still a protocol receipt, not MIND_TURN."""
+    proc = _send(hub, "floor", "harvest then receipt complete")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    state = Path(hub["state"])
+    inbox = state / "floor" / "inbox.jsonl"
+    task_id = _task_id_from_send(proc.stdout, inbox)
+
+    grok_log = tmp_path / "grok.argv.json"
+    grok = tmp_path / "fake-bin" / "grok"
+    grok.parent.mkdir(parents=True, exist_ok=True)
+    grok.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        f"log = Path({str(grok_log)!r})\n"
+        "rows = json.loads(log.read_text()) if log.is_file() else []\n"
+        "rows.append({'argv': sys.argv[1:]})\n"
+        "log.write_text(json.dumps(rows))\n"
+        "sys.stdout.write(json.dumps({'ok': True}))\n"
+        "raise SystemExit(0)\n",
+        encoding="utf-8",
+    )
+    grok.chmod(grok.stat().st_mode | stat.S_IEXEC)
+
+    mind_py = ROOT / "scripts" / "directors" / "mind.py"
+    spec = importlib.util.spec_from_file_location("gcs_mind_complete_receipt", mind_py)
+    assert spec is not None and spec.loader is not None
+    mind = importlib.util.module_from_spec(spec)
+    sys.modules["gcs_mind_complete_receipt"] = mind
+    spec.loader.exec_module(mind)
+    monkeypatch.setattr(mind, "STATE_DIR", state)
+    monkeypatch.setattr(mind, "ROOT", ROOT)
+    monkeypatch.setenv("GCS_A2A_STATE", str(state))
+    monkeypatch.setenv("GROK_BIN", str(grok))
+    monkeypatch.delenv("GCS_MIND_RUNNER", raising=False)
+
+    result = mind.process_once("floor")
+    captured = capsys.readouterr()
+    assert result.get("consumed") == 1, result
+    assert result.get("reason") == "ok"
+    task = _get_task(hub, "floor", task_id)
+    assert (task.get("status") or {}).get("state") == "TASK_STATE_COMPLETED"
+    status = _status_text(task)
+    assert "MIND_TURN" not in status
+    assert "ACK" in status or "receipt" in status.lower() or "kind=receipt" in status
+    assert "MIND_TURN" in captured.out
+    assert _mind_offset(state, "floor") > 0
+    argv = json.loads(grok_log.read_text(encoding="utf-8"))[0]["argv"]
+    assert "--prompt-file" in argv
+    assert "--model" in argv
+    assert argv[argv.index("--model") + 1] == "grok-4.6"
+    assert argv[argv.index("--reasoning-effort") + 1] == "xhigh"
+
+
+def test_none_runner_is_not_mail_consumed_after_receipt(
+    hub: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A runner that did not run (None) must not treat hub ACK as mind-turn done."""
+    proc = _send(hub, "floor", "none runner must fail")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    state = Path(hub["state"])
+    inbox = state / "floor" / "inbox.jsonl"
+    task_id = _task_id_from_send(proc.stdout, inbox)
+
+    mind_py = ROOT / "scripts" / "directors" / "mind.py"
+    spec = importlib.util.spec_from_file_location("gcs_mind_none_receipt", mind_py)
+    assert spec is not None and spec.loader is not None
+    mind = importlib.util.module_from_spec(spec)
+    sys.modules["gcs_mind_none_receipt"] = mind
+    spec.loader.exec_module(mind)
+    monkeypatch.setattr(mind, "STATE_DIR", state)
+    monkeypatch.setattr(mind, "ROOT", ROOT)
+    monkeypatch.setenv("GCS_A2A_STATE", str(state))
+
+    def silent(_prompt: str, **_kwargs: object):
+        return None
+
+    result = mind.process_once("floor", runner=silent)
+    assert result.get("consumed") == 0
+    assert result.get("reason") == "runner-fail"
+    assert _get_task(hub, "floor", task_id)["status"]["state"] == "TASK_STATE_SUBMITTED"
+    assert _mind_offset(state, "floor") == 0
+    assert not (state / "floor" / "mind" / "transcript.jsonl").is_file()

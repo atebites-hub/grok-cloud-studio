@@ -6,6 +6,9 @@ This hub is the enqueue bus: it appends per-seat inbox JSONL and
 returns TASK_STATE_SUBMITTED. Mail stays queued until the Grok Build
 mind harvests that line and the runner exits 0 (then COMPLETED).
 Enqueue is not done. Do not treat send as a fake ACP HANDOFF.
+Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not mind-turn done.
+send.sh binds kind=receipt from the receipt artifact; that ACK is not
+MIND_TURN. Mail is consumed only after grok/cursor runner exit 0.
 
 Auto-wake of Grok Build Director seats is handled separately by
 scripts/a2a/dispatch.py (standing inbox poller) and
@@ -278,8 +281,10 @@ class A2AHandler(BaseHTTPRequestHandler):
                                     "receivedAt": _now(),
                                     "preview": receipt_text[:500],
                                     "note": (
-                                        "Queued until the seat mind harvests this "
-                                        "inbox line and the runner exits 0."
+                                        "Hub TASK_STATE_COMPLETED / A2A ACK is a "
+                                        "receipt, not mind-turn done. Enqueue stays "
+                                        "TASK_STATE_SUBMITTED until harvest. Mail is "
+                                        "consumed only after grok/cursor runner exit 0."
                                     ),
                                 },
                             }
