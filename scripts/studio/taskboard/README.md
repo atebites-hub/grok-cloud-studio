@@ -5,6 +5,18 @@ directory is the **wipe-box host process** layer. Seats still talk to the
 SQLite file through wrappers (`docs/studio/TASKBOARD.md`). Agent Kanban
 (`ak`, AMA, `scripts/studio/agent-kanban/`) stays gone.
 
+## Maintainer kit (start / health / docs)
+
+Studio-ops entrypoint (distinct from fleet-shepherd GCS #112 and seat
+stdio MCP GCS #100). GET `/health` is not a usable board. Living Sky
+(`LIV`) only; NEVER Black Swan Money.
+
+```bash
+bash scripts/studio/taskboard/maintainer.sh start    # start-taskboard.sh + mcp-http.sh
+bash scripts/studio/taskboard/health-taskboard.sh    # DB + UI + ticket list OR POST /mcp
+bash scripts/studio/taskboard/maintainer.sh docs
+```
+
 Do not vendor the `taskboard` binary into git. Source pin:
 `vendor/taskboard` (submodule, **v0.6.0**). Clone with
 `--recurse-submodules`, or `git submodule update --init --recursive`.

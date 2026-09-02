@@ -47,6 +47,8 @@ for p in \
   scripts/studio/taskboard/mcp_http_gateway.py \
   scripts/studio/taskboard/install-taskboard.sh \
   scripts/studio/taskboard/start-tailscale-serve.sh \
+  scripts/studio/taskboard/health-taskboard.sh \
+  scripts/studio/taskboard/maintainer.sh \
   scripts/host/cursor-grok \
   scripts/launch-cloud-extra-high.sh \
   scripts/cloud/spawn-waiter.sh \

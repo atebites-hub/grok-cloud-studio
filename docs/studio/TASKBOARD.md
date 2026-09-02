@@ -50,4 +50,18 @@ This repository does not vendor the taskboard binary. The IaC pin is `vendor/tas
 
 Host process scripts (wipe box): `scripts/studio/taskboard/` — `install-taskboard.sh`, `start-taskboard.sh` (UI `127.0.0.1:3010`), `mcp-http.sh` (MCP `127.0.0.1:3011`), `run-mcp.sh` (Cursor CLI stdio). Palemon floor recreate: `docs/studio/WIPE.md`. Two-runtime mind law: `docs/studio/MIND.md`.
 
+## Maintainer kit (start / health / docs)
+
+Studio-ops operates the **host** board with `scripts/studio/taskboard/maintainer.sh`:
+
+```bash
+bash scripts/studio/taskboard/maintainer.sh start    # UI + MCP HTTP
+bash scripts/studio/taskboard/maintainer.sh health    # health-taskboard.sh
+bash scripts/studio/taskboard/maintainer.sh docs
+```
+
+`health-taskboard.sh` is board-only. It is **not** `./health_check.sh` (studio DR: hub + ports + mind) and **not** `fleet-shepherd.py` (GCS #112 orphan Extra High probe). GET `/health` on `:3011` is not a usable board. Healthy means the SQLite file exists, the UI is up, and either `taskboard --db $DB ticket list` succeeds or `POST /mcp` returns 2xx. Seat stdio MCP stays isolated `GROK_HOME/config.toml` (GCS #100); this kit does not write that catalog.
+
+Never reconnect Agent Kanban (`ak start`, `scripts/studio/agent-kanban`). Studio Linear is Living Sky (`linear.app/livingsky`, team Livingsky / `LIV`). NEVER Black Swan Money. Never print `CURSOR_API_KEY`. Never vendor Hermes. Never Bot CloudAgent.
+
 The HTML files under `scripts/studio/dashboard/` remain LEGACY and are not the board.

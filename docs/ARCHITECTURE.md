@@ -30,7 +30,8 @@ launch-cloud-extra-high.sh → @cursor/sdk Agent.create
                            → spawn-waiter.sh → wait-notify.ts (run.wait)
                            → A2A ping owning seat (FLEET_DONE / PR_READY)
 
-fleet-shepherd.py = orphan-only safety net (no live waiter_pid; dead waiter_pid is evicted)
+fleet-shepherd.py = orphan-only Extra High safety net (no live waiter_pid; dead waiter_pid is evicted)
+Host board maintainer kit = scripts/studio/taskboard/maintainer.sh (start/health/docs); not shepherd, not seat MCP
 webhook_receiver.py = optional signed completion path
 ```
 

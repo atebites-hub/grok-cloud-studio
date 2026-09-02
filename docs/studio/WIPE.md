@@ -146,7 +146,15 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    bash scripts/studio/taskboard/install-taskboard.sh
    bash scripts/studio/taskboard/start-taskboard.sh start   # UI 127.0.0.1:3010
    bash scripts/studio/taskboard/mcp-http.sh start          # MCP 127.0.0.1:3011
+   # or one-shot: bash scripts/studio/taskboard/maintainer.sh start
+   bash scripts/studio/taskboard/health-taskboard.sh       # board-only; GET /health is not enough
+   bash scripts/studio/taskboard/maintainer.sh docs
    ```
+
+   `health-taskboard.sh` is the host maintainer probe (DB + UI + ticket list
+   or POST `/mcp`). It is not `./health_check.sh` (studio DR) and not
+   fleet-shepherd (GCS #112). Seat stdio MCP is GCS #100. Agent Kanban stays
+   gone. Studio Linear is Living Sky; NEVER Black Swan Money.
 
    DB is `$GCS_A2A_STATE/taskboard/taskboard.db` (`PALEMON_A2A_STATE` alias
    accepted). Details: `scripts/studio/taskboard/README.md`.
