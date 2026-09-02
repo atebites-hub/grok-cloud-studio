@@ -273,19 +273,23 @@ install_mind_grok_plugins() {
   # Grok plugin.json, not Hermes plugin.yaml. Do not vendor hermes-agent.
   # Do not copy GROK_HOME MCP into Cursor CLI. Do not restack #47
   # cloud_list / cloud_followup into mind.py PLUGINS.
+  # Stamp GROK_HOME/gcs-root with GCS_ROOT so the copied server.py can import
+  # repo scripts after initialize (handshake must not close). Stamp even when
+  # grok is missing so a later copy still handshakes.
   local seat="${1:-}"
   local gh grok_bin name
   gh="${GROK_HOME:-}"
-  grok_bin="$(command -v grok 2>/dev/null || true)"
-  if [[ -z "$grok_bin" ]]; then
-    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-grok mcp-only" >&2
-    return 0
-  fi
   if [[ -z "$gh" ]]; then
     echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-GROK_HOME mcp-only" >&2
     return 0
   fi
   mkdir -p "$gh"
+  printf '%s\n' "$ROOT" >"$gh/gcs-root" || true
+  grok_bin="$(command -v grok 2>/dev/null || true)"
+  if [[ -z "$grok_bin" ]]; then
+    echo "MIND_PLUGIN_SKIP seat=${seat:-?} reason=no-grok mcp-only" >&2
+    return 0
+  fi
   # Grok-bot-like catalog: plugins/studio-mind, plugins/a2a, plugins/cursor-cloud.
   for name in studio-mind a2a cursor-cloud; do
     _install_one_mind_grok_plugin "$seat" "$name" "$gh" "$grok_bin"
