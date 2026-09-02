@@ -24,11 +24,16 @@ from pathlib import Path
 from typing import Any
 
 _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
+_CLOUD_DIR = Path(__file__).resolve().parent
+if str(_CLOUD_DIR) not in sys.path:
+    sys.path.insert(0, str(_CLOUD_DIR))
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from lib import env_first, pid_alive, repo_root, state_root  # noqa: E402
+from pr_evidence import should_hold_merge_request  # noqa: E402
 
 TERMINAL = frozenset({"FINISHED", "ERROR", "CANCELLED", "EXPIRED"})
+MERGE_READY = "ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST"
 
 
 def _now() -> str:
@@ -232,11 +237,22 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
     name = payload.get("name") or ""
     url = payload.get("url") or f"https://cursor.com/agents/{bc_id}"
     if run_status == "FINISHED":
+        if should_hold_merge_request(payload):
+            return (
+                f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
+                f"runStatus=FINISHED pr={pr} url={url}. "
+                f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
+                f"HOLD: empty GitHub leftover-green is not a ship-gate "
+                f"(MERGEABLE is not a substitute). "
+                f"Require pasted `.venv/bin/pytest -q` (`N passed`, N>=1) "
+                f"AND `python3 scripts/secret_scan.py` (`secret_scan=clean`). "
+                f"Do not ping QA MERGE_REQUEST. RESULT with bc-id + pr."
+            )
         return (
             f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
             f"runStatus=FINISHED pr={pr} url={url}. "
             f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
-            f"If pr is a URL: ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST; "
+            f"If pr is a URL: {MERGE_READY}; "
             f"do not launch a twin. RESULT with bc-id + pr."
         )
     return (

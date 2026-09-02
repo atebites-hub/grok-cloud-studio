@@ -15,3 +15,4 @@ Public control plane for Grok Build CLI Directors and Cursor Cloud Extra High gr
 - Palemon studio wipe: `docs/studio/WIPE.md` (`studio.env.example` → `$GCS_A2A_STATE/studio.env`; board scripts under `scripts/studio/taskboard/`; `start-studio-bus.sh start` with **no** `--daemons`). bot-bridge stays off unless `GCS_BOT_BRIDGE=1`.
 - Director prompts: `prompts/` or `docs/studio/directors/*_director_prompt.txt` (`GCS_PROMPT_DIR`). Remint must resolve either layout.
 - Ship gate: `.venv/bin/pytest -q` and `python3 scripts/secret_scan.py`. GitHub Actions `.github/workflows/ship-gate.yml` runs `scripts/ci/ship-gate.sh` on pull requests (N passed required; never `--override-ini`; never Bot CloudAgent).
+- MERGE_REQUEST / QA: empty GitHub leftover-green is not a ship-gate. Require pasted `.venv/bin/pytest -q` (`N passed`) and `python3 scripts/secret_scan.py` (`secret_scan=clean`). Judge with `python3 scripts/cloud/pr_evidence.py judge`. Do not squash-merge CONFLICTING PRs.

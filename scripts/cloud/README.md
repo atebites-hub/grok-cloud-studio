@@ -25,6 +25,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
 | `result-cloud-agent.sh <bc-id>` | Result/context JSON |
+| `pr_evidence.py judge` | MERGE_REQUEST paste gate: fail-closed unless pasted `.venv/bin/pytest -q` (`N passed`) and `secret_scan=clean`. Empty GitHub leftover-green is not evidence. |
 | `webhook-harness.sh serve \| simulate` | Signed webhook receiver / local POST |
 
 Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|result|wait-notify> …`
@@ -108,6 +109,9 @@ scripts/cloud/status-cloud-agent.sh bc-…
 
 # 3) On FLEET_DONE / PR_READY
 scripts/cloud/result-cloud-agent.sh bc-…
+# Empty GitHub leftover-green is not a ship-gate. Ping QA MERGE_REQUEST only
+# when the result pastes pytest -q (`N passed`) AND secret_scan=clean:
+# python3 scripts/cloud/pr_evidence.py judge
 
 # 4) Follow-up if needed (agent idle)
 scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check."
