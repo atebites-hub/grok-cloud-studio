@@ -17,6 +17,8 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 | MCP plugins | `plugins/a2a`, `plugins/cursor-cloud` |
 | Webhook harness | `scripts/cloud/webhook_receiver.py`, `webhook-harness.sh` |
 | Board | `docs/studio/TASKBOARD.md` (tcarac/taskboard ticket CLI + HTTP `/mcp`) |
+| Hive (Linear LIV-62) | `docs/studio/HIVE.md` — GCS hive law. Not a copy of Hermes. |
+| Hermes gap | `docs/studio/HERMES_GAP.md` — v0.21 matrix. Do not vendor `hermes-agent`. |
 
 Example seats (edit `docs/a2a/registry.json`): `orchestrator` (Grok Bot, ACP-skipped), `floor`, `ops`, `cloud`, plus Palemon-floor first-class `floor-ops`, `studio-ops`, `art`, `content`, `systems`, `qa-a`, `qa-b`, `audio`, `narrative`. Hub: `127.0.0.1:8732`. ACP ports: live Palemon values in the registry. Crash-safe default `GCS_ACP_SEATS=floor,studio-ops` — never auto-spawn the full registry as `grok agent serve`.
 
