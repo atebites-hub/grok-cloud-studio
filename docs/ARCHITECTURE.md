@@ -70,6 +70,13 @@ See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / 
 
 Do not double-notify a live waiter. A leftover `waiter_pid` number is not liveness.
 
+## Linear (Living Sky)
+
+Free-tier **200**-issue cap (LIV-76): close stale Living Sky tickets and
+archive Done/Canceled via GraphQL `scripts/linear_archive_closed.py`. Do **not**
+delete (`issueDelete` / GCS #45 purge is the wrong mechanic). Linear MCP has no
+archive mutation. Never Black Swan Money. Operator notes: `docs/studio/LINEAR.md`.
+
 ## Prompts
 
 Generic seat prompts ship in `prompts/`. Product floors keep `*_director_prompt.txt` under `docs/studio/directors/`. `GCS_PROMPT_DIR` / `PROMPTS_DIR` override the default directory. When `$ROOT/prompts` is missing or has no `*_director_prompt.txt` files, daemons default to `$ROOT/docs/studio/directors`. `write_agent_profile` / `launch-director.sh` resolve `${seat}_director_prompt.txt` from either layout (including `floor_ops_director_prompt.txt`) so remint does not fail when only the docs tree is populated. `install.sh` links docs files into `prompts/` when missing.

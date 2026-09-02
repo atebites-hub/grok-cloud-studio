@@ -205,6 +205,9 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
     Default `GCS_MIND_RUNNER=auto`. Forced `grok`/`cursor` does not flip.
     Not a wipe blocker.
 
+Linear 200-issue cap is **close stale + archive Done/Canceled**, never
+purge-delete. See `docs/studio/LINEAR.md`. Do not merge GCS #45.
+
 ## Check
 
 ```bash
