@@ -22,7 +22,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh --name NAME --prompt-file PATH` | Same, prompt from a file (not stuffed on argv) |
 | `../launch-cloud-extra-high.sh --name NAME -` | Same, prompt from stdin |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
-| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus` |
+| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus`. REST walks `nextCursor` when `--limit` exceeds the API page cap (100). Fail-closed if a page errors. |
 | `occupancy-count.sh` | Paginated occupancy catalog (`Agent.list` / `GET /v1/agents` via `nextCursor`, page size 100). Prints `CLOUD_OCCUPANCY running= leftover_active= creating= listed= pages=`. Fail-closed `CLOUD_OCCUPANCY_ERR reason=page` if a page errors — never fake `running=0`. |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` (`reason=director-no-block-wait`) unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
@@ -155,6 +155,8 @@ Live workers are `runStatus=RUNNING`. Leftover `status=ACTIVE` + `runStatus=FINI
 ## Occupancy catalog (paginate beyond 100)
 
 `GET /v1/agents` and SDK `Agent.list` cap each page at **100**. A hive dump of **439** Extra Highs is five pages. Capacity beats must walk `nextCursor` until it is omitted (not returned as `null`).
+
+REST `list.sh --limit` uses the same paginator (`list_catalog.py` / `max_items`) so Directors who count `runStatus=RUNNING` from list rows also see workers past page 1. Occupancy-count remains the one-line capacity path.
 
 `scripts/cloud/occupancy-count.sh` is the occupancy path (SDK `occupancy.ts` / REST `occupancy_count.py`). It prints `CLOUD_OCCUPANCY running=N leftover_active=N creating=N listed=N pages=N`. If any catalog page errors, it prints `CLOUD_OCCUPANCY_ERR reason=page` and exits non-zero — **never** a fake `running=0` from a partial list. Skip `GCS_BOT_AGENT_ID`. Distinct from leftover occupancy GCS #132 (do not rebase).
 
