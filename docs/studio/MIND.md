@@ -87,6 +87,7 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 
 - Create the UUID once (`uuid4`), store in `mind/session`. First turn uses `--session-id $UUID` instead of `--resume`. Later turns **only** `--resume` that id.
 - Never bare `-p` on grok. Live proven 2026-08-21: `-p` before `--resume` is clap rc=2 because `--single` requires `<PROMPT>`. `--prompt-file` is the prompt and also triggers headless mode.
+- BDD FAT (Living Sky **LIV-62** remaining clap after #21): later turns are `--resume` of the pinned UUID plus `--prompt-file`, never bare `-p`. Binding: `tests/features/liv62_mind_prompt_file.feature`. Construction clap is `validate_grok_mind_argv`. Does not vendor Hermes. Does not clone LIV-85 mail preserve or LIV-41 must-launch.
 - Spawn identity (remaining vs construction clap): `grok_cli_runner` asserts `--prompt-file` is `$GCS_A2A_STATE/<seat>/mind/mail.txt` and `--resume` / `--session-id` equals `mind/session`. Refuse `--continue`, `--fork-session`, `--print`, glued `--resume=-1`, and a positional prompt. Executable BDD: [`tests/features/liv62_pinned_mail_spawn.feature`](../../tests/features/liv62_pinned_mail_spawn.feature).
 - `--agent-profile`, `--trust`, and `--plugin-dir` are **grok agent** flags, not grok headless. Do not put them on this argv.
 - `--agent PATH` only if PATH is a file starting with YAML `---`. Markdown `SOUL.md` is not an agent file; omit `--agent`.

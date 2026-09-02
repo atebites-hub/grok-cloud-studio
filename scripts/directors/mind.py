@@ -581,6 +581,67 @@ def call_plugin(name: str, arguments: dict[str, Any] | None = None) -> str:
         return f"PLUGIN_ERR {name}: {e}"
 
 
+class GrokMindArgvError(ValueError):
+    """Grok headless clap violated --prompt-file / pin / extra-high law."""
+
+
+GROK_MIND_BANNED_FLAGS = (
+    "-p",
+    "--single",
+    "--trust",
+    "--agent-profile",
+    "--plugin-dir",
+)
+
+
+def _argv_flag_value(argv: list[str], flag: str) -> str | None:
+    try:
+        idx = argv.index(flag)
+    except ValueError:
+        return None
+    if idx + 1 >= len(argv):
+        return None
+    nxt = argv[idx + 1]
+    if nxt.startswith("-"):
+        return None
+    return nxt
+
+
+def validate_grok_mind_argv(argv: list[str]) -> list[str]:
+    """Refuse grok mind argv that is not pinned extra-high --prompt-file.
+
+    Later turns are `--resume` + `--prompt-file`. First turns are
+    `--session-id` + `--prompt-file`. Never bare `-p`. Cursor CLI `-p`
+    (print mode) is a different runner and must not go through this check.
+    """
+    if not argv:
+        raise GrokMindArgvError("empty grok argv")
+    tokens = list(argv)
+    for flag in GROK_MIND_BANNED_FLAGS:
+        if flag in tokens:
+            raise GrokMindArgvError(f"grok mind forbids {flag}")
+    if "--prompt-file" not in tokens:
+        raise GrokMindArgvError("grok mind requires --prompt-file")
+    if _argv_flag_value(tokens, "--prompt-file") is None:
+        raise GrokMindArgvError("grok mind --prompt-file requires a path")
+    has_resume = "--resume" in tokens
+    has_session = "--session-id" in tokens
+    if has_resume == has_session:
+        raise GrokMindArgvError(
+            "grok mind requires exactly one of --resume or --session-id"
+        )
+    pin_flag = "--resume" if has_resume else "--session-id"
+    if not _argv_flag_value(tokens, pin_flag):
+        raise GrokMindArgvError(f"grok mind {pin_flag} requires a UUID")
+    if _argv_flag_value(tokens, "--model") != GROK_MIND_MODEL:
+        raise GrokMindArgvError(f"grok mind requires --model {GROK_MIND_MODEL}")
+    if _argv_flag_value(tokens, "--reasoning-effort") != GROK_MIND_REASONING_EFFORT:
+        raise GrokMindArgvError(
+            f"grok mind requires --reasoning-effort {GROK_MIND_REASONING_EFFORT}"
+        )
+    return tokens
+
+
 def grok_cli_argv(
     *,
     session_id: str,
@@ -628,6 +689,7 @@ def grok_cli_argv(
     agent_path = yaml_agent_file(agent)
     if agent_path:
         argv.extend(["--agent", agent_path])
+    validate_grok_mind_argv(argv)
     return argv
 
 
@@ -712,7 +774,7 @@ def assert_pinned_prompt_file_spawn(
 ) -> list[str]:
     """Fail-closed spawn: --prompt-file is seat mail.txt; pin equals mind/session.
 
-    Construction clap (`validate_grok_mind_argv` / OPEN #95) does not bind
+    Construction clap (`validate_grok_mind_argv`) does not bind
     argv to disk. This hook does. Cursor CLI `-p` must not go through here.
     """
     if not argv:
