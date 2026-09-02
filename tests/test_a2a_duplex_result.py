@@ -173,10 +173,10 @@ def test_hub_ack_is_not_director_result() -> None:
     assert "kind=receipt" in send_src or "kind={kind}" in send_src
     assert "MIND_TURN" not in send_src
     assert duplex.extract_result_line("QUEUED seat=floor messageId=m-hub-1") is None
+    assert duplex.extract_result_line("ACK seat=floor messageId=m-hub-1") is None
     assert "TASK_STATE_SUBMITTED" in hub_src
-    assert "Enqueue is not done" in hub_src
-    assert '"kind": "queued"' in hub_src or "kind\": \"queued\"" in hub_src
-    assert "not mind-turn" in hub_src or "not mind turn" in hub_src
+    assert "not mind-turn done" in hub_src
+    assert '"kind": "ack"' in hub_src or 'kind": "ack"' in hub_src
 
 
 def test_duplex_writes_result_onto_task_and_skips_pong(

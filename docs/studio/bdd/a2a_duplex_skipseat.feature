@@ -5,8 +5,9 @@ Feature: Duplex RESULT notify must not 404 skipSeat donald
   Extra High stays grok-4.6 xhigh fast=false. Never Bot CloudAgent.
   Never vendor Hermes. donald/orchestrator stay skipSeats — not ACP inject targets.
 
-  Hub enqueue is TASK_STATE_SUBMITTED until mind harvests (LIV-85 receipt).
-  Director RESULT is a separate duplex write onto the working seat's A2A task.
+  Hub enqueue is TASK_STATE_COMPLETED as a protocol receipt (LIV-85).
+  This FAT does not clone mail-hold. Director RESULT is a separate duplex
+  write onto the working seat's A2A task.
   A2A_REPLY must succeed after that RESULT. A missed ping must not fail the
   task reply. send.sh donald may 404; duplex must not point A2A_REPLY at donald.
 
@@ -24,7 +25,7 @@ Feature: Duplex RESULT notify must not 404 skipSeat donald
     When duplex harvests RESULT bc-id= pr= a2a= notes=
     Then write_task_reply still stores director-result on the working seat
     And duplex ok remains true (notify skipped, not a failed task reply)
-    And Hub TASK_STATE_SUBMITTED / later TASK_STATE_COMPLETED stay receipts,
+    And Hub TASK_STATE_COMPLETED / send.sh ACK stay receipts,
       not Director RESULT
 
   Scenario: skipSeats stay skipSeats

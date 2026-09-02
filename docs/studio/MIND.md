@@ -47,7 +47,8 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 | `session` | Pinned grok session UUID (uuid4, created once) |
 | `session.minted` | Written after the first grok exit 0 (later grok turns `--resume`) |
 | `cursor-session` | Pinned Cursor chat id (from `agent create-chat`; not the grok UUID) |
-| `mail.txt` | Current inbox line (grok `--prompt-file`; Cursor positional prompt) |
+| `mail.txt` | Current inbox line (grok `--prompt-file`; Cursor positional prompt). **One writer:** `process_once` via `write_seat_mail`. Grok/Cursor runners bind (read) this file; they do not write it. An in-flight beat TASK stays here until that grok/Cursor turn exits 0. |
+| `mail.in-flight` | Pid holding `mail.txt`. STATUS ACK must not clobber an unread Donald TASK (ack is an action, not a calculation). Cleared only on runner exit 0. |
 | `turn.txt` | Latest harvested mail turn (Bot `bot-wake.txt` analog). Written **before** the runner. |
 | `turn.jsonl` | Append log of harvested turns (Bot `bot-wake.jsonl` analog) |
 | `transcript.jsonl` | Agent json stdout plus the user mail row |
@@ -61,8 +62,9 @@ Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Pro
 
 Executable BDD example (Living Sky **LIV-63** remaining, grok-bot-like):
 [`tests/features/liv63_mind_bot_like.feature`](../../tests/features/liv63_mind_bot_like.feature).
-Mailbox harvest writes `mind/mail.txt` + `mind/turn.txt` before the runner
-(Bot-like wake analog). Spawn PATH remaining is `cloud_launch` which execs
+Mailbox harvest writes `mind/turn.txt` before the runner (Bot-like wake analog).
+`process_once` is the only `mind/mail.txt` writer (`write_seat_mail`). Grok/Cursor
+runners `bind_seat_mail` (read). Spawn PATH remaining is `cloud_launch` which execs
 `scripts/launch-cloud-extra-high.sh` plus `a2a_send` → `scripts/a2a/send.sh`.
 Never grok --resume for Cloud create. Grok-bot-like plugins remaining:
 [`tests/features/liv63_mind_plugins.feature`](../../tests/features/liv63_mind_plugins.feature)
@@ -88,12 +90,13 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - Create the UUID once (`uuid4`), store in `mind/session`. First turn uses `--session-id $UUID` instead of `--resume`. Later turns **only** `--resume` that id.
 - Never bare `-p` on grok. Live proven 2026-08-21: `-p` before `--resume` is clap rc=2 because `--single` requires `<PROMPT>`. `--prompt-file` is the prompt and also triggers headless mode.
 - Spawn identity (remaining vs construction clap): `grok_cli_runner` asserts `--prompt-file` is `$GCS_A2A_STATE/<seat>/mind/mail.txt` and `--resume` / `--session-id` equals `mind/session`. Refuse `--continue`, `--fork-session`, `--print`, glued `--resume=-1`, and a positional prompt. Executable BDD: [`tests/features/liv62_pinned_mail_spawn.feature`](../../tests/features/liv62_pinned_mail_spawn.feature).
+- An in-flight beat TASK stays in `mail.txt` until that runner exits 0. A later STATUS ACK is an action (Grokking Simplicity): it must not clobber an unread Donald TASK. `process_once` is the only `mail.txt` writer (`write_seat_mail`). Grok/Cursor runners `bind_seat_mail` (read); a STATUS runner cannot overwrite a held TASK even if `mail.in-flight` was cleared. `mind/mail.in-flight` holds the pid; `write_seat_mail` also refuses a different prompt while that file exists.
 - `--agent-profile`, `--trust`, and `--plugin-dir` are **grok agent** flags, not grok headless. Do not put them on this argv.
 - `--agent PATH` only if PATH is a file starting with YAML `---`. Markdown `SOUL.md` is not an agent file; omit `--agent`.
 - If grok says the session is already in use, treat it as minted and `--resume` the same UUID. Do not mint a new UUID.
 - Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty. Do not remint because the runner switched.
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
-- Offset advances only after the effective runner exits 0. That same success marks the hub task `TASK_STATE_COMPLETED`. `send.sh` / hub enqueue is `TASK_STATE_SUBMITTED`. Hub `TASK_STATE_COMPLETED` / A2A ACK is a **receipt, not mind-turn done**. Do not treat send.sh `kind=receipt` as `MIND_TURN`. Mail is consumed only after grok/cursor runner exit 0. A runner that did not run is not success. A failed runner leaves mail queued (offset unchanged, task not completed).
+- Offset advances only after the effective runner exits 0. Hub `TASK_STATE_COMPLETED` / send.sh ACK is a protocol receipt, not that the grok/Cursor turn is done. Do not treat send.sh `kind=receipt` as `MIND_TURN`. A runner that did not run is not success. A failed runner leaves mail queued (offset unchanged, `mail.in-flight` uncleared).
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
 
 ### RESULT is duplex, not success
@@ -103,8 +106,8 @@ Mailbox consume is runner exit 0, not a RESULT line. After a successful turn,
 and may ping the caller (`A2A_REPLY`). That ping must succeed: skipSeat `donald` has
 no shipped Agent Card, so duplex maps `donald` → `floor-ops` then `orchestrator`
 instead of POSTing a hub 404. A missed ping does not fail the task reply.
-Hub enqueue is `TASK_STATE_SUBMITTED`; later `TASK_STATE_COMPLETED` / send.sh ACK is a
-protocol receipt, not mind-turn done (not this mechanic).
+Hub `TASK_STATE_COMPLETED` / send.sh ACK is a receipt, not mind-turn done.
+Mail is consumed only after grok/cursor runner exit 0.
 
 Directors print:
 

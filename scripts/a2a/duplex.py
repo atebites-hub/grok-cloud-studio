@@ -3,15 +3,14 @@
 
 Idempotent per taskId (.duplex marker). Local studio only. Stdlib.
 
-Hub enqueue is TASK_STATE_SUBMITTED. set_task_state marks COMPLETED after
-the Grok Build mind harvests and the runner exits 0. That COMPLETE / A2A
-ACK is a receipt, not mind-turn done. RESULT duplex is optional overlay,
-not a fake ACP HANDOFF.
+Hub enqueue returns TASK_STATE_COMPLETED as a protocol receipt (LIV-85).
+RESULT duplex is optional overlay, not a fake ACP HANDOFF. Mail is consumed
+only after grok/cursor runner exit 0.
 
 A2A_REPLY must succeed after Director RESULT and must not 404 skipSeat
 donald (no shipped Agent Card; not an ACP inject target). Map donald →
 floor-ops, then orchestrator. If neither card exists, skip notify without
-failing the task reply. Hub TASK_STATE_SUBMITTED / later COMPLETED is a
+failing the task reply. Hub TASK_STATE_COMPLETED / send.sh ACK is a
 receipt, not mind-turn done, not Director RESULT.
 """
 from __future__ import annotations
@@ -152,8 +151,9 @@ def set_task_state(
 ) -> dict[str, Any] | None:
     """Update an existing hub task's status. No-op if the task is missing.
 
-    Mail stays TASK_STATE_SUBMITTED until the Grok Build mind harvests and
-    finishes (runner exit 0). Do not invent a task here.
+    Hub COMPLETE / send.sh ACK is a receipt, not mind-turn done. This
+    helper still stamps COMPLETED after runner exit 0. Do not invent a
+    task here.
     """
     tid = str(task_id or "").strip()
     if not tid:

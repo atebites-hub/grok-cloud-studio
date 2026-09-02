@@ -127,7 +127,8 @@ def test_feature_file_states_skipseat_not_liv85_clone() -> None:
     assert "do not rebase" in low
     assert "liv-85" in low
     assert "does not clone" in low or "not clone" in low or "not a liv-85" in low
-    assert "task_state_submitted" in low
+    assert "task_state_completed" in low
+    assert "receipt" in low
 
 
 def test_docs_name_donald_notify_and_keep_skipseats() -> None:
@@ -144,7 +145,8 @@ def test_docs_name_donald_notify_and_keep_skipseats() -> None:
     duplex_src = DUPLEX_PY.read_text(encoding="utf-8")
     assert "floor-ops" in duplex_src
     assert "donald" in duplex_src
-    assert "TASK_STATE_SUBMITTED" in duplex_src
+    assert "TASK_STATE_COMPLETED" in duplex_src
+    assert "receipt" in duplex_src.lower()
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
     skip = registry.get("skipSeats") or []
     assert "donald" in skip
@@ -350,12 +352,12 @@ def test_hub_donald_404s_but_duplex_notify_uses_floor_ops(
             ping_task = candidate
             break
     assert ping_task is not None
-    assert ping_task["status"]["state"] == "TASK_STATE_SUBMITTED"
+    assert ping_task["status"]["state"] == "TASK_STATE_COMPLETED"
     assert ping_task["id"] != "task-skip-hub"
 
 
-def test_hub_enqueue_is_submitted_receipt_not_director_result(hub: dict) -> None:
-    """LIV-85 enqueue ACK is SUBMITTED. Not this FAT's RESULT line. Do not clone."""
+def test_hub_enqueue_is_complete_receipt_not_director_result(hub: dict) -> None:
+    """LIV-85 enqueue ACK is COMPLETE-as-receipt. Not this FAT's RESULT line."""
     proc = subprocess.run(
         ["bash", str(SEND_SH), "floor-ops", "ping receipt only"],
         cwd=str(REPO),
@@ -366,8 +368,9 @@ def test_hub_enqueue_is_submitted_receipt_not_director_result(hub: dict) -> None
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "A2A_SEND_OK" in proc.stdout
-    assert "TASK_STATE_SUBMITTED" in proc.stdout
-    assert "TASK_STATE_COMPLETED" not in proc.stdout
+    assert "TASK_STATE_COMPLETED" in proc.stdout
+    assert "kind=receipt" in proc.stdout
+    assert "TASK_STATE_SUBMITTED" not in proc.stdout
     duplex = _load(DUPLEX_PY, "gcs_duplex_skip_receipt")
     assert duplex.extract_result_line("TASK_STATE_COMPLETED") is None
     assert duplex.extract_result_line("TASK_STATE_SUBMITTED") is None

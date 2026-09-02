@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Grok-bot-like remaining A2A mechanics for Grok Build minds.
 
-Mailbox harvest writes a disk turn (mind/mail.txt + mind/turn.txt, Bot
-wake analog) before the runner. Mind spawn PATH is Extra High
-(cloud_launch) plus a2a_send. cloud_launch execs
-scripts/launch-cloud-extra-high.sh. Not leftover ACP overlay. Not a Grok Bot
-grunt runtime.
+Mailbox harvest writes a disk turn (mind/turn.txt, Bot wake analog)
+before the runner. `process_once` is the only `mind/mail.txt` writer.
+Mind spawn PATH is Extra High (cloud_launch) plus a2a_send. cloud_launch
+execs scripts/launch-cloud-extra-high.sh. Not leftover ACP overlay. Not
+a Grok Bot grunt runtime.
 
 Do not vendor Hermes. Do not land harvest envelope helpers. Do not
 restack #47 command-center list/follow tools here.
@@ -72,15 +72,14 @@ def prepare_mail_turn(
 ) -> str:
     """Write Bot-like turn files, then return the runner prompt.
 
-    mind/mail.txt is the grok --prompt-file body. mind/turn.txt +
-    mind/turn.jsonl match Bot wake artifacts (latest + append log).
-    Offset still advances only after the runner exits 0.
+    mind/turn.txt + mind/turn.jsonl match Bot wake artifacts (latest +
+    append log). process_once writes mind/mail.txt (grok --prompt-file)
+    via write_seat_mail. Offset still advances only after the runner
+    exits 0.
     """
     prompt = extract_mail_text(rec)
     mind = Path(state_dir) / seat / "mind"
     mind.mkdir(parents=True, exist_ok=True)
-    mail_body = prompt if prompt.endswith("\n") else prompt + "\n"
-    (mind / "mail.txt").write_text(mail_body, encoding="utf-8")
     ts = now or _now()
     task_id = str(rec.get("taskId") or rec.get("id") or "")
     context_id = str(rec.get("contextId") or "")

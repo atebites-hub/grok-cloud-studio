@@ -2,14 +2,12 @@
 """Minimal local A2A HTTP+JSON hub for Grok Cloud Studio seats.
 
 Stdlib only. Serves Agent Cards, Send Message, Get/List/Cancel Task.
-This hub is the enqueue bus: it appends per-seat inbox JSONL and
-returns TASK_STATE_SUBMITTED. Mail stays queued until the Grok Build
-mind harvests that line and the runner exits 0 (then COMPLETED).
-Enqueue is not done. Do not treat send as a fake ACP HANDOFF.
-Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not mind-turn done.
-send.sh binds kind=receipt from the receipt artifact; that ACK is not
-MIND_TURN. Mail is consumed only after grok/cursor runner exit 0.
-
+This hub is the protocol ack bus: it appends per-seat inbox JSONL and
+returns TASK_STATE_COMPLETED + a receipt artifact. That COMPLETE / A2A
+ACK is a receipt, not mind-turn done. send.sh binds kind=receipt from
+the receipt artifact; that ACK is not MIND_TURN. Mail is consumed only
+after the grok/cursor runner exits 0 (`mind.py` offset / MIND_TURN).
+Do not treat send as a fake ACP HANDOFF.
 Auto-wake of Grok Build Director seats is handled separately by
 scripts/a2a/dispatch.py (standing inbox poller) and
 scripts/a2a/start-studio-bus.sh (hub + dispatch together). The hub itself
@@ -256,7 +254,7 @@ class A2AHandler(BaseHTTPRequestHandler):
                 "id": task_id_new,
                 "contextId": context_id,
                 "status": {
-                    "state": TASK_STATE_SUBMITTED,
+                    "state": TASK_STATE_COMPLETED,
                     "timestamp": _now(),
                     "message": {
                         "messageId": str(uuid.uuid4()),
@@ -264,7 +262,7 @@ class A2AHandler(BaseHTTPRequestHandler):
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": f"QUEUED seat={seat} messageId={message_id}",
+                                "text": f"ACK seat={seat} messageId={message_id}",
                             }
                         ],
                     },
@@ -289,10 +287,10 @@ class A2AHandler(BaseHTTPRequestHandler):
                                     "receivedAt": _now(),
                                     "preview": receipt_text[:500],
                                     "note": (
+                                        "Simple ack hub — seats poll inbox JSONL. "
                                         "Hub TASK_STATE_COMPLETED / A2A ACK is a "
-                                        "receipt, not mind-turn done. Enqueue stays "
-                                        "TASK_STATE_SUBMITTED until harvest. Mail is "
-                                        "consumed only after grok/cursor runner exit 0."
+                                        "receipt, not mind-turn done. Mail is consumed "
+                                        "only after grok/cursor runner exit 0."
                                     ),
                                 },
                             }
@@ -301,7 +299,7 @@ class A2AHandler(BaseHTTPRequestHandler):
                 ],
                 "metadata": {
                     "hub": "gcs-a2a",
-                    "kind": "queued",
+                    "kind": "ack",
                 },
             }
             inbox_record = {
