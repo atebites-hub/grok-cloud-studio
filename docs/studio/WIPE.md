@@ -208,6 +208,13 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    taskboard only. Do not copy `GROK_HOME` MCP.
    Do not put MagicDNS hostnames or private GitHub URLs in that file.
 
+   `./setup.sh` also runs `scripts/directors/install-grok-mcp.sh` for
+   **mcp-seats** (mind ∪ launch, never skipSeats). That writes
+   `taskboard --db $GCS_TASKBOARD_DB mcp` into each isolated
+   `GROK_HOME/config.toml`. Cursor `${workspaceFolder}` is not the grok
+   serve config. Living Sky Linear HTTP may already live in that same
+   GROK_HOME catalog. Does not remint serve.
+
 7. Mind seats come from `studio.env` (`GCS_MIND_SEATS` first-class directors
    plus CCGS leads `audio` and `narrative`; not 49 specialists). Start the bus
    **without** `--daemons`:
