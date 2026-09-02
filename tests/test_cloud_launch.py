@@ -467,3 +467,181 @@ def test_sdk_list_prints_run_status_on_each_row() -> None:
     assert "runStatus=" in src
     assert "mapRunStatus" in src
     assert "listRuns" in src or "getRun" in src
+
+def _assert_extra_high_pin(body: dict[str, Any]) -> None:
+    assert body["model"]["id"] == "grok-4.6"
+    params = {(p["id"], p["value"]) for p in body["model"]["params"]}
+    assert ("effort", "xhigh") in params
+    assert ("fast", "false") in params
+    assert body["repos"] == [{"url": EXAMPLE_REPO, "startingRef": "main"}]
+    assert body["autoCreatePR"] is True
+
+
+def _assert_launch_ok(proc: subprocess.CompletedProcess[str]) -> None:
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "CLOUD_LAUNCH_OK" in proc.stdout
+    assert "CLOUD_LAUNCH_ERR" not in proc.stdout
+    assert FAKE_KEY not in proc.stdout
+    assert FAKE_KEY not in proc.stderr
+
+
+def test_launch_prompt_file_posts_file_contents(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "director-prompt.txt"
+    prompt_path.write_text(
+        "Implement the assigned outcome from this file.\nOpen a PR.\nDo not stuff argv.\n",
+        encoding="utf-8",
+    )
+    with MockCursorAPI(create_http=201) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", "gcs-file", "--prompt-file", str(prompt_path)],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    _assert_launch_ok(proc)
+    body = api.posts[0]["body"]
+    _assert_extra_high_pin(body)
+    assert body["name"] == "gcs-file"
+    text = body["prompt"]["text"]
+    assert "Implement the assigned outcome from this file." in text
+    assert "Do not stuff argv." in text
+    assert str(prompt_path) not in text
+
+
+def test_launch_prompt_file_equals_form(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "equals.txt"
+    prompt_path.write_text("Equals-form prompt from file", encoding="utf-8")
+    with MockCursorAPI(create_http=201) as api:
+        proc = _run(
+            LAUNCH,
+            [f"--prompt-file={prompt_path}", "--name", "gcs-eq"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+        )
+    _assert_launch_ok(proc)
+    body = api.posts[0]["body"]
+    _assert_extra_high_pin(body)
+    assert body["name"] == "gcs-eq"
+    assert body["prompt"]["text"] == "Equals-form prompt from file"
+
+
+def test_launch_prompt_from_stdin_dash(tmp_path: Path) -> None:
+    with MockCursorAPI(create_http=201) as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", "gcs-stdin", "-"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+            stdin="Prompt from stdin dash. Open a PR.",
+        )
+    _assert_launch_ok(proc)
+    body = api.posts[0]["body"]
+    _assert_extra_high_pin(body)
+    assert body["name"] == "gcs-stdin"
+    assert body["prompt"]["text"] == "Prompt from stdin dash. Open a PR."
+
+
+def test_launch_prompt_file_missing_is_err(tmp_path: Path) -> None:
+    missing = tmp_path / "no-such-prompt.txt"
+    with MockCursorAPI() as api:
+        proc = _run(
+            LAUNCH,
+            ["--name", "gcs-missing", "--prompt-file", str(missing)],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+            stdin="",
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    assert "unknown option" not in proc.stderr
+    assert "readable file" in proc.stderr or "not a readable" in proc.stderr
+    assert not api.posts
+
+
+def test_launch_prompt_file_empty_is_err(tmp_path: Path) -> None:
+    empty = tmp_path / "empty.txt"
+    empty.write_text("   \n\t\n", encoding="utf-8")
+    with MockCursorAPI() as api:
+        proc = _run(
+            LAUNCH,
+            ["--prompt-file", str(empty)],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+            stdin="",
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert "CLOUD_LAUNCH_OK" not in proc.stdout
+    assert "unknown option" not in proc.stderr
+    assert "prompt is required" in proc.stderr
+    assert not api.posts
+
+
+def test_launch_prompt_file_rejects_argv_prompt(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "mix.txt"
+    prompt_path.write_text("from file", encoding="utf-8")
+    with MockCursorAPI() as api:
+        proc = _run(
+            LAUNCH,
+            ["--prompt-file", str(prompt_path), "argv prompt must not mix"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+            stdin="",
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert "unknown option" not in proc.stderr
+    assert "cannot be combined" in proc.stderr
+    assert not api.posts
+
+
+def test_launch_prompt_file_rejects_stdin_dash(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "mix-stdin.txt"
+    prompt_path.write_text("from file", encoding="utf-8")
+    with MockCursorAPI() as api:
+        proc = _run(
+            LAUNCH,
+            ["--prompt-file", str(prompt_path), "-"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+            stdin="from stdin",
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert "unknown option" not in proc.stderr
+    assert "cannot be combined" in proc.stderr
+    assert not api.posts
+
+
+def test_launch_stdin_dash_rejects_prompt_file_after(tmp_path: Path) -> None:
+    prompt_path = tmp_path / "after.txt"
+    prompt_path.write_text("from file", encoding="utf-8")
+    with MockCursorAPI() as api:
+        proc = _run(
+            LAUNCH,
+            ["-", "--prompt-file", str(prompt_path)],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+            stdin="from stdin",
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert "unknown option" not in proc.stderr
+    assert "cannot be combined" in proc.stderr
+    assert not api.posts
+
+
+def test_launch_prompt_file_requires_path(tmp_path: Path) -> None:
+    with MockCursorAPI() as api:
+        proc = _run(
+            LAUNCH,
+            ["--prompt-file"],
+            _script_env(tmp_path, api.base, CURSOR_API_KEY=FAKE_KEY),
+            stdin="",
+        )
+    assert proc.returncode != 0
+    assert "CLOUD_LAUNCH_ERR" in proc.stdout
+    assert "unknown option" not in proc.stderr
+    assert "requires a path" in proc.stderr or "requires a value" in proc.stderr
+    assert not api.posts
+
+
+def test_launch_usage_documents_prompt_file() -> None:
+    src = LAUNCH.read_text(encoding="utf-8")
+    assert "--prompt-file" in src
+    assert "fast=false" in src
+    assert "grok-4.6" in src
+    assert "xhigh" in src

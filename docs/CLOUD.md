@@ -30,10 +30,13 @@ catalog). See `docs/studio/MIND.md`.
 
 ```bash
 scripts/launch-cloud-extra-high.sh "Implement X. Open a PR." "short-name"
+scripts/launch-cloud-extra-high.sh --name short-name --prompt-file /path/to/prompt.txt
 # CLOUD_LAUNCH_OK — do not watch. The SDK waiter A2A-pings the owning seat
 # and REPORT_TO (default studio-ops). Collect on FLEET_DONE:
 scripts/cloud/result-cloud-agent.sh bc-...
 ```
+
+Prompt is exactly one of: command-line text, stdin `-`, or `--prompt-file PATH`.
 
 Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` from
 `watch.sh` / `watch-cloud-agent.sh` unless `CLOUD_ALLOW_BLOCK_WAIT=1`.

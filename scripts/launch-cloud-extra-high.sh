@@ -18,12 +18,15 @@ usage() {
 Usage: launch-cloud-extra-high.sh [--name NAME] [PROMPT]
        launch-cloud-extra-high.sh "prompt" [name]
        launch-cloud-extra-high.sh [--name NAME] -   # prompt on stdin
+       launch-cloud-extra-high.sh [--name NAME] --prompt-file PATH
 
 Creates a Cursor Cloud Extra High agent (SDK-first):
   model grok-4.6, params effort=xhigh and fast=false
   repo from GCS_CLOUD_REPO or CLOUD_REPO_URL (required)
   startingRef from GCS_CLOUD_REF (default main)
   autoCreatePR=true
+
+Prompt is exactly one of: command-line text, stdin `-`, or --prompt-file PATH.
 
 --name REFUSE if a live runStatus=RUNNING Extra High already has that name
 (no twin remint). Leftover ACTIVE+FINISHED does not block.
@@ -67,7 +70,9 @@ refuse_live_name_twin() {
 
 name=""
 prompt=""
+prompt_file=""
 name_from_flag=0
+prompt_from_file=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)
@@ -85,11 +90,30 @@ while [[ $# -gt 0 ]]; do
       name_from_flag=1
       shift
       ;;
+    --prompt-file)
+      [[ $# -ge 2 ]] || fail_launch "error: --prompt-file requires a path"
+      [[ "$prompt_from_file" -eq 0 ]] || fail_launch "error: --prompt-file specified more than once"
+      prompt_file="$2"
+      prompt_from_file=1
+      shift 2
+      ;;
+    --prompt-file=*)
+      [[ "$prompt_from_file" -eq 0 ]] || fail_launch "error: --prompt-file specified more than once"
+      prompt_file="${1#--prompt-file=}"
+      prompt_from_file=1
+      shift
+      ;;
     --)
       shift
       break
       ;;
     -)
+      if [[ "$prompt_from_file" -eq 1 ]]; then
+        fail_launch "error: --prompt-file cannot be combined with stdin -"
+      fi
+      if [[ $# -gt 1 ]]; then
+        fail_launch "error: stdin - cannot be combined with a command-line prompt"
+      fi
       shift
       prompt="$(cat)"
       break
@@ -103,7 +127,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$prompt" ]]; then
+if [[ "$prompt_from_file" -eq 1 ]]; then
+  if [[ -z "$prompt_file" || "$prompt_file" == "-" ]]; then
+    fail_launch "error: --prompt-file requires a filesystem path (use - for stdin)"
+  fi
+  if [[ $# -gt 0 ]]; then
+    fail_launch "error: --prompt-file cannot be combined with a command-line prompt"
+  fi
+  if [[ ! -f "$prompt_file" || ! -r "$prompt_file" ]]; then
+    fail_launch "error: --prompt-file is not a readable file: $prompt_file"
+  fi
+  prompt="$(cat -- "$prompt_file")" || fail_launch "error: failed to read --prompt-file"
+elif [[ -z "$prompt" ]]; then
   if [[ "$name_from_flag" -eq 0 && $# -eq 2 ]]; then
     prompt="$1"
     name="$2"
