@@ -21,13 +21,14 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus` |
+| `occupancy-count.sh [--limit N]` | Capacity occupancy: `CLOUD_OCCUPANCY running=N leftover_active=N creating=N listed=N`. Bounded concurrent `Agent.list` + `listRuns`, timeout, fail-closed on ERR |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
 | `result-cloud-agent.sh <bc-id>` | Result/context JSON |
 | `webhook-harness.sh serve \| simulate` | Signed webhook receiver / local POST |
 
-Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|result|wait-notify> …`
+Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|occupancy|status|watch|followup|result|wait-notify> …`
 
 `_common.sh` loads `auth.sh`, dispatches the SDK CLI, and falls back to REST curl. `auth.sh` is the shared HTTP helper (Basic auth, `CURSOR_API_BASE`, redaction).
 
@@ -134,6 +135,23 @@ Cloud agents are durable membership. `GET /v1/agents` `status` stays `ACTIVE` un
 REST resolves `latestRunId` via `GET /v1/agents/{id}/runs/{runId}` (`scripts/cloud/list_rows.py`). SDK uses `Agent.listRuns`. A missing or failed run fetch prints `runStatus=none`.
 
 Live workers are `runStatus=RUNNING`. Leftover `status=ACTIVE` + `runStatus=FINISHED` is membership, not a spinning worker.
+
+## Occupancy counts (capacity beats)
+
+Existence **ACTIVE/IDLE** is not liveness. Capacity beats must not grep leftover `ACTIVE` and must not unbounded-`Promise.all` `listRuns` (that hangs the beat when leftover shells pile up).
+
+`scripts/cloud/occupancy-count.sh`:
+
+- SDK: `Agent.list` then bounded-concurrent `Agent.listRuns` (`scripts/cloud/sdk/occupancy.ts` / `occupancy_lib.ts`)
+- REST: `GET /v1/agents` then `GET /v1/agents/{id}/runs` (`occupancy_count.py`) — collection listRuns, not the list-row printer `GET .../runs/{latestRunId}`
+- Concurrency default **8** (`CLOUD_OCCUPANCY_CONCURRENCY`)
+- Per-call timeout default **15s** (`CLOUD_LIST_RUNS_TIMEOUT_SEC`, cap 15)
+- Overall deadline default **30s** (`CLOUD_OCCUPANCY_DEADLINE_SEC`)
+- Fail-closed on ERR/timeout: `CLOUD_OCCUPANCY_ERR reason=…` exit 1. Do not print `CLOUD_OCCUPANCY running=0` for an unread fleet.
+- Success: `CLOUD_OCCUPANCY running=N leftover_active=N creating=N listed=N`
+- Skip `GCS_BOT_AGENT_ID` (never Bot CloudAgent)
+
+`list.ts` uses the same bounded `mapWithConcurrency` + `withTimeout` fan-out so a Director list does not hang either. That is occupancy reliability, not a remint of list `--running` printers.
 
 ## Rules
 

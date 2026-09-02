@@ -50,6 +50,8 @@ Fail-closed (LIV-67 / LIV-69): create **and** send/followup always pin grok-4.6 
 
 `scripts/cloud/list.sh` / `list-cloud-agents.sh` print agent `status` (membership, often `ACTIVE`) and latest-run `runStatus` (`RUNNING` vs `FINISHED`). Agent `ACTIVE` is not a live worker. Leftover `ACTIVE`+`FINISHED` must not count as live.
 
+Capacity beats must call `scripts/cloud/occupancy-count.sh` (SDK `Agent.list` + `Agent.listRuns`, REST analog `GET /v1/agents/{id}/runs`). Existence **ACTIVE/IDLE** is not liveness. Fan-out is **bounded** (`CLOUD_OCCUPANCY_CONCURRENCY`, default 8) with a per-call timeout (`CLOUD_LIST_RUNS_TIMEOUT_SEC`, default 15s, cap 15) and an overall deadline (`CLOUD_OCCUPANCY_DEADLINE_SEC`, default 30s). Probe **ERR/timeout is fail-closed**: `CLOUD_OCCUPANCY_ERR reason=timeout|err|deadline` and a non-zero exit — never a fake `running=0` that would either hang the beat or over-launch. Success prints `CLOUD_OCCUPANCY running=N leftover_active=N creating=N listed=N`. `GCS_BOT_AGENT_ID` is skipped (never Bot CloudAgent). Palemon Linear is Living Sky (`LIV`).
+
 ## Directors-spawn law (LIV-41)
 
 Directors and leads spawn specialists only via

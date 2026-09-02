@@ -10,6 +10,7 @@
   "scripts": {
     "launch": "tsx launch.ts",
     "list": "tsx list.ts",
+    "occupancy": "tsx occupancy.ts",
     "status": "tsx status.ts",
     "watch": "tsx watch.ts",
     "followup": "tsx followup.ts",
