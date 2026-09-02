@@ -305,8 +305,9 @@ def test_recover_leftover_pid_is_not_a_default_start(
             _reap_pid(extra)
 
 
+@pytest.mark.parametrize("bridge_value", [None, "", "0"], ids=["unset", "empty", "zero"])
 def test_recover_evicts_leftover_bot_bridge_when_hub_http_is_up(
-    tmp_path: Path,
+    tmp_path: Path, bridge_value: str | None
 ) -> None:
     """Bus already up must still not leave leftover Bot wake after RECOVER_OK."""
     hub, hub_port = _serve()
@@ -315,6 +316,10 @@ def test_recover_evicts_leftover_bot_bridge_when_hub_http_is_up(
     leftover = int(procs["bot-bridge"].pid)
     env = _recover_env(tmp_path, state)
     env["GCS_A2A_PORT"] = str(hub_port)
+    if bridge_value is not None:
+        env["GCS_BOT_BRIDGE"] = bridge_value
+    else:
+        env.pop("GCS_BOT_BRIDGE", None)
     try:
         proc = _run(RECOVER, [], env, timeout=30)
         blob = proc.stdout + proc.stderr
