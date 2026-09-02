@@ -510,6 +510,7 @@ def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
     --name REFUSE if a live runStatus=RUNNING Extra High already has that name.
     Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent.
     Never grok --resume for Cloud create.
+    Return after CLOUD_LAUNCH_OK. Do not block-wait; SDK waiter pings with context.
     """
     script = ROOT / "scripts" / "launch-cloud-extra-high.sh"
     if not script.is_file():
@@ -1374,6 +1375,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--once", action="store_true", help="Process one pending line then exit")
     args = parser.parse_args(argv)
     seat = canonical_seat(args.seat, ROOT)
+    os.environ["GCS_DIRECTOR_SEAT"] = seat
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     if args.once:
         process_once(seat)

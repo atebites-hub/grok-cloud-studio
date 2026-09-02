@@ -17,6 +17,11 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+function directorMustNotBlockWait(): boolean {
+  if ((process.env.CLOUD_ALLOW_BLOCK_WAIT || "").trim() === "1") return false;
+  return Boolean((process.env.GCS_DIRECTOR_SEAT || "").trim());
+}
+
 async function latestRun(agentId: string, apiKey: string): Promise<Run | undefined> {
   const listed = await Agent.listRuns(agentId, { runtime: "cloud", apiKey, limit: 20 });
   if (!listed.items.length) return undefined;
@@ -32,11 +37,12 @@ async function main(): Promise<void> {
   if (!agentId) {
     die("usage: watch.ts <bc-id> [timeout_sec=1800] [poll_sec=30]", 2);
   }
-  const directorSeat = (process.env.GCS_DIRECTOR_SEAT || "").trim();
-  const allowBlock = (process.env.CLOUD_ALLOW_BLOCK_WAIT || "").trim() === "1";
-  if (directorSeat && !allowBlock) {
+  if (directorMustNotBlockWait()) {
+    process.stdout.write("CLOUD_WATCH_REFUSED\n");
+    process.stdout.write(`id=${agentId}\n`);
+    process.stdout.write("reason=director-no-block-wait\n");
     console.error(
-      `CLOUD_WATCH_REFUSED seat=${directorSeat} use=spawn-waiter/result-cloud-agent.sh override=CLOUD_ALLOW_BLOCK_WAIT=1`,
+      `Directors must not block-wait on Cloud. The SDK waiter (scripts/cloud/sdk/wait-notify.ts via run.wait) A2A-pings the owning seat. Collect context with scripts/cloud/result-cloud-agent.sh ${agentId} or MCP cloud_result. Operator override=CLOUD_ALLOW_BLOCK_WAIT=1. Never Bot CloudAgent.`,
     );
     process.exit(2);
   }

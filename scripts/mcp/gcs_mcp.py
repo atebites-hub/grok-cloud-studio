@@ -10,7 +10,7 @@ Framing: Content-Length (MCP) or NDJSON when GCS_MCP_NDJSON=1.
 A first stdin line that starts with `{` latches NDJSON for the session
 so initialize still replies when the client omits Content-Length.
 Initialize is not shutdown: stay on the pipe until stdin EOF.
-Never prints credentials.
+Never prints credentials. Directors never block-wait; no cloud_watch tool.
 """
 from __future__ import annotations
 
@@ -68,10 +68,12 @@ def cloud_tools() -> list[dict[str, Any]]:
         {
             "name": "cloud_launch",
             "description": (
-                "Launch a Cursor Cloud Extra High agent. Requires GCS_CLOUD_REPO or "
-                "CLOUD_REPO_URL. --name REFUSE if a live runStatus=RUNNING agent already "
-                "has that name (no twin remint). Leftover ACTIVE+FINISHED does not block. "
-                "Never Grok Bot as the grunt runtime. Never returns API keys."
+                "Launch a Cursor Cloud Extra High agent and return immediately after "
+                "CLOUD_LAUNCH_OK. Spawns the SDK waiter (run.wait). Directors must not "
+                "block-wait on watch. Requires GCS_CLOUD_REPO or CLOUD_REPO_URL. --name "
+                "REFUSE if a live runStatus=RUNNING agent already has that name (no twin "
+                "remint). Leftover ACTIVE+FINISHED does not block. Never Grok Bot as the "
+                "grunt runtime. Never returns API keys."
             ),
             "inputSchema": {
                 "type": "object",
@@ -109,7 +111,7 @@ def cloud_tools() -> list[dict[str, Any]]:
         },
         {
             "name": "cloud_status",
-            "description": "Compact status for a Cursor Cloud agent bc-id.",
+            "description": "Compact non-blocking status for a Cursor Cloud agent bc-id. Do not watch.",
             "inputSchema": {
                 "type": "object",
                 "properties": {"id": {"type": "string", "description": "bc-id"}},
@@ -119,7 +121,10 @@ def cloud_tools() -> list[dict[str, Any]]:
         },
         {
             "name": "cloud_result",
-            "description": "Result JSON for a Cursor Cloud agent bc-id (prUrl, runStatus, summary).",
+            "description": (
+                "Non-blocking result/context JSON for a Cursor Cloud agent bc-id "
+                "(prUrl, runStatus, summary, result). Directors must not watch."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {"id": {"type": "string", "description": "bc-id"}},

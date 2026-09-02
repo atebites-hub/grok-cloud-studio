@@ -58,3 +58,31 @@ _cloud_sdk_try() {
 cloud_sdk_exec() {
   _cloud_sdk_try "$@"
 }
+
+# LIV-103: Directors never block-wait on Cloud. Return 0 when this process
+# must refuse watch/poll. Operators may set CLOUD_ALLOW_BLOCK_WAIT=1.
+cloud_director_must_not_block_wait() {
+  if [[ "${CLOUD_ALLOW_BLOCK_WAIT:-0}" == "1" ]]; then
+    return 1
+  fi
+  if [[ -n "${GCS_DIRECTOR_SEAT:-}" ]]; then
+    return 0
+  fi
+  return 1
+}
+
+# Print CLOUD_WATCH_REFUSED and return 0 when a Director watch must stop.
+# Return 1 when watch/poll is allowed.
+cloud_refuse_director_block_wait() {
+  local agent_id="${1:-}"
+  if ! cloud_director_must_not_block_wait; then
+    return 1
+  fi
+  printf '%s\n' "CLOUD_WATCH_REFUSED"
+  if [[ -n "$agent_id" ]]; then
+    printf 'id=%s\n' "$agent_id"
+  fi
+  printf '%s\n' "reason=director-no-block-wait"
+  printf '%s\n' "Directors must not block-wait on Cloud. The SDK waiter (scripts/cloud/sdk/wait-notify.ts via run.wait) A2A-pings the owning seat. Collect context with scripts/cloud/result-cloud-agent.sh ${agent_id:-<bc-id>} or MCP cloud_result. Operator override=CLOUD_ALLOW_BLOCK_WAIT=1. Never Bot CloudAgent." >&2
+  return 0
+}

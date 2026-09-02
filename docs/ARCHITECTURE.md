@@ -32,10 +32,11 @@ send.sh → hub.py (enqueue SUBMITTED + inbox JSONL; ACK is a receipt, not mind-
 host-ticker.py → ACP_PING STATUS/CONTINUE inbox lines (work turns, tools allowed; not PONG; not a LAUNCH kind)
 
 launch-cloud-extra-high.sh → @cursor/sdk Agent.create
-                           → spawn-waiter.sh → wait-notify.ts (GET latest runStatus)
-                           → A2A ping owning seat + REPORT_TO (default studio-ops)
+                           → spawn-waiter.sh → wait-notify.ts (GET latest runStatus / run.wait)
+                           → A2A ping owning seat + REPORT_TO (default studio-ops) with context
                            leftover FINISHED is not done while a newer run is CREATING/RUNNING
                            CANCELLED latest + prUrl → FLEET_DONE / INSPECT (not MERGE_REQUEST)
+                           Directors never block-wait; collect via result-cloud-agent.sh.
 
 fleet-shepherd.py = orphan-only Extra High safety net (no live waiter_pid; dead waiter_pid is evicted);
                     also TASKBOARD_HEALTH_OK / TASKBOARD_HEALTH_FAIL

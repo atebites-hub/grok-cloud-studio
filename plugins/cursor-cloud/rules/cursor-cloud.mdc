@@ -5,6 +5,6 @@ alwaysApply: false
 
 # Cursor Cloud Extra High
 
-Use MCP `cloud_launch`, `cloud_list`, `cloud_status`, and `cloud_result` (or `scripts/launch-cloud-extra-high.sh`). Set `GCS_CLOUD_REPO` or `CLOUD_REPO_URL` before create. `--name` REFUSE if a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Never Grok Bot as the grunt runtime. Palemon Linear is Living Sky (`LIV`). Do not print API keys. After `CLOUD_LAUNCH_OK`, a waiter A2A-pings the owning seat; do not block the Director turn on watch.
+Use MCP `cloud_launch`, `cloud_list`, `cloud_status`, and `cloud_result` (or `scripts/launch-cloud-extra-high.sh`). Set `GCS_CLOUD_REPO` or `CLOUD_REPO_URL` before create. `--name` REFUSE if a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Never Grok Bot as the grunt runtime. Palemon Linear is Living Sky (`LIV`). Do not print API keys. After `CLOUD_LAUNCH_OK`, a waiter A2A-pings the owning seat with result/context; do not block the Director turn on watch. Never Bot CloudAgent.
 
 `cloud_list` prints latest-run `runStatus` (`RUNNING` vs `FINISHED`), not only agent `ACTIVE`. ACTIVE+FINISHED leftovers are not live workers.

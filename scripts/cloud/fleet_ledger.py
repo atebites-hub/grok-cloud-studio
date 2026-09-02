@@ -60,6 +60,21 @@ def normalize_run_status(value: object) -> str:
     return raw or "unknown"
 
 
+def context_snippet(payload: dict[str, Any], limit: int = 240) -> str:
+    """One-line SDK result/context for A2A pings. Prefer run.result over summary."""
+    raw = payload.get("result")
+    if raw is None or str(raw).strip() == "":
+        raw = payload.get("summary")
+    text = " ".join(str(raw or "").split())
+    if not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    if limit <= 1:
+        return "…"[:limit]
+    return text[: limit - 1] + "…"
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -368,11 +383,13 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
     pr = payload.get("prUrl") or "none"
     name = payload.get("name") or ""
     url = payload.get("url") or f"https://cursor.com/agents/{bc_id}"
+    ctx = context_snippet(payload)
+    extra = f" context={ctx}" if ctx else ""
     if run_status == "CANCELLED":
         # Latest run aborted. prUrl may still exist from git.branches — not merge-ready.
         return (
             f"FLEET_DONE / INSPECT: Extra High {bc_id} ({name}) "
-            f"runStatus=CANCELLED pr={pr} url={url}. "
+            f"runStatus=CANCELLED pr={pr} url={url}.{extra} "
             f"Inspect with scripts/cloud/result-cloud-agent.sh {bc_id}; "
             f"follow-up-or-close; do not ignore. RESULT."
         )
@@ -400,7 +417,7 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
             return (
                 f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
                 f"runStatus=FINISHED pr={pr} check_runs={check_runs} "
-                f"mergeable={mergeable} url={url}. "
+                f"mergeable={mergeable} url={url}.{extra} "
                 f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
                 f"HOLD MERGE_REQUEST: {reason}"
                 f"Need pull_request ship-gate: .venv/bin/pytest -q AND "
@@ -413,7 +430,7 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
         if pr_is_url and not has_paste_evidence(paste):
             return (
                 f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
-                f"runStatus=FINISHED pr={pr} url={url}. "
+                f"runStatus=FINISHED pr={pr} url={url}.{extra} "
                 f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
                 f"HOLD MERGE_REQUEST: empty GitHub leftover-green is not a "
                 f"ship-gate. Paste .venv/bin/pytest -q (N passed, N>=1) and "
@@ -422,14 +439,14 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
             )
         return (
             f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
-            f"runStatus=FINISHED pr={pr} url={url}. "
+            f"runStatus=FINISHED pr={pr} url={url}.{extra} "
             f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
             f"If pr is a URL: {MERGE_READY}; "
             f"do not launch a twin. RESULT with bc-id + pr."
         )
     return (
         f"FLEET_DONE: Extra High {bc_id} ({name}) "
-        f"runStatus={run_status} pr={pr} url={url}. "
+        f"runStatus={run_status} pr={pr} url={url}.{extra} "
         f"Inspect with scripts/cloud/result-cloud-agent.sh {bc_id}; "
         f"follow-up or close; do not ignore. RESULT."
     )
@@ -462,6 +479,9 @@ def complete(
         payload.get("runStatus") or payload.get("status") or ""
     )
     row["pr_url"] = payload.get("prUrl")
+    snip = context_snippet(payload)
+    if snip:
+        row["context"] = snip
     if payload.get("emptyChecks") is not None or payload.get("empty_checks") is not None:
         row["empty_checks"] = payload_empty_checks(payload)
     if payload.get("shipGateOk") is not None or payload.get("ship_gate_ok") is not None:

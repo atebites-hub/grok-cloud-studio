@@ -290,8 +290,9 @@ async function main(): Promise<void> {
           : "";
     const gateTag =
       payload.shipGateOk === true ? " shipGate=ok" : payload.emptyChecks === true ? " shipGate=empty" : "";
+    const ctx = (payload.result || payload.summary || "").replace(/\s+/g, " ").trim().slice(0, 240);
     process.stdout.write(
-      `CLOUD_WAITER_DONE id=${agentId} run=${payload.runId || "none"} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"}${checkTag}${gateTag}\n`,
+      `CLOUD_WAITER_DONE id=${agentId} run=${payload.runId || "none"} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"}${checkTag}${gateTag}${ctx ? ` context=${ctx}` : ""}\n`,
     );
   } catch (err) {
     console.error(`CLOUD_WAITER_ERR id=${agentId} ${safeError(err)}`);

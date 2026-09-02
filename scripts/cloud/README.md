@@ -24,9 +24,9 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus` |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
-| `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
+| `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` (`reason=director-no-block-wait`) unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
-| `result-cloud-agent.sh <bc-id>` | Result/context JSON |
+| `result-cloud-agent.sh <bc-id>` | Non-blocking result/context JSON |
 | `pr_evidence.py judge` | MERGE_REQUEST paste gate: leftover-green empty GitHub checks are not ship-gate; require pasted `pytest -q` (`N passed`) + `secret_scan=clean`. CONFLICTING/DIRTY never squash. Verdict JSON only (never prints tokens). |
 | `webhook-harness.sh serve \| simulate` | Signed webhook receiver / local POST |
 
@@ -134,7 +134,7 @@ scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check
 `FINISHED` (success) · `ERROR` · `CANCELLED` · `EXPIRED`  
 In-flight: `CREATING` · `RUNNING`
 
-`watch.sh` / `watch-cloud-agent.sh` poll the agent's latest run. `FINISHED` exits 0; the other three terminals exit non-zero. Directors never call these: launch already spawned `wait-notify` (`run.wait`) which A2A-pings the owning seat and `REPORT_TO` (default `studio-ops`). With `GCS_DIRECTOR_SEAT` set they print `CLOUD_WATCH_REFUSED` and exit 2 unless `CLOUD_ALLOW_BLOCK_WAIT=1`.
+`watch.sh` / `watch-cloud-agent.sh` poll the agent's latest run. **Directors must not call them** (LIV-103): launch already spawned `wait-notify` (`run.wait`) which A2A-pings the owning seat and `REPORT_TO` (default `studio-ops`) with waiter/context return. With `GCS_DIRECTOR_SEAT` set they print `CLOUD_WATCH_REFUSED` (`reason=director-no-block-wait`) and exit 2 unless `CLOUD_ALLOW_BLOCK_WAIT=1`. `FINISHED` exits 0; the other three terminals exit non-zero.
 
 Poll interval: `CLOUD_WATCH_INTERVAL` (short-name default 10s). Optional deadline: `CLOUD_WATCH_TIMEOUT_SEC` (0 = none on `watch.sh`). Long-name `watch-cloud-agent.sh` defaults timeout 1800s / poll 30s when those env vars are unset.
 
