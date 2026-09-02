@@ -8,6 +8,7 @@ import {
   mapRunStatus,
   safeError,
 } from "./common.ts";
+import { API_PAGE_MAX, listAllCloudAgents } from "./list_catalog.ts";
 
 async function latestRunMeta(
   agentId: string,
@@ -35,7 +36,12 @@ async function main(): Promise<void> {
   const limit = Number(rawLimit);
   const apiKey = loadApiKey();
   try {
-    const { items } = await Agent.list({ runtime: "cloud", apiKey, limit });
+    const catalog = await listAllCloudAgents({
+      apiKey,
+      pageSize: Math.min(Math.max(limit, 1), API_PAGE_MAX),
+      maxItems: limit,
+    });
+    const { items } = catalog;
     if (!items.length) {
       process.stdout.write("CLOUD_LIST empty\n");
       return;

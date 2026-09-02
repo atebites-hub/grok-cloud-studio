@@ -15,6 +15,7 @@
     "followup": "tsx followup.ts",
     "result": "tsx result.ts",
     "wait-notify": "tsx wait-notify.ts",
+    "occupancy": "tsx occupancy.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

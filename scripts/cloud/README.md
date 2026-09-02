@@ -21,13 +21,14 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus` |
+| `occupancy-count.sh` | Paginated occupancy catalog (`Agent.list` / `GET /v1/agents` via `nextCursor`, page size 100). Prints `CLOUD_OCCUPANCY running= leftover_active= creating= listed= pages=`. Fail-closed `CLOUD_OCCUPANCY_ERR reason=page` if a page errors — never fake `running=0`. |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
 | `result-cloud-agent.sh <bc-id>` | Result/context JSON |
 | `webhook-harness.sh serve \| simulate` | Signed webhook receiver / local POST |
 
-Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|result|wait-notify> …`
+Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|result|wait-notify|occupancy> …`
 
 `_common.sh` loads `auth.sh`, dispatches the SDK CLI, and falls back to REST curl. `auth.sh` is the shared HTTP helper (Basic auth, `CURSOR_API_BASE`, redaction).
 
@@ -134,6 +135,12 @@ Cloud agents are durable membership. `GET /v1/agents` `status` stays `ACTIVE` un
 REST resolves `latestRunId` via `GET /v1/agents/{id}/runs/{runId}` (`scripts/cloud/list_rows.py`). SDK uses `Agent.listRuns`. A missing or failed run fetch prints `runStatus=none`.
 
 Live workers are `runStatus=RUNNING`. Leftover `status=ACTIVE` + `runStatus=FINISHED` is membership, not a spinning worker.
+
+## Occupancy catalog (paginate beyond 100)
+
+`GET /v1/agents` and SDK `Agent.list` cap each page at **100**. A hive dump of **439** Extra Highs is five pages. Capacity beats must walk `nextCursor` until it is omitted (not returned as `null`).
+
+`scripts/cloud/occupancy-count.sh` is the occupancy path (SDK `occupancy.ts` / REST `occupancy_count.py`). It prints `CLOUD_OCCUPANCY running=N leftover_active=N creating=N listed=N pages=N`. If any catalog page errors, it prints `CLOUD_OCCUPANCY_ERR reason=page` and exits non-zero — **never** a fake `running=0` from a partial list. Skip `GCS_BOT_AGENT_ID`. Distinct from leftover occupancy GCS #132 (do not rebase).
 
 ## Rules
 

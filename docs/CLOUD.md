@@ -46,6 +46,8 @@ Fail-closed (LIV-67 / LIV-69): create **and** send/followup always pin grok-4.6 
 
 `scripts/cloud/list.sh` / `list-cloud-agents.sh` print agent `status` (membership, often `ACTIVE`) and latest-run `runStatus` (`RUNNING` vs `FINISHED`). Agent `ACTIVE` is not a live worker. Leftover `ACTIVE`+`FINISHED` must not count as live.
 
+Occupancy catalog (`scripts/cloud/occupancy-count.sh`) paginates `Agent.list` / REST `GET /v1/agents` via `nextCursor` beyond the API **limit=100** page cap (hive dump was **439**). `count-running` / occupancy-count **fail-closed** if a page errors — never fake `running=0` from a partial catalog. Existence ACTIVE is not liveness. Palemon Linear is Living Sky (`LIV`).
+
 ## Directors-spawn law (LIV-41)
 
 Directors and leads spawn specialists only via
