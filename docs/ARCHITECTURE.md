@@ -1,5 +1,9 @@
 # Architecture
 
+LIV-62 remaining after GCS PR #47 (Hermes pin + stay-up as grok mind, not a
+vendor): [`docs/studio/HERMES_REMAINING.md`](studio/HERMES_REMAINING.md).
+BDD: [`tests/features/liv62_hermes_pin_stay_up.feature`](../tests/features/liv62_hermes_pin_stay_up.feature).
+
 Grok Cloud Studio is a **local control plane**:
 
 1. **Directors** are Grok Build CLI seats (`floor`, `ops`/`studio-ops`, `cloud`,

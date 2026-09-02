@@ -19,6 +19,7 @@ import os
 import stat
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from types import ModuleType
 
@@ -210,7 +211,11 @@ def test_scenario_mailbox_harvest_writes_bot_like_turn_before_runner(
     empty = mind.process_once("floor", runner=fake)
     assert empty.get("consumed") == 0
     assert empty.get("reason") == "empty"
-    assert not (state / "floor" / "mind" / "session").is_file()
+    sid = (state / "floor" / "mind" / "session").read_text(encoding="utf-8").strip()
+    uuid.UUID(sid)
+    again = mind.process_once("floor", runner=fake)
+    assert again.get("reason") == "empty"
+    assert (state / "floor" / "mind" / "session").read_text(encoding="utf-8").strip() == sid
     assert not (state / "floor" / "mind" / "heartbeat").is_file()
 
 
@@ -224,7 +229,11 @@ def test_empty_harvest_does_not_invent_a_turn_file(
     assert not (state / "floor" / "mind" / "mail.txt").is_file()
     assert not (state / "floor" / "mind" / "turn.txt").is_file()
     assert not (state / "floor" / "mind" / "turn.jsonl").is_file()
-    assert not (state / "floor" / "mind" / "session").is_file()
+    sid = (state / "floor" / "mind" / "session").read_text(encoding="utf-8").strip()
+    uuid.UUID(sid)
+    second = mind.process_once("floor")
+    assert second.get("reason") == "empty"
+    assert (state / "floor" / "mind" / "session").read_text(encoding="utf-8").strip() == sid
     assert not (state / "floor" / "mind" / "heartbeat").is_file()
 
 

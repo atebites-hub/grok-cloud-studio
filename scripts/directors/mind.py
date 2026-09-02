@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Grok Build seat mind: mailbox + pin + stay-up.
 
-Python is not the agent. It harvests one inbox line, pins a grok session UUID,
-runs one `grok --prompt-file` turn, persists json stdout, marks the hub
-task COMPLETED, and stays up. Grok is the agent for that turn (its own
+Python is not the agent. It harvests one inbox line, pins a grok session UUID
+on stay-up (including empty harvest), runs one `grok --prompt-file` turn,
+persists json stdout, marks the hub task COMPLETED, and stays up. Empty
+harvest does not remint. Grok is the agent for that turn (its own
 tool loop, `--max-turns 40`). send.sh / hub enqueue is SUBMITTED; mail
 stays queued until this harvest finishes. Hub TASK_STATE_COMPLETED / A2A
 ACK is a receipt, not mind-turn done; offset (mail consumed) only on
@@ -231,7 +232,7 @@ def session_minted_file(seat: str) -> Path:
 
 
 def load_or_create_session(seat: str) -> str:
-    """UUID once. Never rewrite because a later harvest was empty."""
+    """UUID once. Pin on stay-up / empty harvest. Never rewrite because harvest was empty."""
     path = session_file(seat)
     if path.is_file():
         raw = path.read_text(encoding="utf-8").strip()
@@ -1203,10 +1204,11 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
     """One inbox line → one agent turn. Offset advances only on runner exit 0.
 
     Mailbox harvest writes mind/mail.txt + mind/turn.txt before the runner
-    (Bot-like disk turn). Empty harvest does not remint and does not invent
-    a turn file. Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not
-    mind-turn done. Do not treat a COMPLETE hub task as mail consumed. A
-    runner that did not run (None) is runner-fail, not harvest-fake success.
+    (Bot-like disk turn). Empty harvest pins mind/session once, does not
+    remint, and does not invent a turn file. Hub TASK_STATE_COMPLETED /
+    A2A ACK is a receipt, not mind-turn done. Do not treat a COMPLETE hub
+    task as mail consumed. A runner that did not run (None) is runner-fail,
+    not harvest-fake success.
     """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
@@ -1215,6 +1217,8 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
 
     mind_dir(seat)
     grok_home_dir(seat)
+    # Stay-up identity: pin UUID even when harvest is empty. Never remint.
+    load_or_create_session(seat)
     records, dropped_at_start = _read_new_records(seat)
     if not records:
         return {"consumed": 0, "reason": "empty", "offset": _read_offset(seat)}
