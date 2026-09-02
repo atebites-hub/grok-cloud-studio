@@ -7,6 +7,7 @@ import {
   pickGit,
   runErrorPayload,
 } from "./common.ts";
+import { attachShipGate } from "./pr-checks.ts";
 
 export type DirectorResult = {
   agentId: string;
@@ -22,6 +23,10 @@ export type DirectorResult = {
   summary: string | null;
   result: string | null;
   error: { message: string; code?: string } | null;
+  emptyChecks?: boolean;
+  checkRuns?: number;
+  mergeableState?: string | null;
+  shipGateOk?: boolean;
 };
 
 async function latestRun(
@@ -48,7 +53,7 @@ export async function collectResult(agentId: string, runId?: string): Promise<Di
     .map((b) => b.branch)
     .filter((b): b is string => Boolean(b));
   const runStatus = run ? mapRunStatus(run.status) : null;
-  return {
+  return attachShipGate({
     agentId: info.agentId || agentId,
     name: info.name || "",
     url: agentUrl(info.agentId || agentId),
@@ -62,5 +67,5 @@ export async function collectResult(agentId: string, runId?: string): Promise<Di
     summary: info.summary || null,
     result: run?.result ?? null,
     error: runErrorPayload(run?.error),
-  };
+  });
 }
