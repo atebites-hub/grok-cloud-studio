@@ -94,7 +94,10 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 
 Mailbox consume is runner exit 0, not a RESULT line. After a successful turn,
 `duplex_after_mind` writes a Director RESULT onto the A2A task (`scripts/a2a/duplex.py`)
-and may ping the caller (`A2A_REPLY`). Hub `TASK_STATE_COMPLETED` / send.sh ACK is a
+and may ping the caller (`A2A_REPLY`). That ping must succeed: skipSeat `donald` has
+no shipped Agent Card, so duplex maps `donald` → `floor-ops` then `orchestrator`
+instead of POSTing a hub 404. A missed ping does not fail the task reply.
+Hub enqueue is `TASK_STATE_SUBMITTED`; later `TASK_STATE_COMPLETED` / send.sh ACK is a
 protocol receipt (not this mechanic).
 
 Directors print:
