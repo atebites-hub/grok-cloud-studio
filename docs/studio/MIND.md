@@ -82,6 +82,7 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 
 - Create the UUID once (`uuid4`), store in `mind/session`. First turn uses `--session-id $UUID` instead of `--resume`. Later turns **only** `--resume` that id.
 - Never bare `-p` on grok. Live proven 2026-08-21: `-p` before `--resume` is clap rc=2 because `--single` requires `<PROMPT>`. `--prompt-file` is the prompt and also triggers headless mode.
+- Spawn identity (remaining vs construction clap): `grok_cli_runner` asserts `--prompt-file` is `$GCS_A2A_STATE/<seat>/mind/mail.txt` and `--resume` / `--session-id` equals `mind/session`. Refuse `--continue`, `--fork-session`, `--print`, glued `--resume=-1`, and a positional prompt. Executable BDD: [`tests/features/liv62_pinned_mail_spawn.feature`](../../tests/features/liv62_pinned_mail_spawn.feature).
 - `--agent-profile`, `--trust`, and `--plugin-dir` are **grok agent** flags, not grok headless. Do not put them on this argv.
 - `--agent PATH` only if PATH is a file starting with YAML `---`. Markdown `SOUL.md` is not an agent file; omit `--agent`.
 - If grok says the session is already in use, treat it as minted and `--resume` the same UUID. Do not mint a new UUID.
