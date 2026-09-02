@@ -53,7 +53,9 @@ Fail-closed (LIV-67 / LIV-69): create **and** send/followup always pin grok-4.6 
 
 Empty GitHub leftover-green is not MERGE_REQUEST evidence. QA squash requires pasted `.venv/bin/pytest -q` (`N passed`, N≥1) and `python3 scripts/secret_scan.py` (`secret_scan=clean`). Judge: `python3 scripts/cloud/pr_evidence.py judge`. A GitHub check named `pytest -q and secret_scan` SUCCESS is not the paste. Never squash CONFLICTING leftover PRs.
 
-`scripts/cloud/list.sh` / `list-cloud-agents.sh` print agent `status` (membership, often `ACTIVE`) and latest-run `runStatus` (`RUNNING` vs `FINISHED`). Agent `ACTIVE` is not a live worker. Leftover `ACTIVE`+`FINISHED` must not count as live.
+`scripts/cloud/list.sh` / `list-cloud-agents.sh` print agent `status` (membership, often `ACTIVE`) and latest-run `runStatus` (`RUNNING` vs `FINISHED`). Agent `ACTIVE` is not a live worker. Leftover `ACTIVE`+`FINISHED` must not count as live. REST `list.sh --limit` walks `nextCursor` beyond the API **limit=100** page cap (SDK `list.ts` already did). A catalog page error is fail-closed — never a partial list that looks like `running=0`.
+
+Occupancy catalog (`scripts/cloud/occupancy-count.sh`) paginates `Agent.list` / REST `GET /v1/agents` via `nextCursor` beyond the API **limit=100** page cap (hive dump was **439**). `count-running` / occupancy-count **fail-closed** if a page errors — never fake `running=0` from a partial catalog. Existence ACTIVE is not liveness. Palemon Linear is Living Sky (`LIV`).
 
 Wait-notify (`scripts/cloud/sdk/wait-notify.ts`) GETs `GET /v1/agents/{id}/runs` and A2A-pings `FLEET_DONE` only when the **latest** run is terminal. Leftover `FINISHED` while a newer run is `CREATING`/`RUNNING` is not done. Distinct from occupancy listRuns counts and paginated agent catalog. Never Bot CloudAgent.
 

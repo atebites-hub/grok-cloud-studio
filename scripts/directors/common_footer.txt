@@ -21,7 +21,9 @@ Hard rules:
 - Status: scripts/cloud/status-cloud-agent.sh <bc-id>
 - Follow-up: scripts/cloud/followup-cloud-agent.sh <bc-id> "<prompt>"
 - List: scripts/cloud/list-cloud-agents.sh [limit]
-  Each row prints status= (agent membership, often ACTIVE) and runStatus= (RUNNING vs FINISHED). Existence is not liveness. Leftover ACTIVE+FINISHED is not a live worker.
+  Each row prints status= (agent membership, often ACTIVE) and runStatus= (RUNNING vs FINISHED). Existence is not liveness. Leftover ACTIVE+FINISHED is not a live worker. REST paginates nextCursor when --limit exceeds 100.
+- Occupancy: scripts/cloud/occupancy-count.sh
+  Paginates Agent.list / GET /v1/agents beyond limit=100 (nextCursor). Fail-closed if a page errors (never fake running=0).
 - How-to: scripts/cloud/README.md
 - Prefer MCP tools from plugins/a2a and plugins/cursor-cloud when connected (a2a_send, cloud_launch, cloud_status, cloud_result).
 - Peer seats: scripts/a2a/send.sh [--from SEAT] <seat> "<message>" (local A2A hub). MCP = agent-to-tool; A2A = agent-to-agent. Use send.sh / a2a_send for new work pings, not to ack the caller of this wakeup.
