@@ -19,6 +19,7 @@ python3 plugins/a2a/server.py
 | Tool | Action |
 |---|---|
 | `cloud_launch` | `scripts/launch-cloud-extra-high.sh` |
+| `cloud_list` | `scripts/cloud/list_helper.py` — agent `status` plus latest-run `runStatus` (`RUNNING` vs `FINISHED`). ACTIVE+FINISHED leftovers are not workers |
 | `cloud_status` | `scripts/cloud/status-cloud-agent.sh` |
 | `cloud_result` | `scripts/cloud/result-cloud-agent.sh` |
 

@@ -10,6 +10,22 @@ export GCS_CLOUD_REPO=https://github.com/ORG/REPO
 export GCS_CLOUD_REF=main          # optional
 ```
 
+## Linear (Living Sky)
+
+Cursor Cloud Extra High agents **cannot scrape `GROK_HOME`**. They get Linear
+via the cloud environment (cloud-env snapshot / dashboard Secrets / process
+env):
+
+- Set `LINEAR_API_KEY` on the Cursor Cloud snapshot or Secrets. Never print
+  or commit the key.
+- Checkout `.cursor/mcp.json` is Linear HTTP (`https://mcp.linear.app/mcp`)
+  plus taskboard only — not a copy of the Grok MCP catalog.
+- RUNNING specialists `save_comment` on Living Sky issues
+  (`linear.app/livingsky`, team Livingsky / `LIV`). **NEVER Black Swan Money.**
+
+Grok Build minds get Linear via seat `GROK_HOME/config.toml` (separate
+catalog). See `docs/studio/MIND.md`.
+
 ## Launch
 
 ```bash
@@ -23,6 +39,8 @@ Launch `--name` **REFUSE**s when a live `runStatus=RUNNING` Extra High already h
 Palemon Linear is Living Sky (`LIV`).
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
+
+MCP `cloud_list` (`plugins/cursor-cloud`, `scripts/cloud/list_helper.py`) prints latest-run `runStatus` (`RUNNING` vs `FINISHED`) next to agent `status`. Cursor Cloud agents stay `ACTIVE` until archive, so leftover `ACTIVE`+`FINISHED` rows are not live workers. This is independent of bash `list.sh`.
 
 Fail-closed (LIV-67 / LIV-69): create **and** send/followup always pin grok-4.6 xhigh `fast=false`. Any `CURSOR_CLOUD_MODEL` that is not exactly `grok-4.6` is **rejected** (no create, no send). REST list/runs omit model; omitted send uses dashboard Auto (Jay saw Opus 5). Never Bot CloudAgent. Do not merge empty CI.
 
