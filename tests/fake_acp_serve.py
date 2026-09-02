@@ -55,7 +55,7 @@ class FakeAcpServe:
         self.prompts: list[str] = []
         self.session_ids: list[str] = []
         self.loaded_ids: list[str] = []
-        self.new_count = 0
+        self.remint_count = 0
         self._lock = asyncio.Lock()
 
     def snapshot(self) -> dict[str, Any]:
@@ -70,14 +70,14 @@ class FakeAcpServe:
         }
 
     def next_new_session_id(self) -> str:
-        """First boot (no load) keeps --session. Dead remint after load is distinct."""
-        self.new_count += 1
-        if self.loaded_ids:
-            base = self.reborn_session or f"{self.session_id}-reborn"
-            if self.new_count == 1:
-                return base
-            return f"{base}-{self.new_count}"
-        return self.session_id
+        """First boot (no load) keeps --session. Remint after load is distinct."""
+        if not self.loaded_ids:
+            return self.session_id
+        self.remint_count += 1
+        base = self.reborn_session or f"{self.session_id}-reborn"
+        if self.remint_count == 1:
+            return base
+        return f"{base}-{self.remint_count}"
 
     async def record(self, method: str, **extra: Any) -> None:
         async with self._lock:
@@ -321,7 +321,9 @@ async def _run(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fake ACP grok agent serve for GROW wake FAT")
+    parser = argparse.ArgumentParser(
+        description="Fake ACP grok agent serve for leftover ACP FAT (wake + SESSION_DEAD)"
+    )
     parser.add_argument("--bind", default="127.0.0.1:0", help="host:port (port 0 = ephemeral)")
     parser.add_argument("--journal", required=True, help="JSON evidence path")
     parser.add_argument("--ready", default="", help="Write FAKE_ACP_READY here when listening")

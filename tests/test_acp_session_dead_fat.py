@@ -242,6 +242,11 @@ def test_gherkin_is_session_dead_nack_not_wake_inbox_clone() -> None:
     env = ENV_EXAMPLE.read_text(encoding="utf-8")
     assert "GCS_ACP_ACCEPT_DEADLINE=120" in env
     assert "GCS_ACP_DEAD_STREAK=3" in env
+    inject = ACP_INJECT.read_text(encoding="utf-8")
+    assert 'os.environ.get("GCS_ACP_ACCEPT_DEADLINE", "120")' in inject
+    assert 'os.environ.get("GCS_ACP_DEAD_STREAK", "3")' in inject
+    assert 'os.environ.get("GCS_ACP_ACCEPT_DEADLINE", "30")' not in inject
+    assert 'os.environ.get("GCS_ACP_DEAD_STREAK", "1")' not in inject
     a2a = (REPO / "docs" / "A2A.md").read_text(encoding="utf-8")
     assert "leftover_acp_session_dead_nack.feature" in a2a
     assert "ACP_INJECT_SESSION_DEAD" in a2a
@@ -296,15 +301,20 @@ def test_fat_third_silent_nack_session_new_once_never_resume(
         )
         blobs: list[str] = []
         for i in range(2):
+            started = time.monotonic()
             result = wake.process_once("floor")
+            elapsed = time.monotonic() - started
             captured = capsys.readouterr()
             blob = captured.out + captured.err
             blobs.append(blob)
             assert result["consumed"] == 0, blob
             assert result.get("reason") == "prompt-fail", result
+            assert "ACP_INJECT_TIMEOUT" in blob, blob
             assert "ACP_INJECT_SESSION_DEAD" not in blob, blob
             assert "reason=no-accept" in blob, blob
             assert "ACP_INJECT_HANDOFF" not in blob, blob
+            assert elapsed >= 0.15, f"nack {i + 1} waited {elapsed:.2f}s; too fast"
+            assert elapsed < 1.0, f"nack {i + 1} waited {elapsed:.2f}s; must nack at accept deadline"
             assert (sd / "acp.session").read_text(encoding="utf-8").strip() == PINNED_SESSION
             evidence = _journal(acp["journal"])
             assert "session/new" not in evidence["methods"], evidence
@@ -316,11 +326,15 @@ def test_fat_third_silent_nack_session_new_once_never_resume(
                 offset_path.read_text(encoding="utf-8").strip() or "0"
             ) == 0
 
+        started = time.monotonic()
         third = wake.process_once("floor")
+        elapsed3 = time.monotonic() - started
         captured = capsys.readouterr()
         blob3 = captured.out + captured.err
         assert third["consumed"] == 0, blob3
         assert third.get("reason") == "prompt-fail", third
+        assert elapsed3 >= 0.15, f"third nack waited {elapsed3:.2f}s; too fast"
+        assert elapsed3 < 1.0, f"third nack waited {elapsed3:.2f}s; must nack at accept deadline"
         assert "ACP_INJECT_SESSION_DEAD" in blob3, blob3
         assert f"old={PINNED_SESSION}" in blob3, blob3
         assert f"new={REBORN_SESSION}" in blob3, blob3
@@ -330,6 +344,8 @@ def test_fat_third_silent_nack_session_new_once_never_resume(
         evidence = _journal(acp["journal"])
         assert evidence["methods"].count("session/new") == 1, evidence
         assert evidence["methods"].count("session/prompt") == 3, evidence
+        assert evidence["methods"].count("session/load") == 3, evidence
+        assert any(FAT_TOKEN in p for p in evidence.get("prompts") or []), evidence.get("prompts")
         assert "session/cancel" not in evidence["methods"], evidence
         assert REBORN_SESSION in evidence.get("session_ids", []), evidence
         assert not (sd / "acp.no_accept_streak").is_file()
