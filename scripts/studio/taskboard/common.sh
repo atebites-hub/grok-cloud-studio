@@ -31,6 +31,17 @@ gcs_source_studio_env() {
   fi
 }
 
+gcs_wipe_doc() {
+  printf '%s\n' "$GCS_KIT_ROOT/docs/studio/WIPE.md"
+}
+
+gcs_want_tailscale_serve() {
+  case "${PALEMON_TAILSCALE_SERVE:-}" in
+    0|false|off|no) return 1 ;;
+  esac
+  return 0
+}
+
 gcs_taskboard_db() {
   if [[ -n "${GCS_TASKBOARD_DB:-}" ]]; then
     printf '%s\n' "$GCS_TASKBOARD_DB"

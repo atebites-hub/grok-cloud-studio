@@ -164,6 +164,7 @@ def test_recover_uses_official_scripts_without_daemons() -> None:
     assert "--daemons" not in text or "NO --daemons" in text or "no --daemons" in text.lower()
     assert "start-taskboard.sh" in text
     assert "mcp-http.sh" in text
+    assert "start-tailscale-serve.sh" in text
     assert "RECOVER_OK" in text
     assert "health_check.sh" in text
     assert "acp_inject.py" not in text

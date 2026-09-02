@@ -1,6 +1,6 @@
 """LIV-86: studio-ops maintainer kit for tcarac/taskboard.
 
-Distinct from OPEN shepherd-taskboard health (#112). Does not remint the
+Distinct from merged #112 fleet-shepherd TASKBOARD_HEALTH. Does not remint the
 v0.6.0 vendor/taskboard pin. Ticket move uses Crockford ULID. Agent Kanban
 stays gone. Seat stdio MCP stays in isolated GROK_HOME/config.toml.
 """
@@ -391,10 +391,9 @@ def test_dashboard_stays_legacy_not_snowflake_board() -> None:
 
 
 def test_maintainer_kit_does_not_twin_shepherd_health_probe() -> None:
-    """OPEN #112 is fleet-shepherd TASKBOARD_HEALTH; this slice is the pin kit."""
+    """Merged #112 is fleet-shepherd TASKBOARD_HEALTH; this slice is the pin kit."""
     text = FLEET_SHEPHERD.read_text(encoding="utf-8")
-    assert "TASKBOARD_HEALTH_OK" not in text
-    assert "TASKBOARD_HEALTH_FAIL" not in text
+    assert "TASKBOARD_HEALTH" in text
     upgrade = UPGRADE_TB.read_text(encoding="utf-8")
     assert "fleet-shepherd" not in upgrade
     assert "TASKBOARD_HEALTH" not in upgrade

@@ -4,6 +4,10 @@ Recover today's Palemon floor from a **clean machine** using only this
 repository plus BYO secrets (grok login, `CURSOR_API_KEY`, optional Tailscale
 already-joined). Do not reconnect Agent Kanban. Do not print keys.
 
+This page lives at **`docs/studio/WIPE.md`** (`$GCS_ROOT/docs/studio/WIPE.md`).
+It is not `docs/WIPE.md` and not a repo-root `WIPE.md`. AGENTS.md, README,
+`./doctor.sh`, and the DR scripts all point here.
+
 Generic extract start (hub + dispatch only, empty `GCS_MIND_SEATS`) is still
 the README quick start. This page is the Palemon-floor path.
 
@@ -12,20 +16,29 @@ the README quick start. This page is the Palemon-floor path.
 One-command deploy and teardown:
 
 ```bash
-./setup.sh           # idempotent: env, install, board, bus (NO --daemons), doctor, health_check
-./cleanup.sh         # soft: stop bus + board processes only
+./setup.sh           # idempotent: env, install, board, bus (NO --daemons), optional Tailscale Serve, doctor, health_check
+./cleanup.sh         # soft: stop Tailscale Serve + bus + board processes only
 ./health_check.sh    # LIVE probes; HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN (exit 0/1/2)
-./recover.sh         # restart only what is down; print RECOVER_OK; re-run health_check
+./recover.sh         # restart only what is down (incl. Tailscale Serve if wanted); print RECOVER_OK; re-run health_check
+bash scripts/studio/systemd/install-systemd.sh   # optional boot timer -> recover.sh (NO --daemons)
 ```
 
 `setup.sh` / `cleanup.sh` are the deploy/teardown entrypoints.
 `health_check.sh` + `recover.sh` are the **DR loop** once the box is supposed
 to be up: probe live hub `/health`, taskboard `:3010`, mcp-http `:3011`, and
 each `GCS_MIND_SEATS` mind pid; restart only the down pieces via
-`start-studio-bus.sh start` (NO `--daemons`), `start-taskboard.sh start`, and
-`mcp-http.sh start`. Do not remint sessions. Do not wipe state. Do not launch
-Cursor Cloud. bot-bridge stays off unless `GCS_BOT_BRIDGE=1`. Tailscale missing
-is WARN, not FAIL.
+`start-studio-bus.sh start` (NO `--daemons`), `start-taskboard.sh start`,
+`mcp-http.sh start`, and `start-tailscale-serve.sh start` when Tailscale is
+on PATH and `PALEMON_TAILSCALE_SERVE` is not `0`. Do not remint sessions.
+Do not wipe state. Do not launch Cursor Cloud. bot-bridge stays off unless
+`GCS_BOT_BRIDGE=1`. Do not `systemctl` leftover Agent Kanban units.
+Tailscale missing is WARN, not FAIL.
+
+Optional boot hook (user systemd, not grok serve):
+`scripts/studio/systemd/install-systemd.sh` renders `gcs-recover.service` +
+`gcs-recover.timer` that run `./recover.sh` (`OnBootSec=30`). Skip with
+`GCS_SYSTEMD=0`. Dry-run with `GCS_SYSTEMD_DRY_RUN=1`. That path never
+passes `--daemons` and never reconnects Agent Kanban.
 
 Default cleanup does not delete `studio.env`, `.env`, grok login, Cursor
 login, inboxes, or pins. `CLEANUP_WIPE_STATE=1 ./cleanup.sh` also stops
@@ -211,7 +224,8 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    It does **not** spawn `grok agent serve` per seat. Never auto-spawn a
    13-seat grok serve floor on a ~15GB box.
 
-8. Tailscale Serve only if the node is **already joined**:
+8. Tailscale Serve is part of `./setup.sh` (after the bus) when the node is
+   **already joined**. Manual fallback:
 
    ```bash
    bash scripts/studio/taskboard/start-tailscale-serve.sh start
@@ -220,6 +234,8 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    Serves `/` → `:3010` and `/mcp` → `:3011`. Funnel off. Host default
    `palemon-studio.panther-arctic.ts.net`. Skip with `PALEMON_TAILSCALE_SERVE=0`
    or if `tailscale` is missing. Never write Tailscale auth key values.
+   `./recover.sh` re-applies Serve when the binary is on PATH and the skip
+   flag is unset. `./cleanup.sh` stops Serve.
 
 9. Higgsfield: Cursor catalog login when the runner is Cursor CLI (Art
    generate). Grok Bot Higgsfield is a different catalog. Grok-home

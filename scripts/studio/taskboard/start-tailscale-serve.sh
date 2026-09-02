@@ -35,10 +35,7 @@ skip() {
 }
 
 want_serve() {
-  case "${PALEMON_TAILSCALE_SERVE:-}" in
-    0|false|off|no) return 1 ;;
-  esac
-  return 0
+  gcs_want_tailscale_serve
 }
 
 funnel_off() {

@@ -112,6 +112,7 @@ def test_setup_is_crash_safe_no_daemons() -> None:
     assert "install.sh" in text
     assert "start-taskboard.sh" in text
     assert "mcp-http.sh" in text
+    assert "start-tailscale-serve.sh" in text
     assert "doctor.sh" in text
     assert "SETUP_OK" in text
     assert "setup-taskboard.sh" in text
@@ -131,6 +132,7 @@ def test_cleanup_soft_by_default_and_wipe_flag() -> None:
     assert "setup-taskboard.sh" in text
     assert "start-taskboard.sh" in text or "setup-taskboard.sh" in text
     assert "mcp-http.sh" in text or "setup-taskboard.sh" in text
+    assert "start-tailscale-serve.sh" in text
 
 
 def test_docs_name_setup_cleanup_as_dr_entrypoints() -> None:

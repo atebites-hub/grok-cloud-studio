@@ -1,0 +1,17 @@
+[Unit]
+Description=Grok Cloud Studio recover (scripts only; Agent Kanban stays gone)
+Documentation=file://@GCS_ROOT@/docs/studio/WIPE.md
+After=network-online.target
+ConditionPathExists=@GCS_ROOT@/recover.sh
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=@GCS_ROOT@
+Environment=GCS_ROOT=@GCS_ROOT@
+Environment=GCS_A2A_STATE=@GCS_A2A_STATE@
+EnvironmentFile=-@GCS_A2A_STATE@/studio.env
+ExecStart=@GCS_ROOT@/recover.sh
+
+[Install]
+WantedBy=default.target
