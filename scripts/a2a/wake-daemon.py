@@ -12,7 +12,8 @@ NOT grok --resume (no forked grok child per ping).
 NOT dispatch ACP inject (dispatch does not own GROW-seat inboxes).
 
 If serve dies: restart serve (`ensure_seat_serve` / start-seat-daemon.sh).
-Never fall back to grok --resume.
+Never fall back to grok --resume. A live leftover daemon.pid is not healthy
+unless that pid (or a descendant) owns the ACP listen socket.
 
 Pin ACP session id in `.a2a-state/<seat>/acp.session` (create once via
 session/new; later session/load). Named identity is SOUL.md + MEMORY.md
@@ -278,8 +279,113 @@ def _tcp_listening(port: int) -> bool:
         sock.close()
 
 
+_TCP_LISTEN = "0A"
+
+
+def _listen_inodes(port: int) -> set[str]:
+    """Inodes of kernel LISTEN sockets bound to *port* (IPv4 and IPv6)."""
+    if port <= 0:
+        return set()
+    want = f"{int(port):04X}"
+    inodes: set[str] = set()
+    for name in ("tcp", "tcp6"):
+        path = Path(f"/proc/net/{name}")
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line in text.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) < 10:
+                continue
+            local = parts[1]
+            if parts[3].upper() != _TCP_LISTEN or ":" not in local:
+                continue
+            if local.rsplit(":", 1)[-1].upper() != want:
+                continue
+            inode = parts[9]
+            if inode.isdigit() and int(inode) > 0:
+                inodes.add(inode)
+    return inodes
+
+
+def _pid_socket_inodes(pid: int) -> set[str]:
+    """Socket inodes in /proc/<pid>/fd. Missing proc → empty."""
+    out: set[str] = set()
+    if pid <= 0:
+        return out
+    fd_dir = Path(f"/proc/{pid}/fd")
+    try:
+        entries = list(fd_dir.iterdir())
+    except OSError:
+        return out
+    for entry in entries:
+        try:
+            target = os.readlink(entry)
+        except OSError:
+            continue
+        if target.startswith("socket:[") and target.endswith("]"):
+            inode = target[len("socket:[") : -1]
+            if inode.isdigit():
+                out.add(inode)
+    return out
+
+
+def _read_child_pids(pid: int) -> list[int]:
+    kids: list[int] = []
+    task = Path(f"/proc/{pid}/task")
+    try:
+        for tid_dir in task.iterdir():
+            cpath = tid_dir / "children"
+            try:
+                blob = cpath.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for part in blob.split():
+                if part.isdigit():
+                    kids.append(int(part))
+    except OSError:
+        return kids
+    return kids
+
+
+def _pid_tree(root_pid: int, *, limit: int = 64) -> list[int]:
+    """root_pid plus descendants via /proc task children (GROW serve wrappers)."""
+    if root_pid <= 0:
+        return []
+    found = [root_pid]
+    seen = {root_pid}
+    i = 0
+    while i < len(found) and len(found) < limit:
+        pid = found[i]
+        i += 1
+        for child in _read_child_pids(pid):
+            if child > 0 and child not in seen:
+                seen.add(child)
+                found.append(child)
+    return found
+
+
+def serve_pid_owns_acp_port(pid: int, port: int) -> bool:
+    """True when pid or a descendant owns a LISTEN socket on port.
+
+    TCP-open is not enough: a leftover live daemon.pid plus some other
+    listener on acp.url is not this seat's grok agent serve. Never treat
+    that mismatch as healthy and never fall back to grok --resume.
+    """
+    if pid <= 0 or port <= 0 or not _pid_alive(pid):
+        return False
+    inodes = _listen_inodes(port)
+    if not inodes:
+        return False
+    for candidate in _pid_tree(pid):
+        if _pid_socket_inodes(candidate) & inodes:
+            return True
+    return False
+
+
 def serve_healthy(seat: str) -> bool:
-    """Alive serve pid plus a listening ACP port. Never treat a stale pid as up."""
+    """Alive serve pid that owns the ACP listen socket. Never a leftover pid."""
     sd = _seat_dir(seat)
     pid = _read_serve_pid(seat)
     if pid <= 0 or not _pid_alive(pid):
@@ -296,7 +402,9 @@ def serve_healthy(seat: str) -> bool:
             port = seat_acp_port(seat, ROOT)
         except (KeyError, ValueError, TypeError):
             return False
-    return _tcp_listening(port)
+    if not _tcp_listening(port):
+        return False
+    return serve_pid_owns_acp_port(pid, port)
 
 
 def ensure_seat_serve(seat: str) -> int:
@@ -339,7 +447,13 @@ def ensure_seat_serve(seat: str) -> int:
         print(f"WAKE_SERVE_FAIL seat={seat} rc={proc.returncode}", file=sys.stderr)
         return 0
     _write_grow_mode(seat)
-    return _read_serve_pid(seat)
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        if serve_healthy(seat):
+            return _read_serve_pid(seat)
+        time.sleep(0.1)
+    print(f"WAKE_SERVE_FAIL seat={seat} reason=pid-not-listener", file=sys.stderr)
+    return 0
 
 
 def prompt_acp(seat: str, prompt: str, env: dict[str, str]) -> int:
@@ -609,10 +723,28 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="GROW wake (inbox → ACP session/prompt into grok agent serve)"
     )
-    parser.add_argument("--seat", required=True, help="Director seat (floor, ops, …)")
+    parser.add_argument("--seat", default="", help="Director seat (floor, ops, …)")
     parser.add_argument("--once", action="store_true", help="Process one pending line then exit")
     parser.add_argument("--dry-run", action="store_true", help="Print compose text; do not prompt")
+    parser.add_argument(
+        "--owns-listen",
+        nargs=2,
+        metavar=("PID", "PORT"),
+        help="Exit 0 if PID (or a descendant) owns LISTEN on PORT. Never grok --resume.",
+    )
     args = parser.parse_args()
+    if args.owns_listen:
+        try:
+            pid = int(args.owns_listen[0])
+            port = int(args.owns_listen[1])
+        except ValueError:
+            print("WAKE_OWNS_LISTEN pid=invalid port=invalid ok=0", file=sys.stderr)
+            return 2
+        ok = serve_pid_owns_acp_port(pid, port)
+        print(f"WAKE_OWNS_LISTEN pid={pid} port={port} ok={int(ok)}", flush=True)
+        return 0 if ok else 1
+    if not args.seat:
+        parser.error("--seat is required unless --owns-listen is set")
     seat = canonical_seat(args.seat, ROOT)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     if args.once or args.dry_run:

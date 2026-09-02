@@ -73,6 +73,11 @@ daemon_healthy() {
   pid_alive "$pid" || return 1
   port_listening "$port" || return 1
   [[ -f "$sd/acp.url" && -f "$sd/acp.secret" ]] || return 1
+  # Leftover live daemon.pid is not the ACP listener. session/prompt must
+  # hit this serve pid (or a descendant). Never grok --resume.
+  if [[ -f "$ROOT/scripts/a2a/wake-daemon.py" ]]; then
+    python3 "$ROOT/scripts/a2a/wake-daemon.py" --owns-listen "$pid" "$port" >/dev/null || return 1
+  fi
   return 0
 }
 
