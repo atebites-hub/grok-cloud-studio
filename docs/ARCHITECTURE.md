@@ -32,7 +32,8 @@ launch-cloud-extra-high.sh → @cursor/sdk Agent.create
                            → A2A ping owning seat + REPORT_TO (default studio-ops)
                            leftover FINISHED is not done while a newer run is CREATING/RUNNING
 
-fleet-shepherd.py = orphan-only Extra High safety net (no live waiter_pid; dead waiter_pid is evicted)
+fleet-shepherd.py = orphan-only Extra High safety net (no live waiter_pid; dead waiter_pid is evicted);
+                    also TASKBOARD_HEALTH_OK / TASKBOARD_HEALTH_FAIL
 Host board maintainer kit = scripts/studio/taskboard/maintainer.sh (start/health/docs); not shepherd, not seat MCP
 webhook_receiver.py = optional signed completion path
 ```
@@ -71,6 +72,13 @@ MERGE_REQUEST / QA squash requires pasted `.venv/bin/pytest -q` (`N passed`) and
 | Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`). Empty GitHub checks (`check_runs=0`) are not MERGE_REQUEST-ready. MERGEABLE+empty CI is leftover-green theatre. |
 | Webhook | `GCS_WEBHOOK_SECRET` set and `webhook-harness.sh serve` |
 | Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook). Dead `waiter_pid` is evicted on `fleet.jsonl` before notify-once. |
+
+Each shepherd cycle also probes tcarac/taskboard: the SQLite DB file
+(`GCS_TASKBOARD_DB` or `$GCS_A2A_STATE/taskboard/taskboard.db`) plus
+`taskboard --db $DB ticket list` **or** HTTP `POST /mcp`. It logs
+`TASKBOARD_HEALTH_OK` or `TASKBOARD_HEALTH_FAIL`. GET `/health` alone is
+not enough. The probe does not start the board, skip leftover shells,
+install seat stdio MCP, or reconnect Agent Kanban.
 
 Do not double-notify a live waiter. A leftover `waiter_pid` number is not liveness.
 

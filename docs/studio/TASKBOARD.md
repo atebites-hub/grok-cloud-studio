@@ -75,7 +75,9 @@ bash scripts/studio/taskboard/maintainer.sh health    # health-taskboard.sh
 bash scripts/studio/taskboard/maintainer.sh docs
 ```
 
-`health-taskboard.sh` is board-only. It is **not** `./health_check.sh` (studio DR: hub + ports + mind) and **not** `fleet-shepherd.py` (GCS #112 orphan Extra High probe). GET `/health` on `:3011` is not a usable board. Healthy means the SQLite file exists, the UI is up, and either `taskboard --db $DB ticket list` succeeds or `POST /mcp` returns 2xx. Seat stdio MCP stays isolated `GROK_HOME/config.toml` (GCS #100); this kit does not write that catalog.
+`health-taskboard.sh` is board-only. It is **not** `./health_check.sh` (studio DR: hub + ports + mind) and **not** `fleet-shepherd.py` (GCS #112 TASKBOARD_HEALTH probe). GET `/health` on `:3011` is not a usable board. Healthy means the SQLite file exists, the UI is up, and either `taskboard --db $DB ticket list` succeeds or `POST /mcp` returns 2xx. Seat stdio MCP stays isolated `GROK_HOME/config.toml` (GCS #100); this kit does not write that catalog.
+
+`scripts/directors/fleet-shepherd.py` probes this board every cycle: the SQLite file (`GCS_TASKBOARD_DB` or `$GCS_A2A_STATE/taskboard/taskboard.db`) plus `ticket list` (`taskboard --db $DB ticket list`) **or** HTTP `POST /mcp` (default `http://127.0.0.1:3011/mcp`). It logs `TASKBOARD_HEALTH_OK` or `TASKBOARD_HEALTH_FAIL`. It does not start the UI, write seat `GROK_HOME` MCP, or reconnect `ak`.
 
 Never reconnect Agent Kanban (`ak start`, `scripts/studio/agent-kanban`). Studio Linear is Living Sky (`linear.app/livingsky`, team Livingsky / `LIV`). NEVER Black Swan Money. Never print `CURSOR_API_KEY`. Never vendor Hermes. Never Bot CloudAgent.
 
