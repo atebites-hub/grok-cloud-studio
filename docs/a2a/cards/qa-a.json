@@ -29,6 +29,15 @@
         "qa",
         "merge"
       ]
+    },
+    {
+      "id": "visual-playtest",
+      "name": "Grok catalog visual playtest",
+      "description": "chrome-devtools navigate_page then take_screenshot of http://127.0.0.1:5173/ in this seat GROK_HOME. Not Cursor CLI.",
+      "tags": [
+        "qa",
+        "chrome-devtools"
+      ]
     }
   ],
   "supportedInterfaces": [

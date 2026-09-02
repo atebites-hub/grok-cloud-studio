@@ -1,12 +1,15 @@
-"""Seat start must register taskboard stdio MCP in GROK_HOME/config.toml.
+"""Seat start must register taskboard + Linear HTTP + chrome-devtools in GROK_HOME.
 
 Isolated GROK_HOME does not inherit ~/.grok/config.toml. Cursor workspace
 MCP paths with ${workspaceFolder} never expand and must not be the serve
-config. Fake binary only — no live grok serve, no live ticket moves.
+config. chrome-devtools stays in GROK_HOME (xAI catalog live Chrome), never
+`.cursor/mcp.json`. Fake binary only — no live grok serve, no live ticket
+moves, no live Chrome.
 """
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import stat
 import subprocess
@@ -107,6 +110,8 @@ printf 'DB=%s\n' "${GCS_TASKBOARD_DB}"
     assert "[mcp_servers.linear]" in text, text
     assert "https://mcp.linear.app/mcp" in text, text
     assert "${LINEAR_API_KEY}" in text, text
+    assert "[mcp_servers.chrome-devtools]" in text, text
+    assert "chrome-devtools-mcp@latest" in text, text
     assert f'command = "{binary.resolve()}"' in text or f"command = '{binary.resolve()}'" in text or str(
         binary.resolve()
     ) in text
@@ -140,6 +145,9 @@ export_seat_serve_env floor
     assert "[mcp_servers.linear]" in text
     assert "https://mcp.linear.app/mcp" in text
     assert "${LINEAR_API_KEY}" in text
+    assert "[mcp_servers.chrome-devtools]" in text
+    assert "chrome-devtools-mcp@latest" in text
+    assert ".cursor/mcp.json" not in text
 
 
 def test_default_grok_home_under_state_dir_gets_mcp(tmp_path: Path) -> None:
@@ -165,6 +173,8 @@ install_seat_identity floor
     assert "[mcp_servers.linear]" in text
     assert "https://mcp.linear.app/mcp" in text
     assert "${LINEAR_API_KEY}" in text
+    assert "[mcp_servers.chrome-devtools]" in text
+    assert "chrome-devtools-mcp@latest" in text
 
 
 def test_mcp_install_is_idempotent_and_preserves_other_toml(tmp_path: Path) -> None:
@@ -185,6 +195,7 @@ install_seat_grok_mcp floor
     assert proc.returncode == 0, blob
     text = _read_seat_config(existing)
     assert text.count("[mcp_servers.taskboard]") == 1, text
+    assert text.count("[mcp_servers.chrome-devtools]") == 1, text
     assert text.count("[compat.cursor]") == 1, text
     assert text.count("# gcs-seat-taskboard-mcp\n") == 1, text
     assert text.count("# gcs-seat-taskboard-mcp-end") == 1, text
@@ -196,6 +207,10 @@ install_seat_grok_mcp floor
     assert parsed["mcp_servers"]["taskboard"]["command"]
     assert parsed["mcp_servers"]["linear"]["url"] == "https://mcp.linear.app/mcp"
     assert text.count("[mcp_servers.linear]") == 1, text
+    assert text.count("[mcp_servers.chrome-devtools]") == 1, text
+    chrome = parsed["mcp_servers"]["chrome-devtools"]
+    assert chrome["command"] == "npx"
+    assert chrome["args"] == ["-y", "chrome-devtools-mcp@latest"]
 
 
 def test_mcp_install_idempotent_when_unmarked_tables_already_exist(
@@ -218,6 +233,10 @@ def test_mcp_install_idempotent_when_unmarked_tables_already_exist(
         'command = "/old/taskboard"\n'
         'args = ["--db", "/old/taskboard.db", "mcp"]\n'
         "\n"
+        "[mcp_servers.chrome-devtools]\n"
+        'command = "npx"\n'
+        'args = ["-y", "chrome-devtools-mcp@stale"]\n'
+        "\n"
         "# gcs-seat-taskboard-mcp\n"
         "[compat.cursor]\n"
         "mcps = false\n"
@@ -239,18 +258,24 @@ install_seat_grok_mcp floor
     assert proc.returncode == 0, blob
     text = _read_seat_config(existing)
     assert text.count("[mcp_servers.taskboard]") == 1, text
+    assert text.count("[mcp_servers.chrome-devtools]") == 1, text
     assert text.count("[compat.cursor]") == 1, text
     assert text.count("# gcs-seat-taskboard-mcp\n") == 1, text
     assert text.count("# gcs-seat-taskboard-mcp-end") == 1, text
     assert "use_leader = true" in text
     assert "/old/taskboard" not in text
     assert "/also-old" not in text
+    assert "chrome-devtools-mcp@stale" not in text
     parsed = tomllib.loads(text)
     assert parsed["cli"]["use_leader"] is True
     assert parsed["compat"]["cursor"]["mcps"] is False
     command = parsed["mcp_servers"]["taskboard"]["command"]
     assert str(binary.resolve()) == command or str(binary) in str(command)
     assert parsed["mcp_servers"]["taskboard"]["args"][-1] == "mcp"
+    assert text.count("[mcp_servers.chrome-devtools]") == 1, text
+    chrome = parsed["mcp_servers"]["chrome-devtools"]
+    assert chrome["command"] == "npx"
+    assert chrome["args"] == ["-y", "chrome-devtools-mcp@latest"]
 
 
 def test_cursor_compat_mcps_disabled_in_seat_config(tmp_path: Path) -> None:
@@ -269,6 +294,14 @@ install_seat_grok_mcp floor
     assert "[compat.cursor]" in text, text
     assert "mcps = false" in text, text
     assert WORKSPACE_FOLDER_TOKEN not in text
+    assert "[mcp_servers.chrome-devtools]" in text, text
+    assert ".cursor/mcp.json" not in text
+    cursor_mcp = REPO / ".cursor" / "mcp.json"
+    cursor_raw = json.loads(cursor_mcp.read_text(encoding="utf-8"))
+    cursor_servers = cursor_raw.get("mcpServers") or {}
+    assert "chrome-devtools" not in cursor_servers
+    assert "playwright" not in cursor_servers
+    assert "browser-use" not in cursor_servers
 
 
 def test_seat_mcp_wiring_sources_have_no_workspace_folder_token() -> None:
@@ -285,6 +318,9 @@ def test_seat_mcp_wiring_sources_have_no_workspace_folder_token() -> None:
     assert "install_seat_grok_mcp" in common
     assert "mcp_servers" in common
     assert "seat_grok_mcp.py" in common
+    assert "chrome-devtools" in common
+    assert "chrome-devtools-mcp" in common
+    assert "install_chrome_devtools_plugin" not in common
     assert "GCS_TASKBOARD_DB" in common
     assert "export_seat_serve_env" in daemon
     already = daemon.split("SEAT_DAEMON_ALREADY")[0]
@@ -294,7 +330,8 @@ def test_seat_mcp_wiring_sources_have_no_workspace_folder_token() -> None:
     doc = TASKBOARD_DOC.read_text(encoding="utf-8")
     assert "GROK_HOME" in doc
     assert "config.toml" in doc
-    assert "mcp" in doc.lower()
+    assert "chrome-devtools" in doc
+    assert "chrome-devtools-mcp@latest" in doc
     assert WORKSPACE_FOLDER_TOKEN not in doc or "never" in doc.lower()
 
 
@@ -353,6 +390,9 @@ def test_merge_seat_taskboard_mcp_strips_unmarked_and_marked_dupes(tmp_path: Pat
         "[mcp_servers.taskboard]\n"
         'command = "/stale"\n'
         'args = ["mcp"]\n\n'
+        "[mcp_servers.chrome-devtools]\n"
+        'command = "npx"\n'
+        'args = ["chrome-devtools-mcp@stale"]\n\n'
         "# gcs-seat-taskboard-mcp\n"
         "[compat.cursor]\nmcps = false\n\n"
         "[mcp_servers.taskboard]\n"
@@ -364,8 +404,18 @@ def test_merge_seat_taskboard_mcp_strips_unmarked_and_marked_dupes(tmp_path: Pat
     assert parsed["cli"]["use_leader"] is True
     assert parsed["compat"]["cursor"]["mcps"] is False
     assert parsed["mcp_servers"]["taskboard"]["command"] == "/bin/taskboard"
+    chrome = parsed["mcp_servers"]["chrome-devtools"]
+    assert chrome["command"] == "npx"
+    assert chrome["args"] == ["-y", "chrome-devtools-mcp@latest"]
+    assert parsed["mcp_servers"]["linear"]["url"] == "https://mcp.linear.app/mcp"
     assert out.count("[compat.cursor]") == 1
     assert out.count("[mcp_servers.taskboard]") == 1
+    assert out.count("[mcp_servers.chrome-devtools]") == 1
+    assert out.count("[mcp_servers.linear]") == 1
+    assert "chrome-devtools-mcp@stale" not in out
     again = mod.merge_seat_taskboard_mcp(out, "/bin/taskboard", "/tmp/db")
-    assert tomllib.loads(again)["mcp_servers"]["taskboard"]["command"] == "/bin/taskboard"
+    again_parsed = tomllib.loads(again)
+    assert again_parsed["mcp_servers"]["taskboard"]["command"] == "/bin/taskboard"
+    assert again_parsed["mcp_servers"]["chrome-devtools"]["args"][-1] == "chrome-devtools-mcp@latest"
     assert again.count("[mcp_servers.taskboard]") == 1
+    assert again.count("[mcp_servers.chrome-devtools]") == 1

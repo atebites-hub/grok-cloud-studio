@@ -71,16 +71,20 @@ stay consistent.
 
 - Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio
   `taskboard --db $GCS_TASKBOARD_DB mcp` plus Linear HTTP
-  `https://mcp.linear.app/mcp`) plus `grok plugin install --trust`
-  of `plugins/studio-mind`. Studio Linear is Living Sky
-  (`linear.app/livingsky`, team Livingsky / `LIV`). NEVER Black Swan Money.
-  Grok-home Higgsfield is grok-only, for when grok usage is back.
+  `https://mcp.linear.app/mcp` plus chrome-devtools stdio
+  `npx -y chrome-devtools-mcp@latest`) plus `grok plugin install --trust`
+  of `plugins/studio-mind`. chrome-devtools is the xAI Grok catalog
+  browser MCP (live Chrome) so qa-a can visually playtest
+  `http://127.0.0.1:5173/`. Not Cursor CLI. Not Bot CloudAgent. Studio Linear
+  is Living Sky (`linear.app/livingsky`, team Livingsky / `LIV`). NEVER
+  Black Swan Money. Grok-home Higgsfield is grok-only, for when grok
+  usage is back.
 - Cursor CLI catalog: repo `.cursor/mcp.json` wrapping
   `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no
-  `GROK_HOME`) and Linear HTTP (`Bearer ${LINEAR_API_KEY}`). Linear +
-  taskboard only. Do not copy the whole Grok catalog. Higgsfield is Cursor
-  catalog login when the runner is Cursor CLI (Art generate). Grok Bot
-  Higgsfield is a different catalog.
+  `GROK_HOME`, no chrome-devtools) and Linear HTTP
+  (`Bearer ${LINEAR_API_KEY}`). Linear + taskboard only. Do not copy the
+  whole Grok catalog. Higgsfield is Cursor catalog login when the runner
+  is Cursor CLI (Art generate). Grok Bot Higgsfield is a different catalog.
 
 Cursor Cloud Extra High cannot scrape `GROK_HOME`. Snapshot env
 `LINEAR_API_KEY` from the cloud-env / dashboard Secrets so those agents

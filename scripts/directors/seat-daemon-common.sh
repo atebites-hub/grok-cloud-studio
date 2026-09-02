@@ -225,9 +225,12 @@ _gcs_abs_path() {
 _write_seat_taskboard_mcp_config() {
   # Merge stdio MCP into GROK_HOME/config.toml. Equivalent to:
   #   GROK_HOME=$gh grok mcp add taskboard -- "$bin" --db "$db" mcp
+  #   GROK_HOME=$gh grok mcp add chrome-devtools -- npx -y chrome-devtools-mcp@latest
+  # chrome-devtools is the xAI Grok catalog browser MCP (live Chrome).
   # Cursor workspace MCP JSON is not the serve config and is not inherited.
+  # Do not copy GROK_HOME MCP into .cursor/mcp.json. Two catalogs.
   # Idempotent: never append a second [compat.cursor] / [mcp_servers.taskboard]
-  # / [mcp_servers.linear].
+  # / [mcp_servers.linear] / [mcp_servers.chrome-devtools].
   local dest="$1" command="$2" db="$3"
   python3 "$ROOT/scripts/directors/seat_grok_mcp.py" "$dest" "$command" "$db"
 }
@@ -235,6 +238,8 @@ _write_seat_taskboard_mcp_config() {
 install_seat_grok_mcp() {
   # Register stdio MCP in this seat's isolated GROK_HOME/config.toml:
   #   <absolute taskboard> --db $GCS_TASKBOARD_DB mcp
+  #   npx -y chrome-devtools-mcp@latest
+  # Living Sky Linear HTTP stays in this same marked block.
   # User-scope ~/.grok/config.toml is not inherited. Do not remint serve.
   local seat="${1:-}"
   local sd gh db bin cfg
