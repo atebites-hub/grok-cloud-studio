@@ -99,7 +99,57 @@ def test_secret_scan_fails_on_mcp_json_bearer_literal(tmp_path: Path) -> None:
     blob = proc.stdout + proc.stderr
     assert proc.returncode != 0, blob
     assert "secret_scan=FAIL" in proc.stdout
-    assert "mcp_bearer_literal" in blob or "mcp_api_key_literal" in blob
+    assert "mcp_bearer_literal" in blob
+    assert ".cursor/mcp.json" in blob
+    assert token not in blob
+
+
+def test_secret_scan_fails_on_mcp_json_args_bearer_literal(tmp_path: Path) -> None:
+    """stdio args may carry Bearer tokens; list strings must not fail open."""
+    token = _linear_token("argslit")
+    _write_cursor_mcp(
+        tmp_path,
+        {
+            "linear": {
+                "url": LINEAR_MCP_URL,
+                "command": "npx",
+                "args": ["mcp-linear", "--authorization", "Bearer " + token],
+            }
+        },
+    )
+    proc = _run_scan(tmp_path)
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode != 0, blob
+    assert "secret_scan=FAIL" in proc.stdout
+    assert "mcp_bearer_literal" in blob
+    assert ".cursor/mcp.json" in blob
+    assert token not in blob
+
+
+def test_secret_scan_fails_on_mcp_jsonc_lin_api_literal(tmp_path: Path) -> None:
+    """JSONC comments make json.loads fail; lin_api_ literals must still hit."""
+    token = _linear_token("jsonc")
+    path = tmp_path / ".cursor" / "mcp.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "// cursor jsonc\n"
+        "{\n"
+        '  "mcpServers": {\n'
+        '    "linear": {\n'
+        '      "url": "https://mcp.linear.app/mcp",\n'
+        '      "headers": {\n'
+        '        "X-Api-Key": "' + token + '"\n'
+        "      }\n"
+        "    }\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    proc = _run_scan(tmp_path)
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode != 0, blob
+    assert "secret_scan=FAIL" in proc.stdout
+    assert "mcp_api_key_literal" in blob
     assert ".cursor/mcp.json" in blob
     assert token not in blob
 

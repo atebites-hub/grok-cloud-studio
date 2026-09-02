@@ -160,9 +160,9 @@ def _consider_mcp_string(
 def scan_mcp_json_lines(rel: str, text: str) -> list[tuple[str, str, int]]:
     hits: list[tuple[str, str, int]] = []
     for i, line in enumerate(text.splitlines(), start=1):
-        if _MCP_JSON_KEY_LITERAL_RE.search(line):
+        if _MCP_JSON_KEY_LITERAL_RE.search(line) or _LIN_API_LITERAL_RE.search(line):
             hits.append((rel, "mcp_api_key_literal", i))
-        if _MCP_JSON_BEARER_LITERAL_RE.search(line):
+        if _MCP_JSON_BEARER_LITERAL_RE.search(line) or _BEARER_LITERAL_RE.search(line):
             hits.append((rel, "mcp_bearer_literal", i))
     return hits
 
@@ -185,7 +185,12 @@ def scan_mcp_json(rel: str, text: str) -> list[tuple[str, str, int]]:
             return
         if isinstance(obj, list):
             for item in obj:
-                walk(item)
+                if isinstance(item, str):
+                    # Empty key: skip API_KEY-field rule so ${workspaceFolder} args
+                    # stay clean; still flag Bearer / lin_api_ literals.
+                    _consider_mcp_string(rel, text, "", item, hits)
+                else:
+                    walk(item)
 
     walk(data)
     return hits
