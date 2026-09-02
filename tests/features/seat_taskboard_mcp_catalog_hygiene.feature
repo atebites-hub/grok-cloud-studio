@@ -14,15 +14,20 @@ Feature: doctor WARNs on missing or malformed seat taskboard stdio MCP
   Scenario: missing taskboard table is a WARN not a FAIL
     Given a seat grok-home/config.toml exists without [mcp_servers.taskboard]
     When doctor.sh runs
-    Then it prints WARN and missing-taskboard-table
-    And it does not treat that as doctor FAIL
+    Then it prints WARN seat MCP catalog missing-taskboard-table
+    And it prints doctor: OK
 
-  Scenario: relative db or missing mcp arg is a WARN
+  Scenario: missing mcp arg is a WARN
     Given a seat catalog whose args are not --db <absolute db> mcp
     When doctor.sh runs
-    Then it prints WARN and args-not-db-mcp
+    Then it prints WARN seat MCP catalog args-not-db-mcp
+
+  Scenario: relative db path is a WARN
+    Given a seat catalog with args --db taskboard.db mcp
+    When doctor.sh runs
+    Then it prints WARN seat MCP catalog db-not-absolute
 
   Scenario: healthy absolute stdio catalog is quiet
     Given a seat catalog with absolute command and args --db /abs/db mcp
     When doctor.sh runs
-    Then it does not print missing-taskboard-table or args-not-db-mcp
+    Then it does not print missing-taskboard-table, args-not-db-mcp, or db-not-absolute

@@ -31,6 +31,7 @@ for p in \
   scripts/directors/start-seat-daemon.sh \
   scripts/directors/prompt-dir.sh \
   scripts/directors/fleet-shepherd.py \
+  scripts/directors/seat_grok_mcp.py \
   docs/studio/TASKBOARD.md \
   docs/studio/MIND.md \
   docs/studio/WIPE.md \
@@ -176,10 +177,18 @@ _gcs_warn_workspace_folder_mcp() {
 _gcs_warn_seat_taskboard_mcp_catalog() {
   # Existing catalogs only. WARN, do not FAIL, do not remint serve.
   # Distinct from factory mcp-seats write (install-grok-mcp.sh / setup.sh).
-  local f="$1" line reason
+  local f="$1" line reason rc=0 lint_out="" lint_py
   [[ -f "$f" ]] || return 0
-  local lint_out=""
-  lint_out="$(python3 "$ROOT/scripts/directors/seat_grok_mcp.py" lint "$f" 2>/dev/null || true)"
+  lint_py="$ROOT/scripts/directors/seat_grok_mcp.py"
+  if [[ ! -f "$lint_py" ]]; then
+    printf 'WARN seat MCP catalog lint-failed: missing %s\n' "$lint_py"
+    return 0
+  fi
+  lint_out="$(python3 "$lint_py" lint "$f")" && rc=0 || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    printf 'WARN seat MCP catalog lint-failed: %s\n' "$f"
+    return 0
+  fi
   while IFS= read -r line; do
     [[ -n "$line" ]] || continue
     reason="${line%%$'\t'*}"

@@ -72,10 +72,13 @@ def test_bdd_feature_binds_hygiene_scenarios() -> None:
     assert "Bot CloudAgent" in text
     for title in (
         "missing taskboard table is a WARN not a FAIL",
-        "relative db or missing mcp arg is a WARN",
+        "missing mcp arg is a WARN",
+        "relative db path is a WARN",
         "healthy absolute stdio catalog is quiet",
     ):
         assert title in text, title
+    assert "db-not-absolute" in text
+    assert "WARN seat MCP catalog missing-taskboard-table" in text
 
 
 def test_lint_seat_taskboard_mcp_flags_missing_table() -> None:
@@ -164,14 +167,16 @@ def test_lint_cli_prints_reasons_and_keeps_write_usage(tmp_path: Path) -> None:
 
 def test_doctor_warns_on_missing_taskboard_table_not_fail(tmp_path: Path) -> None:
     doctor_src = DOCTOR.read_text(encoding="utf-8")
-    assert "seat_grok_mcp.py" in doctor_src
-    assert "lint" in doctor_src
+    assert "scripts/directors/seat_grok_mcp.py" in doctor_src
+    assert "lint-failed" in doctor_src
+    assert "2>/dev/null || true" not in doctor_src.split("_gcs_warn_seat_taskboard_mcp_catalog()")[1].split("mcp_configs=")[0]
     _write_seat_cfg(tmp_path, "[cli]\nuse_leader = true\n")
     proc = _run_doctor(tmp_path)
     blob = proc.stdout + proc.stderr
-    assert "WARN" in blob, blob
-    assert "missing-taskboard-table" in blob, blob
+    assert "WARN seat MCP catalog missing-taskboard-table:" in blob, blob
     assert "config.toml" in blob, blob
+    assert "doctor: OK" in blob, blob
+    assert proc.returncode == 0, blob
     assert not any(
         ln.startswith("ERR") and "missing-taskboard-table" in ln
         for ln in blob.splitlines()
@@ -187,8 +192,23 @@ def test_doctor_warns_on_args_not_db_mcp(tmp_path: Path) -> None:
     )
     proc = _run_doctor(tmp_path)
     blob = proc.stdout + proc.stderr
-    assert "WARN" in blob, blob
-    assert "args-not-db-mcp" in blob, blob
+    assert "WARN seat MCP catalog args-not-db-mcp:" in blob, blob
+    assert "doctor: OK" in blob, blob
+    assert proc.returncode == 0, blob
+
+
+def test_doctor_warns_on_relative_db(tmp_path: Path) -> None:
+    _write_seat_cfg(
+        tmp_path,
+        "[mcp_servers.taskboard]\n"
+        'command = "/usr/bin/taskboard"\n'
+        'args = ["--db", "taskboard.db", "mcp"]\n',
+    )
+    proc = _run_doctor(tmp_path)
+    blob = proc.stdout + proc.stderr
+    assert "WARN seat MCP catalog db-not-absolute:" in blob, blob
+    assert "doctor: OK" in blob, blob
+    assert proc.returncode == 0, blob
 
 
 def test_doctor_quiet_on_healthy_absolute_stdio_catalog(tmp_path: Path) -> None:
@@ -216,6 +236,9 @@ def test_docs_name_catalog_hygiene_not_cursor_workspace() -> None:
     doc = TASKBOARD_DOC.read_text(encoding="utf-8")
     assert "GROK_HOME" in doc
     assert "config.toml" in doc
-    assert "missing-taskboard-table" in doc or "malformed" in doc.lower() or "lint" in doc.lower()
+    assert "missing-taskboard-table" in doc
+    assert "args-not-db-mcp" in doc
+    assert "db-not-absolute" in doc
+    assert "seat_grok_mcp.py lint" in doc
     assert "never" in doc.lower()
     assert WORKSPACE_FOLDER_TOKEN not in doc or "never" in doc.lower()

@@ -109,9 +109,10 @@ def _is_absolute_posix(value: str) -> bool:
 def lint_seat_taskboard_mcp(text: str) -> list[str]:
     """Return WARN reason tokens for an existing GROK_HOME/config.toml blob.
 
-    Empty means the catalog already has absolute ``taskboard --db <db> mcp``.
-    Does not write files. Does not require Linear MCP (PAL-45 is not this
-    catalog). Missing files are not linted — doctor only scans existing
+    Empty means the catalog already has an absolute command and args
+    ``--db <absolute db> mcp``. Extra middle args are allowed. Does not
+    write files. Does not require Linear MCP (PAL-45 is not this catalog).
+    Missing files are not linted — doctor only scans existing
     ``*/grok-home/config.toml``.
     """
     reasons: list[str] = []
