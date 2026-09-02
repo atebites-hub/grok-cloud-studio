@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 MARK_START = "# gcs-seat-taskboard-mcp"
@@ -101,13 +102,82 @@ def write_seat_taskboard_mcp_config(dest: Path, command: str, db: str) -> None:
     dest.write_text(merge_seat_taskboard_mcp(text, command, db), encoding="utf-8")
 
 
+def _is_absolute_posix(value: str) -> bool:
+    return value.startswith("/") and "${" not in value
+
+
+def lint_seat_taskboard_mcp(text: str) -> list[str]:
+    """Return WARN reason tokens for an existing GROK_HOME/config.toml blob.
+
+    Empty means the catalog already has an absolute command and args
+    ``--db <absolute db> mcp``. Extra middle args are allowed. Does not
+    write files. Does not require Linear MCP (PAL-45 is not this catalog).
+    Missing files are not linted — doctor only scans existing
+    ``*/grok-home/config.toml``.
+    """
+    reasons: list[str] = []
+    raw = text or ""
+    try:
+        parsed = tomllib.loads(raw) if raw.strip() else {}
+    except tomllib.TOMLDecodeError:
+        return ["invalid-toml"]
+    if not isinstance(parsed, dict):
+        return ["invalid-toml"]
+    servers = parsed.get("mcp_servers")
+    table = servers.get("taskboard") if isinstance(servers, dict) else None
+    if not isinstance(table, dict):
+        return ["missing-taskboard-table"]
+    command = table.get("command")
+    if not isinstance(command, str) or not _is_absolute_posix(command):
+        reasons.append("command-not-absolute")
+    args = table.get("args")
+    if not isinstance(args, list):
+        reasons.append("args-not-db-mcp")
+        return reasons
+    str_args = [a if isinstance(a, str) else "" for a in args]
+    if (
+        len(str_args) < 3
+        or str_args[0] != "--db"
+        or str_args[-1] != "mcp"
+    ):
+        reasons.append("args-not-db-mcp")
+    elif not _is_absolute_posix(str_args[1]):
+        reasons.append("db-not-absolute")
+    blob = command if isinstance(command, str) else ""
+    blob += "".join(str_args)
+    if "${" in blob:
+        reasons.append("unexpanded-interpolation")
+    out: list[str] = []
+    for reason in reasons:
+        if reason not in out:
+            out.append(reason)
+    return out
+
+
+def _usage() -> None:
+    print(
+        "usage: seat_grok_mcp.py DEST_TOML COMMAND DB\n"
+        "       seat_grok_mcp.py lint DEST_TOML [DEST_TOML ...]",
+        file=sys.stderr,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "lint":
+        if len(args) < 2:
+            _usage()
+            return 2
+        for dest in args[1:]:
+            path = Path(dest)
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            for reason in lint_seat_taskboard_mcp(text):
+                print(f"{reason}\t{path}")
+        return 0
     if len(args) != 3:
-        print(
-            "usage: seat_grok_mcp.py DEST_TOML COMMAND DB",
-            file=sys.stderr,
-        )
+        _usage()
         return 2
     write_seat_taskboard_mcp_config(Path(args[0]), args[1], args[2])
     return 0

@@ -31,6 +31,7 @@ for p in \
   scripts/directors/start-seat-daemon.sh \
   scripts/directors/prompt-dir.sh \
   scripts/directors/fleet-shepherd.py \
+  scripts/directors/seat_grok_mcp.py \
   docs/studio/TASKBOARD.md \
   docs/studio/MIND.md \
   docs/studio/WIPE.md \
@@ -175,6 +176,28 @@ _gcs_warn_workspace_folder_mcp() {
     printf 'WARN seat MCP config contains ${workspaceFolder} (never expands; register stdio MCP in GROK_HOME/config.toml): %s\n' "$f"
   fi
 }
+_gcs_warn_seat_taskboard_mcp_catalog() {
+  # Existing catalogs only. WARN, do not FAIL, do not remint serve.
+  # Distinct from factory mcp-seats write (install-grok-mcp.sh / setup.sh).
+  local f="$1" line reason rc=0 lint_out="" lint_py
+  [[ -f "$f" ]] || return 0
+  lint_py="$ROOT/scripts/directors/seat_grok_mcp.py"
+  if [[ ! -f "$lint_py" ]]; then
+    printf 'WARN seat MCP catalog lint-failed: missing %s\n' "$lint_py"
+    return 0
+  fi
+  lint_out="$(python3 "$lint_py" lint "$f")" && rc=0 || rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    printf 'WARN seat MCP catalog lint-failed: %s\n' "$f"
+    return 0
+  fi
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    reason="${line%%$'\t'*}"
+    [[ -n "$reason" ]] || continue
+    printf 'WARN seat MCP catalog %s: %s\n' "$reason" "$f"
+  done <<< "$lint_out"
+}
 mcp_configs=()
 if [[ -d "$STATE" ]]; then
   mapfile -d '' mcp_configs < <(find "$STATE" -path '*/grok-home/config.toml' -print0 2>/dev/null || true)
@@ -182,9 +205,11 @@ fi
 for f in "${mcp_configs[@]}"; do
   [[ -n "$f" ]] || continue
   _gcs_warn_workspace_folder_mcp "$f"
+  _gcs_warn_seat_taskboard_mcp_catalog "$f"
 done
 if [[ -n "${GROK_HOME:-}" ]]; then
   _gcs_warn_workspace_folder_mcp "${GROK_HOME}/config.toml"
+  _gcs_warn_seat_taskboard_mcp_catalog "${GROK_HOME}/config.toml"
 fi
 
 if [[ "$FAIL" -ne 0 ]]; then
