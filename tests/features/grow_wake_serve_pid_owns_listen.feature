@@ -18,3 +18,12 @@ Feature: GROW wake session/prompt targets the serve pid that owns ACP listen
     And the new serve receives ACP session/prompt inside that new serve pid
     And the leftover listener does not receive session/prompt
     And argv does not contain grok --resume
+
+  Scenario: Foreign listener on the same ACP port is evicted then reminted
+    Given leftover daemon.pid does not own the ACP listen socket
+    And that leftover listener still holds the seat ACP port
+    When wake-daemon process_once runs
+    Then it evicts the foreign listener
+    And it restarts grok agent serve on that same port
+    And the new serve receives ACP session/prompt inside that new serve pid
+    And argv does not contain grok --resume

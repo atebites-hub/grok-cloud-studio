@@ -384,6 +384,72 @@ def serve_pid_owns_acp_port(pid: int, port: int) -> bool:
     return False
 
 
+def listen_owner_pids(port: int) -> set[int]:
+    """Pids whose fds own a LISTEN socket on port. Scan /proc; skip pid 1."""
+    inodes = _listen_inodes(port)
+    if not inodes:
+        return set()
+    owners: set[int] = set()
+    proc = Path("/proc")
+    try:
+        names = [p.name for p in proc.iterdir() if p.name.isdigit()]
+    except OSError:
+        return owners
+    for name in names:
+        pid = int(name)
+        if pid <= 1:
+            continue
+        if _pid_socket_inodes(pid) & inodes:
+            owners.add(pid)
+    return owners
+
+
+def evict_foreign_acp_listeners(port: int, keep_pids: set[int] | None = None) -> list[int]:
+    """SIGTERM (then SIGKILL) LISTEN owners on port that are not in keep_pids.
+
+    This seat's ACP port is reserved. A leftover listener that is not the
+    daemon.pid tree must not block remint and must not receive session/prompt.
+    Never grok --resume.
+    """
+    if port <= 0:
+        return []
+    keep = {p for p in (keep_pids or set()) if p > 1}
+    victims = [p for p in sorted(listen_owner_pids(port)) if p not in keep and p > 1]
+    for pid in victims:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            continue
+    deadline = time.time() + 2.0
+    while time.time() < deadline and _tcp_listening(port):
+        time.sleep(0.05)
+    still = [p for p in victims if _pid_alive(p)]
+    for pid in still:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    deadline = time.time() + 1.0
+    while time.time() < deadline and _tcp_listening(port):
+        time.sleep(0.05)
+    return victims
+
+
+def _seat_acp_listen_port(seat: str) -> int:
+    sd = _seat_dir(seat)
+    try:
+        url = (sd / "acp.url").read_text(encoding="utf-8")
+        port = _acp_port_from_url(url)
+        if port > 0:
+            return port
+    except OSError:
+        pass
+    try:
+        return int(seat_acp_port(seat, ROOT))
+    except (KeyError, ValueError, TypeError):
+        return 0
+
+
 def serve_healthy(seat: str) -> bool:
     """Alive serve pid that owns the ACP listen socket. Never a leftover pid."""
     sd = _seat_dir(seat)
@@ -412,6 +478,18 @@ def ensure_seat_serve(seat: str) -> int:
     if serve_healthy(seat):
         _write_grow_mode(seat)
         return _read_serve_pid(seat)
+    listen_port = _seat_acp_listen_port(seat)
+    leftover_pid = _read_serve_pid(seat)
+    if listen_port > 0 and _tcp_listening(listen_port):
+        if leftover_pid <= 0 or not serve_pid_owns_acp_port(leftover_pid, listen_port):
+            keep = set(_pid_tree(leftover_pid)) if leftover_pid > 0 else set()
+            victims = evict_foreign_acp_listeners(listen_port, keep)
+            if victims:
+                print(
+                    f"WAKE_EVICT_LISTEN seat={seat} port={listen_port} "
+                    f"pids={','.join(str(p) for p in victims)}",
+                    flush=True,
+                )
     if not START_DAEMON.is_file():
         print(f"WAKE_SERVE_FAIL seat={seat} missing {START_DAEMON}", file=sys.stderr)
         return 0
@@ -732,6 +810,13 @@ def main() -> int:
         metavar=("PID", "PORT"),
         help="Exit 0 if PID (or a descendant) owns LISTEN on PORT. Never grok --resume.",
     )
+    parser.add_argument(
+        "--evict-foreign-listen",
+        metavar="PORT",
+        default="",
+        help="SIGTERM listeners on PORT that are not --keep-pid. Never grok --resume.",
+    )
+    parser.add_argument("--keep-pid", default="0", help="Pid tree to spare during --evict-foreign-listen")
     args = parser.parse_args()
     if args.owns_listen:
         try:
@@ -743,8 +828,24 @@ def main() -> int:
         ok = serve_pid_owns_acp_port(pid, port)
         print(f"WAKE_OWNS_LISTEN pid={pid} port={port} ok={int(ok)}", flush=True)
         return 0 if ok else 1
+    if args.evict_foreign_listen:
+        try:
+            port = int(args.evict_foreign_listen)
+            keep_pid = int(args.keep_pid)
+        except ValueError:
+            print("WAKE_EVICT_LISTEN port=invalid ok=0", file=sys.stderr)
+            return 2
+        keep = set(_pid_tree(keep_pid)) if keep_pid > 0 else set()
+        victims = evict_foreign_acp_listeners(port, keep)
+        listening = int(_tcp_listening(port))
+        print(
+            f"WAKE_EVICT_LISTEN port={port} "
+            f"pids={','.join(str(p) for p in victims) or 'none'} listening={listening}",
+            flush=True,
+        )
+        return 0 if not listening else 1
     if not args.seat:
-        parser.error("--seat is required unless --owns-listen is set")
+        parser.error("--seat is required unless --owns-listen or --evict-foreign-listen is set")
     seat = canonical_seat(args.seat, ROOT)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     if args.once or args.dry_run:

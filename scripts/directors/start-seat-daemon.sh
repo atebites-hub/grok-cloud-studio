@@ -54,6 +54,10 @@ fi
 rm -f "$PID_FILE"
 
 if port_listening "$PORT"; then
+  echo "SEAT_DAEMON_EVICT_LISTEN seat=$SEAT port=$PORT" >&2
+  python3 "$ROOT/scripts/a2a/wake-daemon.py" --evict-foreign-listen "$PORT" || true
+fi
+if port_listening "$PORT"; then
   echo "SEAT_DAEMON_FAIL seat=$SEAT port=$PORT already in use" >&2
   exit 1
 fi
