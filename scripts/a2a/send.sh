@@ -49,6 +49,12 @@ if [[ -z "$SEAT" || -z "$TEXT" ]]; then
   exit 2
 fi
 
+export GCS_ROOT="${GCS_ROOT:-$ROOT}"
+SEAT="$(python3 "$ROOT/scripts/a2a/lib.py" canonical "$SEAT")"
+if [[ -n "$FROM_SEAT" ]]; then
+  FROM_SEAT="$(python3 "$ROOT/scripts/a2a/lib.py" canonical "$FROM_SEAT")"
+fi
+
 MSG_ID=$(python3 - <<'PY'
 import uuid; print(uuid.uuid4())
 PY
