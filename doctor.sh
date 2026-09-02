@@ -173,6 +173,20 @@ _gcs_warn_workspace_folder_mcp() {
     printf 'WARN seat MCP config contains ${workspaceFolder} (never expands; register stdio MCP in GROK_HOME/config.toml): %s\n' "$f"
   fi
 }
+_gcs_warn_seat_taskboard_mcp_catalog() {
+  # Existing catalogs only. WARN, do not FAIL, do not remint serve.
+  # Distinct from factory mcp-seats write (install-grok-mcp.sh / setup.sh).
+  local f="$1" line reason
+  [[ -f "$f" ]] || return 0
+  local lint_out=""
+  lint_out="$(python3 "$ROOT/scripts/directors/seat_grok_mcp.py" lint "$f" 2>/dev/null || true)"
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    reason="${line%%$'\t'*}"
+    [[ -n "$reason" ]] || continue
+    printf 'WARN seat MCP catalog %s: %s\n' "$reason" "$f"
+  done <<< "$lint_out"
+}
 mcp_configs=()
 if [[ -d "$STATE" ]]; then
   mapfile -d '' mcp_configs < <(find "$STATE" -path '*/grok-home/config.toml' -print0 2>/dev/null || true)
@@ -180,9 +194,11 @@ fi
 for f in "${mcp_configs[@]}"; do
   [[ -n "$f" ]] || continue
   _gcs_warn_workspace_folder_mcp "$f"
+  _gcs_warn_seat_taskboard_mcp_catalog "$f"
 done
 if [[ -n "${GROK_HOME:-}" ]]; then
   _gcs_warn_workspace_folder_mcp "${GROK_HOME}/config.toml"
+  _gcs_warn_seat_taskboard_mcp_catalog "${GROK_HOME}/config.toml"
 fi
 
 if [[ "$FAIL" -ne 0 ]]; then
