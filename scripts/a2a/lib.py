@@ -110,21 +110,45 @@ def canonical_seat(seat: str, root: Path | None = None) -> str:
     return key
 
 
+def known_seat(seat: str, root: Path | None = None) -> str | None:
+    """Fold a title onto a first-class registry seat, or None (do not mint).
+
+    CCGS lead aliases resolve. Unmapped specialist titles (composer,
+    narrative-designer, …) return None so grow/mind/launch/ticker never
+    create a seat directory for them. skipSeats are not mintable.
+    """
+    token = seat.strip()
+    if not token:
+        return None
+    key = canonical_seat(token, root)
+    if not key or key in skip_seats(root):
+        return None
+    if key in _seat_entries(root):
+        return key
+    return None
+
+
 def grow_seats(root: Path | None = None) -> frozenset[str]:
     """GROW inbox owners: persistent serve + wake-daemon, not leftover dispatch.
 
     Default GCS_GROW_SEATS / GCS_ACP_SEATS is floor,studio-ops. The example
     registry names ops `ops`; both aliases are included so dispatch skip and
-    wake loops agree.
+    wake loops agree. CCGS lead aliases fold. Unmapped specialist titles
+    do not mint GROW seats.
     """
     raw = env_first("GCS_GROW_SEATS", "GCS_ACP_SEATS", default="floor,studio-ops")
-    seats = {normalize_seat(s) for s in raw.split(",") if s.strip()}
-    if "studio-ops" in seats:
-        seats.add("ops")
-    if "ops" in seats:
-        seats.add("studio-ops")
+    known = set(_seat_entries(root))
     skipped = skip_seats(root)
-    return frozenset(s for s in seats if s and s not in skipped)
+    seats: set[str] = set()
+    for part in raw.split(","):
+        key = known_seat(part, root)
+        if key:
+            seats.add(key)
+    if "studio-ops" in seats and "ops" in known and "ops" not in skipped:
+        seats.add("ops")
+    if "ops" in seats and "studio-ops" in known and "studio-ops" not in skipped:
+        seats.add("studio-ops")
+    return frozenset(seats)
 
 
 def mind_seats(root: Path | None = None) -> frozenset[str]:
@@ -138,17 +162,10 @@ def mind_seats(root: Path | None = None) -> frozenset[str]:
     raw = env_first("GCS_MIND_SEATS")
     if not raw:
         return frozenset()
-    skipped = skip_seats(root)
-    known = set(_seat_entries(root))
     out: set[str] = set()
     for part in raw.split(","):
-        token = part.strip()
-        if not token:
-            continue
-        key = canonical_seat(token, root)
-        if not key or key in skipped:
-            continue
-        if key in known:
+        key = known_seat(part, root)
+        if key:
             out.add(key)
     return frozenset(out)
 
@@ -177,14 +194,14 @@ def launch_seats(root: Path | None = None) -> tuple[str, ...]:
     ordered = tuple(name for name in _seat_entries(root) if name not in skipped)
     env_list = env_first("GCS_ACP_SEATS")
     if env_list:
-        wanted = [canonical_seat(s, root) for s in env_list.split(",") if s.strip()]
         known = set(ordered)
         seen: set[str] = set()
         out: list[str] = []
-        for s in wanted:
-            if s in known and s not in seen:
-                seen.add(s)
-                out.append(s)
+        for s in env_list.split(","):
+            key = known_seat(s, root)
+            if key and key in known and key not in seen:
+                seen.add(key)
+                out.append(key)
         return tuple(out)
     return ordered
 
@@ -416,7 +433,7 @@ def main(argv: list[str]) -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print(
             "usage: lib.py <launch-seats|skip-seats|grow-seats|mind-seats|port SEAT|"
-            "normalize SEAT|canonical SEAT|root|state|registry|cloud-repo|"
+            "normalize SEAT|canonical SEAT|known SEAT|root|state|registry|cloud-repo|"
             "cloud-ref|prompts-dir|prompt-file SEAT|ensure-prompts>",
             file=sys.stderr,
         )
@@ -451,6 +468,16 @@ def main(argv: list[str]) -> int:
             print("usage: lib.py canonical SEAT", file=sys.stderr)
             return 2
         print(canonical_seat(argv[1]))
+        return 0
+    if cmd == "known":
+        if len(argv) < 2:
+            print("usage: lib.py known SEAT", file=sys.stderr)
+            return 2
+        name = known_seat(argv[1])
+        if not name:
+            print(f"unknown seat: {argv[1]}", file=sys.stderr)
+            return 1
+        print(name)
         return 0
     if cmd == "root":
         print(repo_root())

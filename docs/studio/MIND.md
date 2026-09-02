@@ -204,3 +204,7 @@ specialists only via `scripts/launch-cloud-extra-high.sh`.
 | audio | `audio` (first-class) |
 | narrative | `narrative` (first-class) |
 
+Unmapped specialist titles do not mint mind or GROW seats (`lib.py known`
+fails closed). Aliases live in `scripts/a2a/lib.py` `CCGS_LEAD_ALIASES`.
+FAT: [`tests/features/ccgs_audio_narrative_map.feature`](../../tests/features/ccgs_audio_narrative_map.feature).
+
