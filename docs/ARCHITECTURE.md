@@ -16,10 +16,10 @@ Grok Cloud Studio is a **local control plane**:
 3. **A2A** is seat-to-seat. **MCP** is agent-to-tool.
 
 ```
-send.sh → hub.py (enqueue SUBMITTED + inbox JSONL)
+send.sh → hub.py (enqueue SUBMITTED + inbox JSONL; ACK is a receipt, not mind-turn done)
             ↓
         mind.py         → grok --resume pinned UUID --prompt-file   (GCS_MIND_SEATS)
-                        → COMPLETED only after harvest + runner exit 0
+                        → COMPLETED only after harvest + runner exit 0 (still a receipt)
         wake-daemon.py  → seat-prompt-acp.sh --pin-session  (GROW seats, leftover)
         dispatch.py     → leftover acp_inject.py            (non-GROW only)
                         → launch-director.sh  (one-shot -p fallback)
@@ -41,14 +41,14 @@ Stdlib HTTP+JSON (`scripts/a2a/hub.py`):
 
 - `GET /health` `GET /registry`
 - `GET /a2a/{seat}/.well-known/agent-card.json`
-- `POST /a2a/{seat}/message:send` — appends `.a2a-state/<seat>/inbox.jsonl`, returns `TASK_STATE_SUBMITTED` (queued until mind harvests and finishes). Duplex `A2A_REPLY` maps skipSeat `donald` → `floor-ops` / `orchestrator` so notify does not 404; a missed ping does not fail the task reply. Hub SUBMITTED/COMPLETED is ack only, not Director RESULT.
+- `POST /a2a/{seat}/message:send` — appends `.a2a-state/<seat>/inbox.jsonl`, returns `TASK_STATE_SUBMITTED` (queued until mind harvests and finishes). A2A ACK / `kind=receipt` is a receipt, not mind-turn done. Later `TASK_STATE_COMPLETED` is still a protocol receipt, not `MIND_TURN`. Duplex `A2A_REPLY` maps skipSeat `donald` → `floor-ops` / `orchestrator` so notify does not 404; a missed ping does not fail the task reply.
 - tasks get/list/cancel
 
 Default bind `127.0.0.1:8732`. Cards live in `docs/a2a/cards/`. Seats and ACP ports live in `docs/a2a/registry.json` (`scripts/a2a/lib.py` is the source of truth).
 
 `scripts/a2a/start-studio-bus.sh` starts hub + leftover dispatch + fleet-shepherd. **bot-bridge is opt-in** (`GCS_BOT_BRIDGE=1`); Bot seats stay standby otherwise. Pass `--daemons` (or `GCS_START_SEAT_DAEMONS=1`) to also start per-seat `grok agent serve` for seats in `GCS_ACP_SEATS` (default `floor,studio-ops` — not the full registry), GROW `seat-wake-loop.sh` / `wake-daemon.py`, and `host-ticker.py`. Set `GCS_MIND_SEATS` (example `floor,ops`) to start `seat-mind-loop.sh` / `mind.py` instead of ACP wake for those seats (`GCS_MIND_PLUS_ACP_WAKE=1` to run both). Mind does not kill existing serve. `start` recycles leftover dispatch only when `.a2a-state/dispatch.mind-seats` differs from the current env / `studio.env` set; a match keeps `STUDIO_BUS_DISPATCH_ALREADY`. Recycle does not kill hub, fleet-shepherd, seat minds, host ticker, or serve. Default-off start/recover evict leftover live `bot-bridge.pid` (`ALREADY` only when `GCS_BOT_BRIDGE=1`; do not remint). See `docs/studio/MIND.md`. Daemons are **opt-in** so a bus start does not surprise-spawn grok processes. Agent Kanban was removed; the board is tcarac/taskboard (`docs/studio/TASKBOARD.md`).
 
-Director RESULT is duplex, not success: print `RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>`; `scripts/a2a/duplex.py` writes it onto the A2A task. RESULT-only / PONG is a bug. Never launch Bot CloudAgent. Hub enqueue is `TASK_STATE_SUBMITTED` (queued until mind harvests); later `TASK_STATE_COMPLETED` is still a protocol receipt, not that RESULT line.
+Director RESULT is duplex, not success: print `RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>`; `scripts/a2a/duplex.py` writes it onto the A2A task. RESULT-only / PONG is a bug. Never launch Bot CloudAgent. Hub enqueue is `TASK_STATE_SUBMITTED` (queued until mind harvests); later `TASK_STATE_COMPLETED` is still a protocol receipt, not mind-turn done, not that RESULT line.
 
 Grok Bot orchestrator seats (`docs/a2a/bot-agents.json`, default seat `orchestrator`) are listed in registry `skipSeats` and are **not** ACP inject targets. Bind with `GCS_BOT_AGENT_ID` + `scripts/a2a/bind-bot-agent.sh` (also run from `install.sh`). Standing Bot routines poll `.a2a-state/<seat>/bot-wake.txt` / `bot-wake.jsonl`.
 

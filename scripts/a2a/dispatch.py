@@ -12,7 +12,8 @@ Non-GROW seats may still use leftover `grok agent serve` + acp_inject.py.
 STATUS / FLEET_* / A2A_REPLY never launch (A2A_REPLY is a duplex caller ping).
 
 Hub TASK_STATE_SUBMITTED means queued; COMPLETED only after mind harvests
-and finishes. Enqueue is not proof the Director acted.
+and finishes. Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not mind-turn done.
+Enqueue is not proof the Director acted.
 Local studio only. Stdlib only.
 """
 from __future__ import annotations

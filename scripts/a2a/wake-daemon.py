@@ -19,7 +19,8 @@ session/new; later session/load). Named identity is SOUL.md + MEMORY.md
 + GROK_MEMORY=1 on the **serve** process.
 
 Hub TASK_STATE_SUBMITTED means queued; COMPLETED only after mind harvests
-and finishes. Enqueue is not proof the Director acted.
+and finishes. Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not mind-turn done.
+Enqueue is not proof the Director acted.
 Local studio only. Stdlib only.
 """
 from __future__ import annotations

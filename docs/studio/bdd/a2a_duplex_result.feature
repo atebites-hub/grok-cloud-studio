@@ -3,7 +3,7 @@ Feature: A2A director RESULT is duplex, not success
   Studio Linear is Living Sky (linear.app/livingsky, team LIV). Never Black Swan.
   Extra High stays grok-4.6 xhigh fast=false. Never Bot CloudAgent.
 
-  Hub TASK_STATE_COMPLETED / send.sh ACK is a protocol receipt (LIV-85).
+  Hub TASK_STATE_COMPLETED / send.sh ACK is a protocol receipt, not mind-turn done (LIV-85).
   This FAT does not clone that mechanic. Director RESULT is a separate duplex
   write onto the A2A task plus an optional caller ping.
 

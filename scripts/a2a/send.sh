@@ -6,6 +6,8 @@
 # Enqueue only: hub returns TASK_STATE_SUBMITTED. Mail stays queued until
 # the Grok Build mind harvests the inbox line and the runner exits 0.
 # send.sh does not wait for that turn and does not fake ACP HANDOFF.
+# A2A ACK / stdout kind=receipt is a protocol receipt, not mind-turn done.
+# Stdout binds kind=receipt from the hub receipt artifact (not the mind-turn log).
 set -euo pipefail
 
 FROM_SEAT="${GCS_A2A_FROM:-}"
@@ -96,7 +98,12 @@ python3 - <<PY
 import json
 d=json.load(open("$TMP"))
 task=d.get("task") or d
-print(f"A2A_SEND_OK seat=$SEAT task={task.get('id','')} state={(task.get('status') or {}).get('state','')}")
+status=task.get("status") or {}
+state=status.get("state") or ""
+arts=task.get("artifacts") or []
+has_receipt=any(isinstance(a, dict) and a.get("name")=="receipt" for a in arts)
+kind="receipt" if has_receipt else str((task.get("metadata") or {}).get("kind") or "")
+print(f"A2A_SEND_OK seat=$SEAT task={task.get('id','')} state={state} kind={kind}")
 print(task.get("id",""))
 PY
 rm -f "$TMP"

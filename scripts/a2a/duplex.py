@@ -4,14 +4,15 @@
 Idempotent per taskId (.duplex marker). Local studio only. Stdlib.
 
 Hub enqueue is TASK_STATE_SUBMITTED. set_task_state marks COMPLETED after
-the Grok Build mind harvests and the runner exits 0. RESULT duplex is
-optional overlay, not a fake ACP HANDOFF.
+the Grok Build mind harvests and the runner exits 0. That COMPLETE / A2A
+ACK is a receipt, not mind-turn done. RESULT duplex is optional overlay,
+not a fake ACP HANDOFF.
 
 A2A_REPLY must succeed after Director RESULT and must not 404 skipSeat
 donald (no shipped Agent Card; not an ACP inject target). Map donald →
 floor-ops, then orchestrator. If neither card exists, skip notify without
 failing the task reply. Hub TASK_STATE_SUBMITTED / later COMPLETED is a
-receipt, not Director RESULT.
+receipt, not mind-turn done, not Director RESULT.
 """
 from __future__ import annotations
 

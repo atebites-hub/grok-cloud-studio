@@ -87,7 +87,7 @@ grok --resume "$PINNED_SESSION_UUID" --prompt-file "$mail" --verbatim \
 - If grok says the session is already in use, treat it as minted and `--resume` the same UUID. Do not mint a new UUID.
 - Do not fork the session. Do not continue the latest-in-cwd session. Do not mint a new UUID because harvest was empty. Do not remint because the runner switched.
 - `--max-turns 40` is grok’s own tool loop. Python does **not** parse grok stdout for function calls and does **not** run a second tool-calling loop.
-- Offset advances only after the effective runner exits 0. That same success marks the hub task `TASK_STATE_COMPLETED`. `send.sh` / hub enqueue is `TASK_STATE_SUBMITTED`. A failed runner leaves mail queued (offset unchanged, task not completed).
+- Offset advances only after the effective runner exits 0. That same success marks the hub task `TASK_STATE_COMPLETED`. `send.sh` / hub enqueue is `TASK_STATE_SUBMITTED`. Hub `TASK_STATE_COMPLETED` / A2A ACK is a **receipt, not mind-turn done**. Do not treat send.sh `kind=receipt` as `MIND_TURN`. Mail is consumed only after grok/cursor runner exit 0. A runner that did not run is not success. A failed runner leaves mail queued (offset unchanged, task not completed).
 - `MIND_FAIL` logs redacted stderr (240 chars). Never print secrets.
 
 ### RESULT is duplex, not success
@@ -98,7 +98,7 @@ and may ping the caller (`A2A_REPLY`). That ping must succeed: skipSeat `donald`
 no shipped Agent Card, so duplex maps `donald` → `floor-ops` then `orchestrator`
 instead of POSTing a hub 404. A missed ping does not fail the task reply.
 Hub enqueue is `TASK_STATE_SUBMITTED`; later `TASK_STATE_COMPLETED` / send.sh ACK is a
-protocol receipt (not this mechanic).
+protocol receipt, not mind-turn done (not this mechanic).
 
 Directors print:
 
@@ -131,7 +131,8 @@ Forced `GCS_MIND_RUNNER=grok` or `GCS_MIND_RUNNER=cursor` does **not** flip
 (and does not rewrite `mind/runner`). Missing `mind/runner` under auto starts
 as grok; a successful auto turn writes the runner that won.
 
-Do not consume/advance `offset` unless the effective runner exits 0. If the
+Do not consume/advance `offset` unless the effective runner exits 0. Hub
+COMPLETE / A2A ACK is a receipt, not that success. If the
 retry also fails, keep today’s `MIND_FAIL` / 2s runner-fail sleep (do not
 tight-loop faster). Do not fork sessions. Do not become a 45s assigner. Do
 not set `GROK_BIN=cursor-grok`. Do not reuse `mind/session` (that UUID is
