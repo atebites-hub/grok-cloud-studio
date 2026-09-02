@@ -18,7 +18,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     { name: "cloud_launch", description: "Launch Extra High grunt", inputSchema: { type: "object", properties: { prompt: { type: "string" }, name: { type: "string" } }, required: ["prompt"] } },
     { name: "cloud_list", description: "List Extra High agents. Each row prints agent status and latest-run runStatus (RUNNING vs FINISHED). ACTIVE+FINISHED leftovers are not live workers.", inputSchema: { type: "object", properties: { limit: { type: "string" } } } },
-    { name: "cloud_status", description: "Status for bc-id", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+    { name: "cloud_status", description: "Status for bc-id. Prints agent status and latest-run runStatus (RUNNING vs FINISHED). ACTIVE+FINISHED leftovers are not live workers.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
     { name: "cloud_result", description: "Result JSON for bc-id", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
     { name: "cloud_followup", description: "Follow-up on bc-id", inputSchema: { type: "object", properties: { id: { type: "string" }, prompt: { type: "string" } }, required: ["id", "prompt"] } },
   ],

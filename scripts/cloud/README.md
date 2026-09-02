@@ -21,7 +21,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus` |
-| `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
+| `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run; prints `status=` and `runStatus=` (`RUNNING` vs `FINISHED`) |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
 | `result-cloud-agent.sh <bc-id>` | Result/context JSON |
@@ -134,6 +134,8 @@ Cloud agents are durable membership. `GET /v1/agents` `status` stays `ACTIVE` un
 REST resolves `latestRunId` via `GET /v1/agents/{id}/runs/{runId}` (`scripts/cloud/list_rows.py`). SDK uses `Agent.listRuns`. A missing or failed run fetch prints `runStatus=none`.
 
 Live workers are `runStatus=RUNNING`. Leftover `status=ACTIVE` + `runStatus=FINISHED` is membership, not a spinning worker.
+
+`status.sh` / `status-cloud-agent.sh` print the same `status=` / `runStatus=` tokens for one agent. REST compact reuses `list_rows.format_list_row` (unwrap `{agent:}` / `{run:}`). A missing or failed run fetch prints `runStatus=none`.
 
 ## Rules
 

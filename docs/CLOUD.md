@@ -50,6 +50,8 @@ Fail-closed (LIV-67 / LIV-69): create **and** send/followup always pin grok-4.6 
 
 `scripts/cloud/list.sh` / `list-cloud-agents.sh` print agent `status` (membership, often `ACTIVE`) and latest-run `runStatus` (`RUNNING` vs `FINISHED`). Agent `ACTIVE` is not a live worker. Leftover `ACTIVE`+`FINISHED` must not count as live.
 
+`scripts/cloud/status.sh` / `status-cloud-agent.sh` print the same `status=` and `runStatus=` tokens for one bc-id. REST compact unwraps `{agent:}` / `{run:}` envelopes. A missing or failed latest-run GET (including HTTP 404) prints `runStatus=none`. SDK `status.ts` already printed `runStatus=`. This is independent of MCP `cloud_list`.
+
 ## Directors-spawn law (LIV-41)
 
 Directors and leads spawn specialists only via
