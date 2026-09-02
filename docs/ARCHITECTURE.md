@@ -64,7 +64,7 @@ See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / 
 
 | Path | When |
 |---|---|
-| Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`) |
+| Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`). Empty GitHub leftover-green is not MERGE_REQUEST-ready; require pasted pytest -q + secret_scan. |
 | Webhook | `GCS_WEBHOOK_SECRET` set and `webhook-harness.sh serve` |
 | Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook). Dead `waiter_pid` is evicted on `fleet.jsonl` before notify-once. |
 

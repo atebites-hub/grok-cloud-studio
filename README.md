@@ -104,6 +104,8 @@ python3 scripts/secret_scan.py
 
 GitHub Actions (`.github/workflows/ship-gate.yml`) runs the same two commands on every pull request via `scripts/ci/ship-gate.sh`. The job fails unless pytest prints `N passed` with N≥1 and `secret_scan=clean`. It does not use leftover-green `--override-ini`, and it does not launch Bot CloudAgent.
 
+Directors and QA: empty GitHub leftover-green (`MERGEABLE` with `check_runs=[]`) is not a ship-gate. `MERGE_REQUEST` must paste the two command outputs. `python3 scripts/cloud/pr_evidence.py judge` fail-closes without that paste. Do not squash-merge CONFLICTING PRs.
+
 The secret scan fails closed on credentials, private-key blocks, and product lore that does not belong in this public control plane.
 
 ## License
