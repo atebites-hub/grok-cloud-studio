@@ -342,8 +342,27 @@ def test_wipe_and_agents_name_liv84_catalog_gate_not_leak_sentry() -> None:
         assert "sentry" in low, label
         assert "fail-closed" in low or "fail closed" in low, label
         assert "doctor" in low and "recover" in low, label
-        assert "leftover-green" not in low, label
-        assert "empty github" not in low, label
+        # #165 names leftover-green in the AGENTS ship-gate bullet. Scope
+        # this folklore ban to LIV-84 / Higgsfield catalog-gate lines.
+        gate_lines = [
+            line
+            for line in text.splitlines()
+            if "liv-84" in line.lower()
+            or "liv84" in line.lower()
+            or (
+                "higgsfield" in line.lower()
+                and (
+                    "fail-closed" in line.lower()
+                    or "fail closed" in line.lower()
+                    or "catalog" in line.lower()
+                    or "remint" in line.lower()
+                )
+            )
+        ]
+        gate_blob = "\n".join(gate_lines)
+        assert gate_blob, label
+        assert "leftover-green" not in gate_blob.lower(), label
+        assert "empty github" not in gate_blob.lower(), label
         assert FAKE_HF_KEY not in text
         assert FAKE_DSN not in text
     assert "catalog" in wipe.lower() or "mcp.json" in wipe
