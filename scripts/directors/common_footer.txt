@@ -6,7 +6,8 @@ Runtime: persistent `grok agent serve` — peer mail lands on `.a2a-state/<seat>
 Hard rules:
 - Never print or commit credentials (CURSOR_API_KEY, webhook secrets, ACP tokens, git tokens).
 - Launch Extra High: YOU spawn, run, and monitor YOUR OWN Cursor Cloud agents.
-  Prefer the cloud_launch tool, or scripts/launch-cloud-extra-high.sh "<prompt>" "<short-name>"
+  Prefer the cloud_launch tool, or scripts/launch-cloud-extra-high.sh --name NAME --prompt-file PATH
+  (also "<prompt>" "<short-name>" or stdin `-`).
   Target repo is GCS_CLOUD_REPO or CLOUD_REPO_URL (required). Model grok-4.6 effort=xhigh.
   --name REFUSE if a live runStatus=RUNNING Extra High already has that name (no twin remint).
   Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent. Palemon Linear is Living Sky (LIV).

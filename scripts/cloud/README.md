@@ -19,6 +19,8 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 |---|---|
 | `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK`. **REFUSE** if a live `runStatus=RUNNING` agent already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Never Bot CloudAgent. |
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
+| `../launch-cloud-extra-high.sh --name NAME --prompt-file PATH` | Same, prompt from a file (not stuffed on argv) |
+| `../launch-cloud-extra-high.sh --name NAME -` | Same, prompt from stdin |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus` |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
@@ -40,6 +42,8 @@ Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 - `repos[0].url` from **`GCS_CLOUD_REPO` or `CLOUD_REPO_URL`** (required; fail closed)
 - `repos[0].startingRef` from `GCS_CLOUD_REF` / `CLOUD_REPO_REF` / `CURSOR_CLOUD_REF` (default `main`)
 - `autoCreatePR = true`
+
+Prompt sources (exactly one): argv text, stdin `-`, or `--prompt-file PATH` (readable file; empty/whitespace is `CLOUD_LAUNCH_ERR`). Mixing `--prompt-file` with argv text or stdin `-` is `CLOUD_LAUNCH_ERR`.
 
 Directors-spawn law (LIV-41): if **playability** work is in progress and
 RUNNING Extra High count for `GCS_CLOUD_REPO` is below 8, cloud mind MUST
@@ -99,7 +103,8 @@ export GCS_CLOUD_REPO="https://github.com/example/your-repo"
 #    --name REFUSE if a live runStatus=RUNNING Extra High already has that name
 #    (no twin remint). Leftover ACTIVE+FINISHED does not block.
 #    Never Bot CloudAgent (orchestrator/donald is send.sh). Palemon Linear is Living Sky (LIV).
-scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." "seat-short-name"
+scripts/launch-cloud-extra-high.sh --name seat-short-name --prompt-file /path/to/prompt.txt
+# or: scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." "seat-short-name"
 # → CLOUD_LAUNCH_OK id=bc-… run=run-… url=…
 # waiter pings this seat when the run is terminal — do not block on watch
 

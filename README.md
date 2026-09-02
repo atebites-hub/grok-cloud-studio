@@ -54,6 +54,7 @@ Launch Extra High (requires `CURSOR_API_KEY` in the environment or `~/.config/cu
 ```bash
 export GCS_CLOUD_REPO="https://github.com/example/your-repo"
 scripts/launch-cloud-extra-high.sh "Implement the assigned outcome. Open a PR." "floor-demo"
+# or: scripts/launch-cloud-extra-high.sh --name floor-demo --prompt-file /path/to/prompt.txt
 # CLOUD_LAUNCH_OK id=bc-…  — waiter pings the owning seat when the run finishes
 ```
 
