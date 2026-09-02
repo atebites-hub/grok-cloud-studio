@@ -191,9 +191,14 @@ def test_maintainer_kit_scripts_exist_and_are_executable() -> None:
 
 
 def test_kit_does_not_twin_shepherd_or_seat_mcp() -> None:
+    """GCS #112 is fleet-shepherd TASKBOARD_HEALTH. The kit must not be that process."""
     shepherd = SHEPHERD.read_text(encoding="utf-8")
-    assert "TASKBOARD_HEALTH" not in shepherd
-    assert "_probe_taskboard_health" not in shepherd
+    assert "TASKBOARD_HEALTH" in shepherd
+    assert "_probe_taskboard_health" in shepherd
+    assert "maintainer.sh" not in shepherd
+    assert "health-taskboard.sh" not in shepherd
+    assert "start-taskboard.sh" not in shepherd
+    assert "install-grok-mcp" not in shepherd
     for path in (MAINTAINER, HEALTH_TB):
         text = path.read_text(encoding="utf-8")
         assert "install-grok-mcp" not in text
@@ -207,6 +212,8 @@ def test_kit_does_not_twin_shepherd_or_seat_mcp() -> None:
         assert "echo $CURSOR_API_KEY" not in text
         assert "LINEAR_API_KEY=" not in text or "LINEAR_API_KEY=\n" in text
         assert PRIVATE_GAME not in text
+        assert "result-cloud-agent.sh" not in text
+        assert "sweep_stale_waiters" not in text
     grok_mcp = INSTALL_GROK_MCP.read_text(encoding="utf-8")
     assert "health-taskboard.sh" not in grok_mcp
     assert "maintainer.sh" not in grok_mcp
