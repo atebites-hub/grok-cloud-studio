@@ -535,6 +535,127 @@ def grok_cli_argv(
     return argv
 
 
+class GrokMindSpawnError(ValueError):
+    """Grok subprocess argv is not pinned mind/session + mind/mail.txt."""
+
+
+GROK_SPAWN_REFUSED_FLAGS = (
+    "-p",
+    "--print",
+    "--single",
+    "--" + "continue",
+    "--" + "fork-session",
+)
+GROK_SPAWN_VALUE_FLAGS = (
+    "--resume",
+    "--session-id",
+    "--prompt-file",
+    "--output-format",
+    "--permission-mode",
+    "--max-turns",
+    "--model",
+    "--reasoning-effort",
+    "--agent",
+    "--cwd",
+)
+
+
+def grok_argv_flag_value(argv: list[str], flag: str) -> str | None:
+    """Return `--flag value` or `--flag=value`. Distinct from #95 space-only parse."""
+    prefix = flag + "="
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == flag:
+            if i + 1 >= len(argv):
+                return None
+            return argv[i + 1]
+        if tok.startswith(prefix):
+            return tok[len(prefix) :]
+        i += 1
+    return None
+
+
+def _grok_argv_has_flag(argv: list[str], flag: str) -> bool:
+    if flag in argv:
+        return True
+    prefix = flag + "="
+    return any(tok.startswith(prefix) for tok in argv)
+
+
+def _positional_grok_tokens(argv: list[str]) -> list[str]:
+    """Tokens that are neither the binary nor a known flag/value."""
+    leftover: list[str] = []
+    i = 1 if argv else 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok.startswith("--") and "=" in tok:
+            flag = tok.partition("=")[0]
+            if flag in GROK_SPAWN_VALUE_FLAGS:
+                i += 1
+                continue
+            leftover.append(tok)
+            i += 1
+            continue
+        if tok in GROK_SPAWN_VALUE_FLAGS:
+            i += 2
+            continue
+        if tok.startswith("-"):
+            i += 1
+            continue
+        leftover.append(tok)
+        i += 1
+    return leftover
+
+
+def assert_pinned_prompt_file_spawn(
+    argv: list[str],
+    *,
+    session_id: str,
+    mail_path: Path,
+) -> list[str]:
+    """Fail-closed spawn: --prompt-file is seat mail.txt; pin equals mind/session.
+
+    Construction clap (`validate_grok_mind_argv` / OPEN #95) does not bind
+    argv to disk. This hook does. Cursor CLI `-p` must not go through here.
+    """
+    if not argv:
+        raise GrokMindSpawnError("empty grok spawn argv")
+    sid = (session_id or "").strip()
+    if not sid or sid == "-1":
+        raise GrokMindSpawnError("grok spawn pin must be a UUID, not -1")
+    for flag in GROK_SPAWN_REFUSED_FLAGS:
+        if _grok_argv_has_flag(argv, flag):
+            raise GrokMindSpawnError(f"grok spawn forbids {flag}")
+    has_resume = _grok_argv_has_flag(argv, "--resume")
+    has_session = _grok_argv_has_flag(argv, "--session-id")
+    if has_resume == has_session:
+        raise GrokMindSpawnError(
+            "grok spawn requires exactly one of --resume or --session-id"
+        )
+    pin_flag = "--resume" if has_resume else "--session-id"
+    pin_val = (grok_argv_flag_value(argv, pin_flag) or "").strip()
+    if not pin_val:
+        raise GrokMindSpawnError(f"grok spawn {pin_flag} requires a UUID")
+    if pin_val == "-1":
+        raise GrokMindSpawnError("grok spawn forbids resume -1 / latest-in-cwd")
+    if pin_val != sid:
+        raise GrokMindSpawnError("grok spawn pin must equal mind/session")
+    mail = grok_argv_flag_value(argv, "--prompt-file")
+    if not mail or not str(mail).strip() or str(mail).strip() == "-":
+        raise GrokMindSpawnError("grok spawn requires --prompt-file path")
+    got = Path(mail).resolve()
+    want = Path(mail_path).resolve()
+    if got != want:
+        raise GrokMindSpawnError(
+            "grok spawn --prompt-file must be seat mind/mail.txt"
+        )
+    leftover = _positional_grok_tokens(argv)
+    if leftover:
+        raise GrokMindSpawnError("grok spawn forbids positional prompt")
+    return list(argv)
+
+
 def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str, Any]:
     grok_home = grok_home_dir(seat)
     session_id = load_or_create_session(seat)
@@ -557,6 +678,17 @@ def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str,
             mail_path=mail_path,
             agent=agent,
         )
+        try:
+            argv = assert_pinned_prompt_file_spawn(
+                argv, session_id=session_id, mail_path=mail_path
+            )
+        except GrokMindSpawnError as e:
+            return {
+                "text": f"PLUGIN_ERR grok spawn: {e}",
+                "returncode": 2,
+                "stderr": redact(str(e)),
+                "backend": "grok",
+            }
         try:
             proc = subprocess.run(
                 argv,
