@@ -85,4 +85,4 @@ archive mutation. Never Black Swan Money. Operator notes: `docs/studio/LINEAR.md
 
 Generic seat prompts ship in `prompts/`. Product floors keep `*_director_prompt.txt` under `docs/studio/directors/`. `GCS_PROMPT_DIR` / `PROMPTS_DIR` override the default directory. When `$ROOT/prompts` is missing or has no `*_director_prompt.txt` files, daemons default to `$ROOT/docs/studio/directors`. `write_agent_profile` / `launch-director.sh` resolve `${seat}_director_prompt.txt` from either layout (including `floor_ops_director_prompt.txt`) so remint does not fail when only the docs tree is populated. `install.sh` links docs files into `prompts/` when missing.
 
-Common Director footer: `scripts/directors/common_footer.txt`.
+Common Director footer: `scripts/directors/common_footer.txt`. Every mind turn, after real evidence, stamps Living Sky Linear (`LIV-*`) via `save_comment`. Extra High is the grok-4.6 xhigh effort pin for Cursor Cloud specialists, not a product name. Spawn via `scripts/launch-cloud-extra-high.sh`.

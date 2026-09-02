@@ -104,6 +104,9 @@ printf 'DB=%s\n' "${GCS_TASKBOARD_DB}"
     assert "--db" in text, text
     assert "mcp" in text, text
     assert "[mcp_servers.taskboard]" in text, text
+    assert "[mcp_servers.linear]" in text, text
+    assert "https://mcp.linear.app/mcp" in text, text
+    assert "${LINEAR_API_KEY}" in text, text
     assert f'command = "{binary.resolve()}"' in text or f"command = '{binary.resolve()}'" in text or str(
         binary.resolve()
     ) in text
@@ -134,6 +137,9 @@ export_seat_serve_env floor
     assert str(db) in text
     assert str(binary.resolve()) in text
     assert "[mcp_servers.taskboard]" in text
+    assert "[mcp_servers.linear]" in text
+    assert "https://mcp.linear.app/mcp" in text
+    assert "${LINEAR_API_KEY}" in text
 
 
 def test_default_grok_home_under_state_dir_gets_mcp(tmp_path: Path) -> None:
@@ -156,6 +162,9 @@ install_seat_identity floor
     assert str(db) in text
     assert str(binary.resolve()) in text
     assert "[mcp_servers.taskboard]" in text
+    assert "[mcp_servers.linear]" in text
+    assert "https://mcp.linear.app/mcp" in text
+    assert "${LINEAR_API_KEY}" in text
 
 
 def test_mcp_install_is_idempotent_and_preserves_other_toml(tmp_path: Path) -> None:
@@ -185,6 +194,8 @@ install_seat_grok_mcp floor
     assert parsed["cli"]["use_leader"] is True
     assert parsed["compat"]["cursor"]["mcps"] is False
     assert parsed["mcp_servers"]["taskboard"]["command"]
+    assert parsed["mcp_servers"]["linear"]["url"] == "https://mcp.linear.app/mcp"
+    assert text.count("[mcp_servers.linear]") == 1, text
 
 
 def test_mcp_install_idempotent_when_unmarked_tables_already_exist(

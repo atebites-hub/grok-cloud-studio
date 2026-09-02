@@ -42,9 +42,13 @@ mcps = false
 [mcp_servers.taskboard]
 command = "/absolute/path/to/taskboard"
 args = ["--db", "/absolute/path/to/taskboard.db", "mcp"]
+
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+headers = { Authorization = "Bearer ${LINEAR_API_KEY}" }
 ```
 
-That is the grok serve config. Isolated `GROK_HOME` does not inherit `~/.grok/config.toml`. Cursor `${workspaceFolder}` never expands under grok; grok must not load `.cursor/mcp.json`. Seat start sets `[compat.cursor] mcps = false`. `./doctor.sh` WARNs if a seat `config.toml` still contains `${workspaceFolder}`, or if an **existing** catalog is missing `[mcp_servers.taskboard]` / is not `taskboard --db <absolute db> mcp` (`scripts/directors/seat_grok_mcp.py lint`; tokens `missing-taskboard-table`, `args-not-db-mcp`, `db-not-absolute`). Doctor does not write factory catalogs and does not remint a live serve. Refreshing MCP config does not remint a live serve.
+That is the grok serve / grok mind config. Isolated `GROK_HOME` does not inherit `~/.grok/config.toml`. Cursor `${workspaceFolder}` never expands under grok; grok must not load `.cursor/mcp.json`. Seat start sets `[compat.cursor] mcps = false`. Living Sky Linear HTTP stays in this GROK_HOME catalog (`save_comment` on `LIV-*`). Do not copy GROK_HOME into Cursor CLI. `./doctor.sh` WARNs if a seat `config.toml` still contains `${workspaceFolder}`, or if an **existing** catalog is missing `[mcp_servers.taskboard]` / is not `taskboard --db <absolute db> mcp` (`scripts/directors/seat_grok_mcp.py lint`; tokens `missing-taskboard-table`, `args-not-db-mcp`, `db-not-absolute`). Doctor does not write factory catalogs and does not remint a live serve. Refreshing MCP config does not remint a live serve.
 
 Cursor CLI uses a **second catalog**: checkout `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (`taskboard --db $DB mcp`) **and** Linear HTTP (`https://mcp.linear.app/mcp`, `Bearer ${LINEAR_API_KEY}`). Linear + taskboard only. Do not copy `GROK_HOME` MCP into Cursor CLI. Two catalogs. Never fake a transfer. Studio Linear is Living Sky (linear.app/livingsky, team Livingsky / LIV). NEVER Black Swan Money. No Agent Kanban. No secrets, private GitHub URLs, or MagicDNS hostnames in that file.
 

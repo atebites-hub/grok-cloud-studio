@@ -37,6 +37,7 @@ import signal
 import subprocess
 import sys
 import time
+import tomllib
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -56,7 +57,7 @@ ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 
 _SECRET_ASSIGN_RE = re.compile(
-    r"(?i)\b(CURSOR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
+    r"(?i)\b(CURSOR_API_KEY|LINEAR_API_KEY|GCS_WEBHOOK_SECRET|Authorization|Bearer|"
     r"server-key|ACP_SECRET|api[_-]?key)\s*[=:]\s*\S+"
 )
 _SESSION_IN_USE_RE = re.compile(
@@ -74,13 +75,15 @@ GROK_MIND_REASONING_EFFORT = "xhigh"  # extra-high
 RESULT_LINE_HINT = (
     "RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line>"
 )
+LINEAR_MCP_URL = "https://mcp.linear.app/mcp"
+MISSING_LINEAR_CATALOG = "missing-linear-catalog"
 
 
 @dataclass(frozen=True)
 class Plugin:
     """Fallback helper callable plus JSON schema. Not a second agent loop.
 
-    Grok sees tools via builtins, seat GROK_HOME taskboard MCP, and
+    Grok sees tools via builtins, seat GROK_HOME taskboard + Linear MCP, and
     `grok plugin install --trust` of `plugins/studio-mind` into that GROK_HOME.
     This dict stays for `call_plugin` / tests / the studio-mind MCP server.
     """
@@ -117,6 +120,67 @@ def grok_home_dir(seat: str) -> Path:
     d = STATE_DIR / seat / "grok-home"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _linear_headers_ok(headers: Any) -> bool:
+    if not isinstance(headers, dict):
+        return False
+    auth = str(headers.get("Authorization") or headers.get("authorization") or "")
+    return "Bearer" in auth and "${LINEAR_API_KEY}" in auth
+
+
+def grok_catalog_has_linear(grok_home: Path) -> bool:
+    """True when seat GROK_HOME/config.toml registers Living Sky Linear HTTP."""
+    cfg = grok_home / "config.toml"
+    if not cfg.is_file():
+        return False
+    try:
+        data = tomllib.loads(cfg.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    servers = data.get("mcp_servers")
+    if not isinstance(servers, dict):
+        return False
+    linear = servers.get("linear")
+    if not isinstance(linear, dict):
+        return False
+    if str(linear.get("url") or "") != LINEAR_MCP_URL:
+        return False
+    return _linear_headers_ok(linear.get("headers"))
+
+
+def cursor_catalog_has_linear(root: Path) -> bool:
+    """True when checkout .cursor/mcp.json is Linear HTTP (not a GROK_HOME copy)."""
+    path = root / ".cursor" / "mcp.json"
+    if not path.is_file():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    servers = data.get("mcpServers")
+    if not isinstance(servers, dict):
+        return False
+    linear = servers.get("linear")
+    if not isinstance(linear, dict):
+        return False
+    if str(linear.get("url") or "") != LINEAR_MCP_URL:
+        return False
+    return _linear_headers_ok(linear.get("headers"))
+
+
+def _missing_linear_catalog_result(backend: str) -> dict[str, Any]:
+    msg = (
+        f"PLUGIN_ERR {backend} catalog missing Linear MCP "
+        f"({MISSING_LINEAR_CATALOG}; {LINEAR_MCP_URL})"
+    )
+    return {
+        "text": msg,
+        "returncode": 2,
+        "stderr": MISSING_LINEAR_CATALOG,
+        "backend": backend,
+        "reason": MISSING_LINEAR_CATALOG,
+    }
 
 
 def taskboard_db() -> Path:
@@ -258,7 +322,12 @@ def wrap_mind_mail(task_id: str, context_id: str, text: str) -> str:
         "A2A_REPLY is a duplex caller ping — never launch a Cursor Cloud agent "
         "or Bot CloudAgent for it. You own Extra High spawn: call cloud_launch "
         "or exec scripts/launch-cloud-extra-high.sh. Never grok --resume for Cloud "
-        "create. Never Bot CloudAgent. Extra High is grok-4.6 xhigh fast=false.\n"
+        "create. Never Bot CloudAgent. Extra High is the grok-4.6 xhigh effort pin, "
+        "not a product (fast=false).\n"
+        "Living Sky Linear: every mind turn, after real evidence, save_comment on LIV-* "
+        "(linear.app/livingsky, team Livingsky / LIV). NEVER Black Swan. "
+        "Do not wait for Donald DIY. Grok catalog is GROK_HOME mcp_servers.linear; "
+        "Cursor catalog is .cursor/mcp.json Linear+taskboard only.\n"
         f"MESSAGE:\n{text}\n"
     )
 
@@ -685,6 +754,8 @@ def assert_pinned_prompt_file_spawn(
 
 def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str, Any]:
     grok_home = grok_home_dir(seat)
+    if not grok_catalog_has_linear(grok_home):
+        return _missing_linear_catalog_result("grok")
     session_id = load_or_create_session(seat)
     minted = session_is_minted(seat)
     mail_path = mind_dir(seat) / "mail.txt"
@@ -966,6 +1037,8 @@ def _run_cursor_cmd(
 
 def cursor_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str, Any]:
     """One Cursor CLI turn. Pins mind/cursor-session, not grok mind/session."""
+    if not cursor_catalog_has_linear(ROOT):
+        return _missing_linear_catalog_result("cursor")
     mind_dir(seat)
     mail_path = mind_dir(seat) / "mail.txt"
     mail_path.write_text(prompt, encoding="utf-8")
@@ -1105,14 +1178,19 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
 
         assistant_text, returncode, stderr = _runner_payload(raw)
         if returncode != 0:
+            reason = "runner-fail"
+            if isinstance(raw, dict) and raw.get("reason"):
+                reason = str(raw.get("reason"))
+            elif MISSING_LINEAR_CATALOG in f"{assistant_text}\n{stderr}":
+                reason = MISSING_LINEAR_CATALOG
             print(
-                f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail "
+                f"MIND_FAIL seat={seat} task={task_id} reason={reason} "
                 f"rc={returncode} stderr={stderr_log_snippet(stderr)}",
                 file=sys.stderr,
             )
             return {
                 "consumed": 0,
-                "reason": "runner-fail",
+                "reason": reason,
                 "task_id": task_id,
                 "returncode": returncode,
             }
@@ -1185,6 +1263,14 @@ def wait_for_inbox(seat: str, timeout: float = 30.0) -> None:
         time.sleep(0.25)
 
 
+def should_backoff_failed_turn(result: dict[str, Any]) -> bool:
+    """Unconsumed runner/catalog failures must not tight-loop run_forever."""
+    if result.get("consumed"):
+        return False
+    reason = str(result.get("reason") or "")
+    return reason in {"runner-fail", MISSING_LINEAR_CATALOG}
+
+
 def run_forever(seat: str) -> int:
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
@@ -1205,7 +1291,7 @@ def run_forever(seat: str) -> int:
         result = process_once(seat)
         if result.get("consumed"):
             continue
-        if result.get("reason") == "runner-fail":
+        if should_backoff_failed_turn(result):
             end = time.time() + 2.0
             while not stopping and time.time() < end:
                 time.sleep(0.25)
