@@ -315,7 +315,8 @@ def test_recover_fails_closed_before_start_when_cursor_catalog_merges(
     state = tmp_path / "a2a-state"
     state.mkdir(parents=True)
     live = state / "art" / ".cursor" / "mcp.json"
-    _write_json(live, _merged_higgsfield_mcp(literal=True))
+    # Expansion is not a #143 leak; recover must still fail closed on catalog merge.
+    _write_json(live, _merged_higgsfield_mcp())
     env = _base_env(tmp_path, state)
     env["GCS_A2A_PORT"] = str(_free_port())
     env["GCS_TASKBOARD_UI_PORT"] = str(_free_port())
