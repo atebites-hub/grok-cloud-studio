@@ -30,6 +30,7 @@ if str(_CLOUD) not in sys.path:
 from fleet_ledger import (
     is_orphan,
     load_entries,
+    normalize_run_status,
     notify_owner,
     sweep_stale_waiters,
     write_entries,
@@ -230,7 +231,7 @@ def _cycle() -> int:
                 dirty = True
                 _log(f"SHEPHERD_ORPHAN_EMPTY seat={seat_dir.name} id={bc_id}")
                 continue
-            run_status = str(payload.get("runStatus") or payload.get("status") or "")
+            run_status = normalize_run_status(payload.get("runStatus") or payload.get("status") or "")
             e["run_status"] = run_status
             e["pr_url"] = payload.get("prUrl")
             e["last_probe"] = _now()

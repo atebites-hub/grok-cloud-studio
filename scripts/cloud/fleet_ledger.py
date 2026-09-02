@@ -52,6 +52,14 @@ TERMINAL = frozenset({"FINISHED", "ERROR", "CANCELLED", "EXPIRED"})
 MERGE_READY = "ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST"
 
 
+def normalize_run_status(value: object) -> str:
+    """Map Cursor/SDK run status to GCS tokens. US `CANCELED` → `CANCELLED`."""
+    raw = str(value or "").strip().upper()
+    if raw == "CANCELED":
+        return "CANCELLED"
+    return raw or "unknown"
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -354,10 +362,20 @@ def notify_owner(
 
 
 def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
-    run_status = str(payload.get("runStatus") or payload.get("status") or "unknown")
+    run_status = normalize_run_status(
+        payload.get("runStatus") or payload.get("status") or "unknown"
+    )
     pr = payload.get("prUrl") or "none"
     name = payload.get("name") or ""
     url = payload.get("url") or f"https://cursor.com/agents/{bc_id}"
+    if run_status == "CANCELLED":
+        # Latest run aborted. prUrl may still exist from git.branches — not merge-ready.
+        return (
+            f"FLEET_DONE / INSPECT: Extra High {bc_id} ({name}) "
+            f"runStatus=CANCELLED pr={pr} url={url}. "
+            f"Inspect with scripts/cloud/result-cloud-agent.sh {bc_id}; "
+            f"follow-up-or-close; do not ignore. RESULT."
+        )
     if run_status == "FINISHED":
         if should_hold_empty_checks(payload):
             check_runs = payload.get("checkRuns")
@@ -440,7 +458,9 @@ def complete(
                 row = entry
                 break
     assert row is not None
-    row["run_status"] = str(payload.get("runStatus") or payload.get("status") or "")
+    row["run_status"] = normalize_run_status(
+        payload.get("runStatus") or payload.get("status") or ""
+    )
     row["pr_url"] = payload.get("prUrl")
     if payload.get("emptyChecks") is not None or payload.get("empty_checks") is not None:
         row["empty_checks"] = payload_empty_checks(payload)

@@ -27,7 +27,7 @@ from urllib.parse import urlparse
 _CLOUD = Path(__file__).resolve().parent
 if str(_CLOUD) not in sys.path:
     sys.path.insert(0, str(_CLOUD))
-from fleet_ledger import find_by_bc, notify_owner  # noqa: E402
+from fleet_ledger import find_by_bc, normalize_run_status, notify_owner  # noqa: E402
 
 HOST = os.environ.get("GCS_WEBHOOK_HOST", "127.0.0.1")
 PORT = int(os.environ.get("GCS_WEBHOOK_PORT", "8788"))
@@ -81,12 +81,12 @@ def extract_status(payload: dict[str, Any]) -> str:
     for key in ("runStatus", "status"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip().upper()
+            return normalize_run_status(value)
     run = payload.get("run")
     if isinstance(run, dict):
         value = run.get("status") or run.get("runStatus")
-        if isinstance(value, str):
-            return value.strip().upper()
+        if isinstance(value, str) and value.strip():
+            return normalize_run_status(value)
     return ""
 
 

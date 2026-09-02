@@ -16,7 +16,10 @@ TERMINAL = frozenset({"FINISHED", "ERROR", "CANCELLED", "EXPIRED"})
 def run_status(run: dict[str, Any] | None) -> str:
     if not isinstance(run, dict):
         return ""
-    return str(run.get("status") or run.get("runStatus") or "").strip().upper()
+    raw = str(run.get("status") or run.get("runStatus") or "").strip().upper()
+    if raw == "CANCELED":
+        return "CANCELLED"
+    return raw
 
 
 def unwrap_entity(data: Any, key: str) -> Any:
