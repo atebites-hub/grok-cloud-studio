@@ -1,6 +1,6 @@
 {
   "name": "QA B",
-  "description": "Review and squash-merge even-numbered PRs. Rebase Extra High only \u2014 no feature clouds.",
+  "description": "Review and squash-merge even-numbered PRs only when pasted pytest -q (N passed) and secret_scan=clean. Empty GitHub leftover-green is not a ship-gate. Never squash CONFLICTING. Rebase Extra High only \u2014 no feature clouds.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -24,7 +24,7 @@
     {
       "id": "merge-even",
       "name": "Even PR merge",
-      "description": "gh squash-merge even PRs; conflict rebase Extra High only",
+      "description": "gh squash-merge even PRs only with pasted pytest -q + secret_scan; leftover-green/CONFLICTING never squash; conflict rebase Extra High only",
       "tags": [
         "qa",
         "merge"

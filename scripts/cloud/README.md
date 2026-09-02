@@ -25,6 +25,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
 | `result-cloud-agent.sh <bc-id>` | Result/context JSON |
+| `pr_evidence.py judge` | MERGE_REQUEST paste gate: leftover-green empty GitHub checks are not ship-gate; require pasted `pytest -q` (`N passed`) + `secret_scan=clean`. CONFLICTING/DIRTY never squash. Verdict JSON only (never prints tokens). |
 | `webhook-harness.sh serve \| simulate` | Signed webhook receiver / local POST |
 
 Direct SDK CLI: `scripts/cloud/sdk/run.sh <launch|list|status|watch|followup|result|wait-notify> …`
@@ -108,6 +109,10 @@ scripts/cloud/status-cloud-agent.sh bc-…
 
 # 3) On FLEET_DONE / PR_READY
 scripts/cloud/result-cloud-agent.sh bc-…
+# HOLD MERGE_REQUEST until the Extra High RESULT / PR body pastes
+# .venv/bin/pytest -q (N passed) and python3 scripts/secret_scan.py
+# (secret_scan=clean). Empty GitHub leftover-green is not a ship-gate.
+# python3 scripts/cloud/pr_evidence.py judge
 
 # 4) Follow-up if needed (agent idle)
 scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check."

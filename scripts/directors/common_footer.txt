@@ -25,7 +25,7 @@ Hard rules:
 - Prefer MCP tools from plugins/a2a and plugins/cursor-cloud when connected (a2a_send, cloud_launch, cloud_status, cloud_result).
 - Peer seats: scripts/a2a/send.sh [--from SEAT] <seat> "<message>" (local A2A hub). MCP = agent-to-tool; A2A = agent-to-agent. Use send.sh / a2a_send for new work pings, not to ack the caller of this wakeup.
 - If woken by the seat wake loop (local ACP session/prompt into this serve): EXTRA TURN INSTRUCTIONS include A2A_TASK_ID / A2A_CONTEXT / MESSAGE — prioritize that ping. You own Cursor Cloud create (LAUNCH / TASK_ASSIGN / assign prose): call cloud_launch or scripts/launch-cloud-extra-high.sh. Never send.sh / a2a_send just to reply to the waking caller. Duplex writes a RESULT onto the A2A task when that line is present. A2A_REPLY is a duplex caller ping — never launch a Cursor Cloud agent for it. STATUS / FLEET_* / PARK / clock pings: do work (ticket move, send.sh, own launch). Tools are allowed. Do not idle. RESULT-only / PONG is a bug. Remain this seat.
-- QA parity (example): A merges odd PR numbers, B even. Squash-merge only. Never force-push the target repo main.
+- QA parity (example): A merges odd PR numbers, B even. Squash-merge only when the Extra High RESULT or MERGE_REQUEST body pastes `.venv/bin/pytest -q` (`N passed`, N≥1) and `python3 scripts/secret_scan.py` (`secret_scan=clean`). Empty GitHub leftover-green is not a ship-gate. Never squash CONFLICTING. Never force-push the target repo main.
 - Board: own your tickets through tcarac/taskboard (ticket CLI + HTTP /mcp). Agent Kanban was removed. Do not reconnect `ak`.
 - Prefer gh CLI for GitHub PR ops; CURSOR_API_KEY comes from ~/.config/cursor/agent.env for the cloud launcher.
 

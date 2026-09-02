@@ -8,6 +8,10 @@ Each owning seat keeps `.a2a-state/<seat>/fleet.jsonl` rows:
 The per-launch waiter is the primary completion path. fleet-shepherd is an
 orphan-only safety net (no live waiter_pid, never notified_by=waiter).
 
+FLEET_DONE HOLDs GitHub PRs until Extra High RESULT / MERGE_REQUEST pastes
+`.venv/bin/pytest -q` (`N passed`) and `secret_scan=clean`. Empty leftover-green
+GitHub checks are not a ship-gate.
+
 Presence of waiter_pid is not liveness. A pid that names a dead process is
 evicted durably (waiter_pid null, waiter_tombstone) so a reused pid cannot
 look live and shepherd can orphan-notify once.
@@ -27,6 +31,7 @@ _LIB_DIR = Path(__file__).resolve().parents[1] / "a2a"
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from lib import env_first, pid_alive, repo_root, state_root  # noqa: E402
+from pr_evidence import has_paste_evidence, paste_from_payload  # noqa: E402
 
 TERMINAL = frozenset({"FINISHED", "ERROR", "CANCELLED", "EXPIRED"})
 
@@ -245,6 +250,18 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
     name = payload.get("name") or ""
     url = payload.get("url") or f"https://cursor.com/agents/{bc_id}"
     if run_status == "FINISHED":
+        pr_is_url = pr not in {"", "none"}
+        paste = paste_from_payload(payload)
+        if pr_is_url and not has_paste_evidence(paste):
+            return (
+                f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
+                f"runStatus=FINISHED pr={pr} url={url}. "
+                f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
+                f"HOLD MERGE_REQUEST: empty GitHub leftover-green is not a "
+                f"ship-gate. Paste .venv/bin/pytest -q (N passed, N>=1) and "
+                f"python3 scripts/secret_scan.py (secret_scan=clean) before "
+                f"pinging QA. RESULT with bc-id + pr."
+            )
         return (
             f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
             f"runStatus=FINISHED pr={pr} url={url}. "

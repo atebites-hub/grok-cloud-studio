@@ -48,6 +48,8 @@ MCP `cloud_list` (`plugins/cursor-cloud`, `scripts/cloud/list_helper.py`) prints
 
 Fail-closed (LIV-67 / LIV-69): create **and** send/followup always pin grok-4.6 xhigh `fast=false`. Any `CURSOR_CLOUD_MODEL` that is not exactly `grok-4.6` is **rejected** (no create, no send). REST list/runs omit model; omitted send uses dashboard Auto (Jay saw Opus 5). Never Bot CloudAgent. Do not merge empty CI.
 
+Empty GitHub leftover-green is not MERGE_REQUEST evidence. QA squash requires pasted `.venv/bin/pytest -q` (`N passed`, N≥1) and `python3 scripts/secret_scan.py` (`secret_scan=clean`). Judge: `python3 scripts/cloud/pr_evidence.py judge`. A GitHub check named `pytest -q and secret_scan` SUCCESS is not the paste. Never squash CONFLICTING leftover PRs.
+
 `scripts/cloud/list.sh` / `list-cloud-agents.sh` print agent `status` (membership, often `ACTIVE`) and latest-run `runStatus` (`RUNNING` vs `FINISHED`). Agent `ACTIVE` is not a live worker. Leftover `ACTIVE`+`FINISHED` must not count as live.
 
 ## Directors-spawn law (LIV-41)
