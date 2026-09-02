@@ -190,7 +190,11 @@ async function restPoll(agentId: string, runId: string, apiKey: string): Promise
   throw new Error(`CLOUD_WAITER_TIMEOUT id=${agentId} lastStatus=${last}`);
 }
 
-async function latestRun(agentId: string, apiKey: string, runId?: string): Promise<Run | undefined> {
+async function latestRun(
+  agentId: string,
+  apiKey: string,
+  runId?: string,
+): Promise<{ run: Run | undefined; listed: number }> {
   const listed = await Agent.listRuns(agentId, { runtime: "cloud", apiKey, limit: 20 });
   const items = listed.items || [];
   let pinned: Run | undefined;
@@ -202,12 +206,12 @@ async function latestRun(agentId: string, apiKey: string, runId?: string): Promi
     }
   }
   const observed = waiterObserve(items as RunLike[], pinned as RunLike | undefined);
-  if (!observed) return undefined;
+  if (!observed) return { run: undefined, listed: items.length };
   const oid = String(observed.id || "");
   const fromList = items.find((row) => row.id === oid);
-  if (fromList) return fromList;
-  if (pinned && pinned.id === oid) return pinned;
-  return undefined;
+  if (fromList) return { run: fromList, listed: items.length };
+  if (pinned && pinned.id === oid) return { run: pinned, listed: items.length };
+  return { run: undefined, listed: items.length };
 }
 
 async function sdkWait(agentId: string, runId: string, apiKey: string): Promise<DirectorResult> {
@@ -217,10 +221,10 @@ async function sdkWait(agentId: string, runId: string, apiKey: string): Promise<
   const deadline = timeoutSec > 0 ? started + timeoutSec * 1000 : Number.POSITIVE_INFINITY;
   let last = "unknown";
   while (Date.now() < deadline) {
-    const run = await latestRun(agentId, apiKey, runId || undefined);
+    const { run, listed } = await latestRun(agentId, apiKey, runId || undefined);
     const runStatus = mapRunStatus(run?.status);
     last = runStatus;
-    if (run && mayFleetDone({ id: run.id, status: runStatus })) {
+    if (run && listed > 0 && mayFleetDone({ id: run.id, status: runStatus })) {
       return collectResult(agentId, run.id);
     }
     if (run && typeof run.supports === "function" && run.supports("wait")) {
