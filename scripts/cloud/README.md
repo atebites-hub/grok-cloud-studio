@@ -20,7 +20,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK`. **REFUSE** if a live `runStatus=RUNNING` agent already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Never Bot CloudAgent. |
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
-| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus` |
+| `list.sh` / `list-cloud-agents.sh [limit=20] [--occupancy]` | Newest agents; each row prints agent `status` and latest-run `runStatus`. `--occupancy` lists hive occupancy (`RUNNING`/`CREATING`) and prints `CLOUD_OCCUPANCY n=N`. Leftover `ACTIVE`+`FINISHED` is not occupancy. |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
@@ -133,7 +133,9 @@ Cloud agents are durable membership. `GET /v1/agents` `status` stays `ACTIVE` un
 
 REST resolves `latestRunId` via `GET /v1/agents/{id}/runs/{runId}` (`scripts/cloud/list_rows.py`). SDK uses `Agent.listRuns`. A missing or failed run fetch prints `runStatus=none`.
 
-Live workers are `runStatus=RUNNING`. Leftover `status=ACTIVE` + `runStatus=FINISHED` is membership, not a spinning worker.
+Live workers / hive occupancy are `runStatus=RUNNING` or `runStatus=CREATING`. Leftover `status=ACTIVE` + `runStatus=FINISHED` is membership, not a spinning worker and not occupancy.
+
+`list.sh --occupancy` prints `CLOUD_OCCUPANCY n=N` and only those in-flight rows (`CREATING` counts; `#78 --running` is a different remaining). Leftover-only fleet → `CLOUD_OCCUPANCY n=0` + `CLOUD_LIST empty`. Never Bot CloudAgent.
 
 ## Rules
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # List Cursor Cloud agents (newest first). SDK-first; REST fallback.
-# Usage: list.sh [--limit N]   or   list.sh [N]
+# Usage: list.sh [--limit N] [--occupancy]   or   list.sh [N]
 # Each row prints agent status and latest-run runStatus. Never prints API keys.
+# --occupancy lists hive occupancy only (latest-run RUNNING/CREATING).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -9,6 +10,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HERE}/_common.sh"
 
 limit="${CLOUD_LIST_LIMIT:-20}"
+occupancy=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --limit)
@@ -19,9 +21,14 @@ while [[ $# -gt 0 ]]; do
       limit="${1#--limit=}"
       shift
       ;;
+    --occupancy)
+      occupancy=1
+      shift
+      ;;
     -h|--help)
-      echo "Usage: scripts/cloud/list.sh [--limit N]"
-      echo "       scripts/cloud/list-cloud-agents.sh [limit=20]"
+      echo "Usage: scripts/cloud/list.sh [--limit N] [--occupancy]"
+      echo "       scripts/cloud/list-cloud-agents.sh [limit=20] [--occupancy]"
+      echo "  --occupancy  Extra High floor: latest-run RUNNING/CREATING only"
       exit 0
       ;;
     *)
@@ -41,7 +48,11 @@ if ! cloud_load_auth; then
   exit 1
 fi
 
-if cloud_sdk_exec list "$limit"; then
+sdk_args=("$limit")
+if [[ "$occupancy" == "1" ]]; then
+  sdk_args+=(--occupancy)
+fi
+if cloud_sdk_exec list "${sdk_args[@]}"; then
   exit "$CLOUD_SDK_RC"
 fi
 
@@ -57,4 +68,8 @@ fi
 
 # Agent.status stays ACTIVE after the latest run is terminal (stale membership).
 # Fetch each latest run so rows show runStatus (RUNNING vs FINISHED), not only ACTIVE.
-python3 "${HERE}/list_rows.py" "$CLOUD_HTTP_BODY"
+if [[ "$occupancy" == "1" ]]; then
+  python3 "${HERE}/list_rows.py" --occupancy "$CLOUD_HTTP_BODY"
+else
+  python3 "${HERE}/list_rows.py" "$CLOUD_HTTP_BODY"
+fi

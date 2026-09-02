@@ -19,7 +19,11 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-IN_FLIGHT = frozenset({"CREATING", "RUNNING"})
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+from occupancy import IN_FLIGHT, is_hive_occupancy, occupancy_report  # noqa: E402
+
 DEFAULT_API_BASE = "https://api.cursor.com"
 
 
@@ -50,7 +54,7 @@ def format_list_row(agent: dict[str, Any], run_status: str) -> str:
 
 def is_live_worker(_agent_status: str, run_status: str) -> bool:
     """True only when the latest run is in-flight. Agent ACTIVE is not enough."""
-    return map_run_status(run_status) in IN_FLIGHT
+    return is_hive_occupancy(run_status, agent_status=_agent_status)
 
 
 def _redact(text: str, key: str) -> str:
@@ -120,7 +124,7 @@ def fetch_run_status(agent_id: str, run_id: str, key: str, timeout: float) -> st
     return map_run_status(run.get("status"))
 
 
-def list_cloud_agents(*, limit: int = 20) -> tuple[str, bool]:
+def list_cloud_agents(*, limit: int = 20, occupancy_only: bool = False) -> tuple[str, bool]:
     key = load_api_key()
     if not key:
         return "error: CURSOR_API_KEY is not set", False
@@ -132,6 +136,8 @@ def list_cloud_agents(*, limit: int = 20) -> tuple[str, bool]:
         return _redact(f"error: list failed http={code or '000'}", key), False
     items = payload.get("items")
     if not isinstance(items, list) or not items:
+        if occupancy_only:
+            return "CLOUD_OCCUPANCY n=0\nCLOUD_LIST empty", True
         return "CLOUD_LIST empty", True
     lines: list[str] = []
     for item in items:
@@ -144,6 +150,8 @@ def list_cloud_agents(*, limit: int = 20) -> tuple[str, bool]:
         run_id = str(agent.get("latestRunId") or "")
         run_status = fetch_run_status(agent_id, run_id, key, timeout)
         lines.append(format_list_row(agent, run_status))
+    if occupancy_only:
+        return _redact(occupancy_report(lines).rstrip("\n"), key), True
     text = "\n".join(lines) if lines else "CLOUD_LIST empty"
     return _redact(text, key), True
 
@@ -154,6 +162,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("limit", nargs="?", default="20")
     parser.add_argument("--limit", dest="limit_flag")
+    parser.add_argument(
+        "--occupancy",
+        action="store_true",
+        help="Print hive occupancy only (latest-run RUNNING/CREATING).",
+    )
     args = parser.parse_args(argv)
     raw = str(args.limit_flag or args.limit or "20")
     try:
@@ -161,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError:
         print("error: limit must be an integer", file=sys.stderr)
         return 2
-    text, ok = list_cloud_agents(limit=limit)
+    text, ok = list_cloud_agents(limit=limit, occupancy_only=args.occupancy)
     sys.stdout.write(text if text.endswith("\n") else text + "\n")
     return 0 if ok else 1
 

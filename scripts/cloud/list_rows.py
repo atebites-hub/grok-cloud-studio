@@ -14,10 +14,17 @@ import argparse
 import base64
 import json
 import os
+import sys
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Any
+
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+from occupancy import occupancy_report  # noqa: E402
 
 _FETCH_WORKERS = 8
 _FETCH_TIMEOUT_CAP_SEC = 15.0
@@ -136,6 +143,11 @@ def format_list_lines(items: list[Any]) -> list[str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Print agent list rows with runStatus.")
     parser.add_argument("body_json", help="Path to GET /v1/agents JSON body")
+    parser.add_argument(
+        "--occupancy",
+        action="store_true",
+        help="Print hive occupancy only (latest-run RUNNING/CREATING).",
+    )
     args = parser.parse_args(argv)
     with open(args.body_json, encoding="utf-8") as fh:
         data = json.load(fh)
@@ -147,7 +159,11 @@ def main(argv: list[str] | None = None) -> int:
         items = []
     if not isinstance(items, list):
         items = []
-    for line in format_list_lines(items):
+    lines = format_list_lines(items)
+    if args.occupancy:
+        sys.stdout.write(occupancy_report(lines))
+        return 0
+    for line in lines:
         print(line)
     return 0
 

@@ -48,7 +48,9 @@ MCP `cloud_list` (`plugins/cursor-cloud`, `scripts/cloud/list_helper.py`) prints
 
 Fail-closed (LIV-67 / LIV-69): create **and** send/followup always pin grok-4.6 xhigh `fast=false`. Any `CURSOR_CLOUD_MODEL` that is not exactly `grok-4.6` is **rejected** (no create, no send). REST list/runs omit model; omitted send uses dashboard Auto (Jay saw Opus 5). Never Bot CloudAgent. Do not merge empty CI.
 
-`scripts/cloud/list.sh` / `list-cloud-agents.sh` print agent `status` (membership, often `ACTIVE`) and latest-run `runStatus` (`RUNNING` vs `FINISHED`). Agent `ACTIVE` is not a live worker. Leftover `ACTIVE`+`FINISHED` must not count as live.
+`scripts/cloud/list.sh` / `list-cloud-agents.sh` print agent `status` (membership, often `ACTIVE`) and latest-run `runStatus` (`RUNNING` vs `FINISHED` vs `CREATING`). Agent `ACTIVE` is not a live worker. Leftover `ACTIVE`+`FINISHED` must not count as live.
+
+Hive occupancy (Extra High floor) is latest-run `runStatus` `RUNNING` / `CREATING`. `list.sh --occupancy` lists only that floor and prints `CLOUD_OCCUPANCY n=N`. Leftover `ACTIVE`+`FINISHED` is membership, not occupancy. Unique remaining vs `list --running` (#78): `CREATING` is occupancy. Never Bot CloudAgent.
 
 ## Directors-spawn law (LIV-41)
 
@@ -59,6 +61,8 @@ Bot is `send.sh`, not Extra High.
 
 Count latest-run **`runStatus`** (`RUNNING` / `CREATING`) for
 `GCS_CLOUD_REPO`. Leftover `ACTIVE`+`FINISHED` shells are **not** workers.
+That same in-flight set is hive occupancy (`scripts/cloud/occupancy.py`,
+`list.sh --occupancy`).
 
 If **playability** work is in progress and that RUNNING Extra High count is
 below **8** (`GCS_CLOUD_MIN_RUNNING`), cloud mind **MUST** call
