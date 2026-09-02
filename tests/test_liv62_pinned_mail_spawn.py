@@ -6,7 +6,8 @@ OPEN #95 owns validate_grok_mind_argv (construction clap). This slice is
 the grok_cli_runner spawn hook: pin UUID + mail.txt path identity, refuse
 latest-in-cwd and positional --print/-p. Does not remint #95.
 
-Does not vendor Hermes. Does not clone LIV-85 mail preserve (#81/#61/#67).
+Does not vendor Hermes. Does not remint harvest (#26/#28). LIV-85 mail
+hold (`mail.in-flight`) is a later remaining on this stack, not this FAT.
 Does not clone LIV-41 must-launch. Living Sky only. Never Bot CloudAgent.
 """
 from __future__ import annotations
@@ -44,7 +45,6 @@ HARVEST_MARKERS = (
     "format_mail_turn",
     "filter_inbound_mail",
     "MAIL_MAX_CHARS",
-    "mail.in-flight",
 )
 LIV41_MARKERS = (
     "RUNNING >= 8",
