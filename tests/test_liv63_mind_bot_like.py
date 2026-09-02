@@ -341,7 +341,11 @@ def test_scenario_mind_bus_starts_ticker_without_acp_daemons() -> None:
         "grok-bot-like stay-up: ticker must start for mind seats even without --daemons"
     )
     assert "STUDIO_BUS_DAEMONS_SKIP" in start_body
-    _before, after_daemons = start_body.split("want_daemons", 1)
+    before_daemons, after_daemons = start_body.split("want_daemons", 1)
+    assert "start_host_ticker" not in before_daemons, (
+        "unfiltered ticker before want_daemons ACP_PINGs leftover GROW into "
+        "dispatch fallback-p (bare grok -p)"
+    )
     assert "start_host_ticker" in after_daemons, (
         "mind-only ticker belongs on the no-daemons branch so leftover GROW "
         "is not ACP_PING'd into dispatch fallback -p"

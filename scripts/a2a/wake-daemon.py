@@ -18,7 +18,8 @@ Pin ACP session id in `.a2a-state/<seat>/acp.session` (create once via
 session/new; later session/load). Named identity is SOUL.md + MEMORY.md
 + GROK_MEMORY=1 on the **serve** process.
 
-Hub TASK_STATE_COMPLETED is a receipt, not proof the Director acted.
+Hub TASK_STATE_SUBMITTED means queued; COMPLETED only after mind harvests
+and finishes. Enqueue is not proof the Director acted.
 Local studio only. Stdlib only.
 """
 from __future__ import annotations

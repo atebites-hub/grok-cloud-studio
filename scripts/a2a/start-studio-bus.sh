@@ -583,6 +583,7 @@ case "$cmd" in
     else
       echo "STUDIO_BUS_DAEMONS_SKIP (pass --daemons or GCS_START_SEAT_DAEMONS=1)"
       if [[ -n "$(canonical_mind_seats)" ]]; then
+        # Mind-only stay-up: do not ACP_PING leftover GROW (dispatch fallback-p).
         start_host_ticker --seats "$(canonical_mind_seats)"
       fi
     fi

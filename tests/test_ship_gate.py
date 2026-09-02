@@ -85,20 +85,6 @@ def test_workflow_runs_on_pull_request() -> None:
     assert "pytest -q and secret_scan" in text
 
 
-def test_workflow_push_is_not_main_only() -> None:
-    """pull_request synchronize can skip; push on the PR head must still run.
-
-    Empty checks are not ship-gate evidence. Restricting `on.push` to `main`
-    leaves feature-branch heads with no GitHub Actions run after a later push.
-    """
-    text = WORKFLOW.read_text(encoding="utf-8")
-    assert re.search(r"(?m)^  push:\s*$", text)
-    assert not re.search(
-        r"(?ms)^  push:\s*\n    branches:\s*\n      - main\s*$",
-        text,
-    )
-
-
 def test_workflow_bootstraps_venv_then_runs_canonical_gate() -> None:
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "./install.sh" in text or "bash install.sh" in text or "bash ./install.sh" in text

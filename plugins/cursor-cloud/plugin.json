@@ -2,6 +2,6 @@
   "name": "gcs-cursor-cloud",
   "displayName": "Grok Cloud Studio Cursor Cloud",
   "version": "1.0.0",
-  "description": "Seat GROK_HOME MCP for cloud_launch, cloud_status, and cloud_result. Extra High only. Installed with grok plugin install --trust. Not Hermes plugin.yaml. Not Bot CloudAgent.",
+  "description": "Seat GROK_HOME MCP for cloud_launch, cloud_list, cloud_status, and cloud_result (Extra High plane). Installed with grok plugin install --trust. Not Hermes plugin.yaml. Not Bot CloudAgent.",
   "mcpServers": "./mcp.json"
 }

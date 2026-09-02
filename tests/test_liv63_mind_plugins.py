@@ -627,8 +627,14 @@ def test_scenario_mail_is_a_turn_stays_grok_mailbox() -> None:
         assert "pin-session" not in blob
         assert "HANDOFF" not in blob
         assert PRIVATE_GAME not in blob
-        for banned in BANNED_SPAWN:
-            assert banned not in blob
+    # Law names the ban. Spawn PATH must not launch that runtime.
+    spawn_src = (REPO / "scripts" / "a2a" / "mind_bot_like.py").read_text(
+        encoding="utf-8"
+    )
+    for banned in BANNED_SPAWN:
+        assert banned not in spawn_src
+    assert "Never Bot CloudAgent" in src
+    assert '"or Bot " "CloudAgent"' not in src
     for marker in HARVEST_MARKERS:
         assert marker not in src, marker
         assert marker not in hub, marker

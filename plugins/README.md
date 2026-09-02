@@ -16,7 +16,7 @@ installs these into seat `GROK_HOME` via `grok plugin install --trust`
 
 - `plugins/studio-mind` — `ticket` (plus `a2a_send`, `cloud_launch` helpers)
 - `plugins/a2a` — `a2a_list_seats`, `a2a_send`
-- `plugins/cursor-cloud` — `cloud_launch`, `cloud_status`, `cloud_result`
+- `plugins/cursor-cloud` — `cloud_launch`, `cloud_list`, `cloud_status`, `cloud_result` (Extra High plane; do not restack `cloud_list` into `mind.py`)
 
 ```bash
 grok plugin install ./plugins/studio-mind --trust

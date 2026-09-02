@@ -4,7 +4,7 @@
 scripts/a2a/start-studio-bus.sh                 # hub + leftover dispatch + shepherd
                                                 # bot-bridge only if GCS_BOT_BRIDGE=1
 scripts/a2a/start-studio-bus.sh start --daemons # ACP serve + GROW wake loops + host ticker (opt-in)
-scripts/a2a/send.sh ops "ping: hello"
+scripts/a2a/send.sh ops "ping: hello"           # TASK_STATE_SUBMITTED until mind finishes
 scripts/a2a/start-studio-bus.sh status
 ```
 
@@ -35,7 +35,7 @@ Non-GROW seats may still use leftover `acp_inject.py` (no `--pin-session`).
 
 ## Seat mind (Bot-equivalent)
 
-`GCS_MIND_SEATS` (default empty, example `floor,ops`) starts `scripts/directors/seat-mind-loop.sh` → `scripts/directors/mind.py`. Python is mailbox + pin + stay-up: inbox growth → one `grok --resume` (first turn `--session-id`) of a UUID in `$GCS_A2A_STATE/<seat>/mind/session` with `--prompt-file` (never bare `-p`) → persist `transcript.jsonl` / `offset` (offset only on grok exit 0). Grok is the agent for that turn. Harvest writes `mind/mail.txt` and Bot-like `mind/turn.txt` **before** the runner. `seat-mind-loop.sh` installs grok-bot-like mind plugins (`plugins/studio-mind`, `plugins/a2a`, `plugins/cursor-cloud`) into seat `GROK_HOME` via `grok plugin install --trust` (`install_mind_grok_plugins` stamps `GROK_HOME/gcs-root`; grok `plugin.json`, not Hermes `plugin.yaml`; do not vendor `NousResearch/hermes-agent`) and remaining spawn PATH wrappers (`cloud_launch`, `a2a_send`) via `scripts/a2a/mind_bot_like.py install-spawn`. (`--plugin-dir` is a grok agent flag, not headless). No ACP WebSocket, no `session/prompt`, no leftover pin-session. Mind is the GROW path when opted in; ACP wake is skipped for those seats unless `GCS_MIND_PLUS_ACP_WAKE=1`. Host ticker includes `GCS_MIND_SEATS` as mailbox keep-alives even without `--daemons`. Do not kill existing serve. `skipSeats` (orchestrator, donald) are not mind seats. See `docs/studio/MIND.md`, `tests/features/liv63_mind_plugins.feature`, and `tests/features/liv63_mind_bot_like.feature`.
+`GCS_MIND_SEATS` (default empty, example `floor,ops`) starts `scripts/directors/seat-mind-loop.sh` → `scripts/directors/mind.py`. Python is mailbox + pin + stay-up: inbox growth → one `grok --resume` (first turn `--session-id`) of a UUID in `$GCS_A2A_STATE/<seat>/mind/session` with `--prompt-file` (never bare `-p`) → persist `transcript.jsonl` / `offset` (offset only on grok exit 0). Grok is the agent for that turn. Harvest writes `mind/mail.txt` and Bot-like `mind/turn.txt` **before** the runner. `seat-mind-loop.sh` installs grok-bot-like mind plugins (`plugins/studio-mind`, `plugins/a2a`, `plugins/cursor-cloud`) into seat `GROK_HOME` via `grok plugin install --trust` (`install_mind_grok_plugins` stamps `GROK_HOME/gcs-root`; grok `plugin.json`, not Hermes `plugin.yaml`; do not vendor `NousResearch/hermes-agent`) and remaining spawn PATH wrappers (`cloud_launch`, `a2a_send`) via `scripts/a2a/mind_bot_like.py install-spawn`. (`--plugin-dir` is a grok agent flag, not headless). No ACP WebSocket, no `session/prompt`, no leftover pin-session. Mind is the GROW path when opted in; ACP wake is skipped for those seats unless `GCS_MIND_PLUS_ACP_WAKE=1`. Host ticker includes `GCS_MIND_SEATS` as mailbox keep-alives even without `--daemons` (`--seats` limited to mind seats so leftover GROW is not ACP_PING'd into dispatch `fallback-p`). Do not kill existing serve. `skipSeats` (orchestrator, donald) are not mind seats. See `docs/studio/MIND.md`, `tests/features/liv63_mind_plugins.feature`, and `tests/features/liv63_mind_bot_like.feature`.
 
 ## Leftover ACP / pin-session rules
 
@@ -63,7 +63,7 @@ export GCS_BOT_SEAT=orchestrator   # optional; default
 
 `./doctor.sh` **FAIL**s if any bot seat `agentId` is empty or `REPLACE_WITH_YOUR_GROK_BOT_AGENT_ID`, unless `GCS_BOT_BIND_OPTIONAL=1` (CI clone checks). Local bind state is gitignored `.a2a-state/bot-bind.json`.
 
-`start-studio-bus.sh` starts `scripts/a2a/bot-bridge.py` **only when `GCS_BOT_BRIDGE=1`**. Default off: Bot seats stay standby. The bridge polls Bot inboxes and writes `.a2a-state/<seat>/bot-wake.jsonl` + latest `bot-wake.txt` (offset: `bot-bridge.offset`). Logs `BOT_BRIDGE_WAKE seat=… task=…` (never secrets). Optional `BOT_BRIDGE_HOOK` for a local wake command.
+`start-studio-bus.sh` starts `scripts/a2a/bot-bridge.py` **only when `GCS_BOT_BRIDGE=1`**. Default off: Bot seats stay standby. The bridge polls Bot inboxes and writes `.a2a-state/<seat>/bot-wake.jsonl` + latest `bot-wake.txt` (offset: `bot-bridge.offset`). Logs `BOT_BRIDGE_WAKE seat=… task=…` (never secrets). Optional `BOT_BRIDGE_HOOK` for a local wake command. `recover.sh` / `start` do not start the bridge unless that env is set.
 
 Standing Bot routine (short prompt):
 
