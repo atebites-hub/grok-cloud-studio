@@ -196,8 +196,12 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    names live in `studio.env.example` (`HIGGSFIELD_API_KEY`,
    `HIGGSFIELD_SECRET`, `SENTRY_DSN`, `GCS_SENTRY_DSN`) — never print
    values, never commit them. `./doctor.sh` and `./recover.sh` fail-closed
-   if art MCP would leak keys (argv / literal env). Ship gate remains
-   pytest -q + secret_scan.
+   if art MCP would leak keys (argv / literal env). LIV-84 Extra High
+   Higgsfield is the existing cloud-env snapshot login (do not remint).
+   Sentry DSN from dashboard Secrets / env only — not MCP. They also
+   fail-closed if the Cursor catalog is merged (Higgsfield or Sentry in
+   `.cursor/mcp.json`, even with `${...}` expansions) or cloud-env is
+   reminted. Ship gate remains pytest -q + secret_scan.
 
 10. Grok Build HTTP 402: `mind.py` **switches** the persisted runner
     (`$GCS_A2A_STATE/<seat>/mind/runner`) and retries that same mail line
@@ -219,7 +223,10 @@ python3 scripts/secret_scan.py
 
 `./doctor.sh` **WARN**s (does not FAIL) if `grok`, `agent`/`cursor-grok`, or
 `taskboard` is missing. It **FAIL**s if `scripts/studio/agent-kanban` reappears
-or if Higgsfield/Sentry art MCP would leak keys (`scripts/studio/higgsfield_sentry.py`).
+or if Higgsfield/Sentry art MCP would leak keys (`scripts/studio/higgsfield_sentry.py`)
+or if the LIV-84 Extra High Cursor catalog is merged (Higgsfield/Sentry MCP)
+or cloud-env is reminted (`scripts/studio/liv84_art_env.py`). `./recover.sh`
+fails closed before restarts. Do not remint LIV-84.
 
 ## Seats (first-class)
 

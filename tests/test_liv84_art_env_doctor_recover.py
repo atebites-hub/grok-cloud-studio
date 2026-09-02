@@ -142,6 +142,21 @@ def test_cursor_mcp_higgsfield_expansion_is_catalog_merge_not_a_leak() -> None:
     assert "${HIGGSFIELD_API_KEY}" not in dumped
 
 
+def test_expansion_merge_is_clean_for_leak_sentry_but_not_liv84() -> None:
+    """Remaining slice after #143: env expansions are not leaks, still catalog merge."""
+    sentry_path = REPO / "scripts" / "studio" / "higgsfield_sentry.py"
+    assert sentry_path.is_file()
+    spec = importlib.util.spec_from_file_location("gcs_higgsfield_sentry", sentry_path)
+    assert spec is not None and spec.loader is not None
+    leak = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(leak)
+    payload = json.dumps(_merged_higgsfield_mcp())
+    leak_hits = leak.scan_mcp_document(".cursor/mcp.json", payload)
+    assert leak_hits == [], leak_hits
+    merge_hits = _load_gate().scan_cursor_mcp(".cursor/mcp.json", payload)
+    assert any(h[1] == "cursor_catalog_merged" for h in merge_hits), merge_hits
+
+
 def test_cursor_mcp_linear_taskboard_is_clean() -> None:
     mod = _load_gate()
     hits = mod.scan_cursor_mcp(".cursor/mcp.json", json.dumps(_linear_taskboard_mcp()))
@@ -275,8 +290,9 @@ def test_doctor_and_recover_invoke_liv84_gate_before_ok() -> None:
         assert "echo $HIGGSFIELD_API_KEY" not in text
         assert "echo \"$SENTRY_DSN\"" not in text
         assert "set -x" not in text
-        assert "higgsfield_sentry.py" not in text
     assert "liv84_art_env.py" in doctor.split("for p in", 1)[-1]
+    assert "higgsfield_sentry.py" in doctor
+    assert "higgsfield_sentry.py" in recover
 
 
 def test_doctor_fails_closed_when_live_cursor_catalog_merges(tmp_path: Path) -> None:
@@ -331,12 +347,14 @@ def test_wipe_and_agents_name_liv84_catalog_gate_not_leak_sentry() -> None:
         assert FAKE_DSN not in text
     assert "catalog" in wipe.lower() or "mcp.json" in wipe
     assert "do not remint" in (wipe + agents + studio).lower()
-    # Do not clone #143 env-knob assignments or #137 ART_ENV pack.
-    assert not (REPO / "scripts" / "studio" / "higgsfield_sentry.py").exists()
+    # #143 leak sentry is on main; this PR adds the catalog/remint gate beside it.
+    assert (REPO / "scripts" / "studio" / "higgsfield_sentry.py").is_file()
+    assert GATE.is_file()
+    # Do not clone leftover #137 ART_ENV pack.
     assert not (REPO / "docs" / "studio" / "art" / "ART_ENV.md").exists()
     assert not (REPO / "scripts" / "art" / "sentry_env.py").exists()
     for name in ("HIGGSFIELD_API_KEY", "HIGGSFIELD_SECRET", "SENTRY_DSN", "GCS_SENTRY_DSN"):
         for line in studio.splitlines():
             stripped = line.strip()
             if stripped.startswith(name + "="):
-                raise AssertionError(f"do not clone leftover env assignments: {stripped!r}")
+                raise AssertionError(f"must not assign {name}: {stripped!r}")
