@@ -34,6 +34,8 @@ for p in \
   docs/studio/TASKBOARD.md \
   docs/studio/MIND.md \
   docs/studio/WIPE.md \
+  docs/studio/LINEAR.md \
+  scripts/linear_archive_closed.py \
   studio.env.example \
   setup.sh \
   cleanup.sh \

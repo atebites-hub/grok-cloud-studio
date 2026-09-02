@@ -71,6 +71,7 @@ See `.env.example`. Prefix is **`GCS_*`**. Important:
 - `GCS_SPAWN_WAITER=0` — disable the detached waiter (tests)
 - `GCS_WEBHOOK_SECRET` — enable signed webhook receiver
 - `CURSOR_API_KEY` — never print; never commit
+- Living Sky Linear (`LINEAR_API_KEY` / `GCS_LINEAR_API_KEY`) — LIV-76 close stale + archive Done/Canceled for the 200 cap; **do not delete**. See `docs/studio/LINEAR.md`. Never Black Swan Money.
 
 ## Grok Bot orchestrator (A2A)
 
@@ -94,6 +95,20 @@ grok plugin install ./plugins/cursor-cloud --trust
 ```
 
 Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_result`. Details: `docs/PLUGINS.md`.
+
+## Linear (Living Sky, LIV-76)
+
+Studio Linear is Living Sky (`linear.app/livingsky`, team **LIV**). Never Black Swan Money.
+The 200-issue cap is handled by closing stale tickets and archiving Done/Canceled
+(`scripts/linear_archive_closed.py`). Do not merge GCS #45 purge-delete. Linear MCP
+has no archive mutation.
+
+```bash
+python3 scripts/linear_archive_closed.py          # dry-run
+python3 scripts/linear_archive_closed.py --apply  # close stale, then issueArchive
+```
+
+Details: [docs/studio/LINEAR.md](docs/studio/LINEAR.md).
 
 ## Tests + secret scan
 
