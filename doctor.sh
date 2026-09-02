@@ -57,6 +57,8 @@ for p in \
   scripts/launch-cloud-extra-high.sh \
   scripts/cloud/spawn-waiter.sh \
   scripts/cloud/sdk/wait-notify.ts \
+  scripts/cloud/sdk/latest_run.ts \
+  scripts/cloud/latest_run.py \
   scripts/cloud/webhook_receiver.py \
   scripts/mcp/gcs_mcp.py \
   plugins/a2a/.cursor-plugin/plugin.json \

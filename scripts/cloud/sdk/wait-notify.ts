@@ -9,8 +9,13 @@ import {
   mapRunStatus,
   safeError,
 } from "./common.ts";
+import {
+  mayFleetDone,
+  unwrapRuns,
+  waiterObserve,
+  type RunLike,
+} from "./latest_run.ts";
 
-const TERMINAL = new Set(["FINISHED", "ERROR", "CANCELLED", "EXPIRED"]);
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..", "..", "..");
 const LEDGER = resolve(ROOT, "scripts", "cloud", "fleet_ledger.py");
@@ -85,6 +90,46 @@ function unwrap(data: Record<string, unknown>, key: string): Record<string, unkn
   return data;
 }
 
+async function restLatestRuns(agentId: string, apiKey: string): Promise<RunLike[]> {
+  const listed = await restGet(`/v1/agents/${agentId}/runs`, apiKey);
+  return unwrapRuns(listed);
+}
+
+async function restGetRun(
+  agentId: string,
+  runId: string,
+  apiKey: string,
+): Promise<RunLike | undefined> {
+  const runRaw = unwrap(await restGet(`/v1/agents/${agentId}/runs/${runId}`, apiKey), "run");
+  return runRaw as RunLike;
+}
+
+function directorResultFromRest(
+  agentId: string,
+  agentRaw: Record<string, unknown>,
+  runRaw: Record<string, unknown>,
+  runStatus: string,
+): DirectorResult {
+  const git = (runRaw.git || {}) as { branches?: Array<{ prUrl?: string; branch?: string }> };
+  const withPr = (git.branches || []).find((b) => b.prUrl);
+  const resultText = typeof runRaw.result === "string" ? runRaw.result : null;
+  return {
+    agentId: String(agentRaw.id || agentId),
+    name: String(agentRaw.name || ""),
+    url: String(agentRaw.url || `https://cursor.com/agents/${agentId}`),
+    runId: String(runRaw.id || ""),
+    status: runStatus,
+    agentStatus: String(agentRaw.status || ""),
+    runStatus,
+    prUrl: withPr?.prUrl || null,
+    branches: (git.branches || []).map((b) => b.branch).filter((b): b is string => Boolean(b)),
+    branch: (git.branches || []).find((b) => b.branch)?.branch || null,
+    summary: null,
+    result: resultText,
+    error: null,
+  };
+}
+
 async function restPoll(agentId: string, runId: string, apiKey: string): Promise<DirectorResult> {
   const pollSec = Math.max(5, Number(process.env.CLOUD_WATCH_INTERVAL || "15") || 15);
   const timeoutSec = Number(process.env.CLOUD_WATCH_TIMEOUT_SEC || "0") || 0;
@@ -93,40 +138,51 @@ async function restPoll(agentId: string, runId: string, apiKey: string): Promise
   let last = "unknown";
   while (Date.now() < deadline) {
     const agentRaw = unwrap(await restGet(`/v1/agents/${agentId}`, apiKey), "agent");
-    const latest = runId || String(agentRaw.latestRunId || "");
-    let runStatus = "none";
-    let prUrl: string | null = null;
-    let resultText: string | null = null;
-    if (latest) {
-      const runRaw = unwrap(
-        await restGet(`/v1/agents/${agentId}/runs/${latest}`, apiKey),
-        "run",
-      );
-      runStatus = mapRunStatus(String(runRaw.status || ""));
-      last = runStatus;
-      const git = (runRaw.git || {}) as { branches?: Array<{ prUrl?: string; branch?: string }> };
-      const withPr = (git.branches || []).find((b) => b.prUrl);
-      prUrl = withPr?.prUrl || null;
-      resultText = typeof runRaw.result === "string" ? runRaw.result : null;
-      if (TERMINAL.has(runStatus)) {
-        return {
-          agentId: String(agentRaw.id || agentId),
-          name: String(agentRaw.name || ""),
-          url: String(agentRaw.url || `https://cursor.com/agents/${agentId}`),
-          runId: latest,
-          status: runStatus,
-          agentStatus: String(agentRaw.status || ""),
-          runStatus,
-          prUrl,
-          branches: (git.branches || []).map((b) => b.branch).filter((b): b is string => Boolean(b)),
-          branch: (git.branches || []).find((b) => b.branch)?.branch || null,
-          summary: null,
-          result: resultText,
-          error: null,
-        };
+    let collectionOk = false;
+    let runs: RunLike[] = [];
+    try {
+      runs = await restLatestRuns(agentId, apiKey);
+      collectionOk = true;
+    } catch {
+      collectionOk = false;
+    }
+    let pinned: RunLike | undefined;
+    if (runId) {
+      try {
+        pinned = await restGetRun(agentId, runId, apiKey);
+      } catch {
+        pinned = undefined;
       }
     }
-    process.stdout.write(`CLOUD_WAITER_POLL id=${agentId} runStatus=${runStatus}\n`);
+    const observed = waiterObserve(runs, pinned);
+    const latestId = String(observed?.id || "");
+    let runRaw: Record<string, unknown> = { ...((observed || {}) as Record<string, unknown>) };
+    let runStatusMapped = mapRunStatus(String(observed?.status || ""));
+    if (latestId) {
+      try {
+        runRaw = unwrap(await restGet(`/v1/agents/${agentId}/runs/${latestId}`, apiKey), "run");
+        runStatusMapped = mapRunStatus(String(runRaw.status || observed?.status || ""));
+      } catch {
+        runStatusMapped = mapRunStatus(String(observed?.status || ""));
+      }
+    }
+    last = runStatusMapped || last;
+    const refreshed: RunLike = { ...(runRaw as RunLike), id: latestId, status: runStatusMapped };
+    const current = waiterObserve(
+      runs.map((row) => (String(row.id || "") === latestId ? refreshed : row)),
+      pinned,
+    );
+    const canFleetDone =
+      collectionOk &&
+      runs.length > 0 &&
+      mayFleetDone(current) &&
+      String(current?.id || "") === latestId;
+    if (canFleetDone) {
+      return directorResultFromRest(agentId, agentRaw, runRaw, runStatusMapped);
+    }
+    process.stdout.write(
+      `CLOUD_WAITER_POLL id=${agentId} run=${latestId || "none"} runStatus=${runStatusMapped || "none"}\n`,
+    );
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
     await sleep(Math.min(pollSec * 1000, remaining));
@@ -135,12 +191,23 @@ async function restPoll(agentId: string, runId: string, apiKey: string): Promise
 }
 
 async function latestRun(agentId: string, apiKey: string, runId?: string): Promise<Run | undefined> {
-  if (runId) {
-    return Agent.getRun(runId, { runtime: "cloud", agentId, apiKey });
-  }
   const listed = await Agent.listRuns(agentId, { runtime: "cloud", apiKey, limit: 20 });
-  if (!listed.items.length) return undefined;
-  return listed.items.slice().sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))[0];
+  const items = listed.items || [];
+  let pinned: Run | undefined;
+  if (runId) {
+    try {
+      pinned = await Agent.getRun(runId, { runtime: "cloud", agentId, apiKey });
+    } catch {
+      pinned = undefined;
+    }
+  }
+  const observed = waiterObserve(items as RunLike[], pinned as RunLike | undefined);
+  if (!observed) return undefined;
+  const oid = String(observed.id || "");
+  const fromList = items.find((row) => row.id === oid);
+  if (fromList) return fromList;
+  if (pinned && pinned.id === oid) return pinned;
+  return undefined;
 }
 
 async function sdkWait(agentId: string, runId: string, apiKey: string): Promise<DirectorResult> {
@@ -153,7 +220,7 @@ async function sdkWait(agentId: string, runId: string, apiKey: string): Promise<
     const run = await latestRun(agentId, apiKey, runId || undefined);
     const runStatus = mapRunStatus(run?.status);
     last = runStatus;
-    if (run && TERMINAL.has(runStatus)) {
+    if (run && mayFleetDone({ id: run.id, status: runStatus })) {
       return collectResult(agentId, run.id);
     }
     if (run && typeof run.supports === "function" && run.supports("wait")) {
@@ -211,7 +278,7 @@ async function main(): Promise<void> {
       : await sdkWait(agentId, runId, apiKey);
     ledgerNotify(agentId, payload);
     process.stdout.write(
-      `CLOUD_WAITER_DONE id=${agentId} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"}\n`,
+      `CLOUD_WAITER_DONE id=${agentId} run=${payload.runId || "none"} runStatus=${payload.runStatus || "unknown"} pr=${payload.prUrl || "none"}\n`,
     );
   } catch (err) {
     console.error(`CLOUD_WAITER_ERR id=${agentId} ${safeError(err)}`);

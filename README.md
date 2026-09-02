@@ -12,7 +12,7 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 | ACP seat daemons + pin-session inject (leftover host OS) | `scripts/directors/start-seat-daemon.sh`, `acp_inject.py`, `seat-prompt-acp.sh` |
 | Grok Build seat mind (opt-in, `GCS_MIND_SEATS`) | `scripts/directors/mind.py`, `seat-mind-loop.sh`, `docs/studio/MIND.md` |
 | Extra High SDK + bash wrappers | `scripts/cloud/sdk/`, `scripts/launch-cloud-extra-high.sh` |
-| Waiter (`run.wait` → A2A ping owner + `REPORT_TO`) | `scripts/cloud/spawn-waiter.sh`, `sdk/wait-notify.ts` |
+| Waiter (`GET latest runStatus` → A2A ping owner + `REPORT_TO`) | `scripts/cloud/spawn-waiter.sh`, `sdk/wait-notify.ts` |
 | Orphan fleet-shepherd | `scripts/directors/fleet-shepherd.py` |
 | MCP plugins | `plugins/a2a`, `plugins/cursor-cloud` |
 | Webhook harness | `scripts/cloud/webhook_receiver.py`, `webhook-harness.sh` |

@@ -57,7 +57,7 @@ RUNNING Extra High count for `GCS_CLOUD_REPO` is below 8, cloud mind MUST
 
 ## Waiter + orphan shepherd
 
-After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.jsonl` and spawns `wait-notify.ts` (SDK `run.wait()`, REST poll when `CURSOR_API_BASE` / `CLOUD_FORCE_REST`). On `FINISHED|ERROR|CANCELLED|EXPIRED` the waiter A2A-pings the owning seat and `REPORT_TO` (default `studio-ops`) (`FLEET_DONE` / `PR_READY`) and marks `notified_by=waiter`.
+After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.jsonl` and spawns `wait-notify.ts` (SDK `listRuns` + `run.wait()`, REST `GET /v1/agents/{id}/runs` when `CURSOR_API_BASE` / `CLOUD_FORCE_REST`). The waiter GETs **latest** `runStatus`. Leftover `FINISHED` while a newer run is `CREATING`/`RUNNING` is not done. On latest `FINISHED|ERROR|CANCELLED|EXPIRED` the waiter A2A-pings the owning seat and `REPORT_TO` (default `studio-ops`) (`FLEET_DONE` / `PR_READY`) and marks `notified_by=waiter`.
 
 Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
