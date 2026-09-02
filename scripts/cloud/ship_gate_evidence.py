@@ -179,10 +179,17 @@ def payload_has_ship_gate_flags(payload: dict[str, Any]) -> bool:
 
 
 def should_hold_empty_checks(payload: dict[str, Any]) -> bool:
-    """GitHub PR without a successful ship-gate check: HOLD, not MERGE_REQUEST."""
+    """GitHub PR whose snapshot is not ship-gate SUCCESS: HOLD, not MERGE_REQUEST.
+
+    When waiter/collect flags are absent, defer to the paste gate. notify_owner
+    calls resolve_ship_gate first so Extra High FLEET_DONE still fail-closes
+    MERGEABLE+empty CI as leftover-green theatre.
+    """
     if parse_github_pull_url(payload.get("prUrl") or payload.get("pr_url")) is None:
         return False
     if payload_ship_gate_ok(payload):
+        return False
+    if not payload_has_ship_gate_flags(payload):
         return False
     return True
 

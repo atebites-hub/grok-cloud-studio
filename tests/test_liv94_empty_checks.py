@@ -211,6 +211,12 @@ def test_notify_text_ship_gate_ok_may_merge_request() -> None:
             "checkRuns": 1,
             "mergeableState": "clean",
             "shipGateOk": True,
+            "notes": (
+                "$ .venv/bin/pytest -q\n"
+                "3 passed in 0.01s\n"
+                "$ python3 scripts/secret_scan.py\n"
+                "secret_scan=clean\n"
+            ),
         },
     )
     assert MERGE_READY in text

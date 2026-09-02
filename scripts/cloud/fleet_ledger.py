@@ -288,7 +288,7 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
                 f"runStatus=FINISHED pr={pr} check_runs={check_runs} "
                 f"mergeable={mergeable} url={url}. "
                 f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
-                f"{reason}"
+                f"HOLD MERGE_REQUEST: {reason}"
                 f"Need pull_request ship-gate: .venv/bin/pytest -q AND "
                 f"python3 scripts/secret_scan.py. "
                 f"Do not ping QA MERGE_REQUEST until that check is SUCCESS; "
