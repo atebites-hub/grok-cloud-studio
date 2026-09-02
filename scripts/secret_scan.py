@@ -2,11 +2,17 @@
 """Fail-closed scan for secrets and product lore before a public push.
 
 Never prints matched secret values — only path, line, and rule id.
+
+mcp.json (including .cursor/mcp.json) fails on API key literals
+(LINEAR_API_KEY JSON values, Bearer tokens). Env refs such as
+${LINEAR_API_KEY} / ${env:LINEAR_API_KEY} are allowed. This does not remint
+the PAL-45 Linear catalog; checkout Linear MCP already uses env refs.
 """
 from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import re
 import sys
 from pathlib import Path
@@ -69,6 +75,23 @@ LORE_RULES: list[tuple[str, re.Pattern[str]]] = [
 
 TEXT_BYTES_MAX = 1_000_000
 
+# Cursor interpolates ${VAR} and ${env:VAR}. Those are refs, not literals.
+_ENV_INTERP_RE = re.compile(r"^\$\{(?:env:)?[A-Za-z_][A-Za-z0-9_]*\}$")
+_BEARER_ENV_RE = re.compile(
+    r"(?i)^Bearer\s+\$\{(?:env:)?[A-Za-z_][A-Za-z0-9_]*\}$"
+)
+_SECRET_KEY_RE = re.compile(
+    r"(?i)(?:API_KEY|SECRET|TOKEN|PASSWORD|AUTHORIZATION)$"
+)
+_BEARER_LITERAL_RE = re.compile(r"(?i)Bearer\s+(?!\$\{)\S{12,}")
+_LIN_API_LITERAL_RE = re.compile(r"\blin_api_[A-Za-z0-9_\-]{8,}\b")
+_MCP_JSON_KEY_LITERAL_RE = re.compile(
+    r"""["']LINEAR_API_KEY["']\s*:\s*["'](?!\$\{)[^"']{8,}["']"""
+)
+_MCP_JSON_BEARER_LITERAL_RE = re.compile(
+    r"""(?i)["']Authorization["']\s*:\s*["']Bearer\s+(?!\$\{)[^"']{12,}["']"""
+)
+
 
 def iter_files(root: Path) -> list[Path]:
     out: list[Path] = []
@@ -95,6 +118,79 @@ def scan_text(rel: str, text: str) -> list[tuple[str, str, int]]:
     return hits
 
 
+def _is_env_ref_value(value: str) -> bool:
+    text = value.strip()
+    if not text:
+        return True
+    return bool(_ENV_INTERP_RE.fullmatch(text) or _BEARER_ENV_RE.fullmatch(text))
+
+
+def _line_containing(text: str, needle: str) -> int:
+    if needle:
+        for i, line in enumerate(text.splitlines(), start=1):
+            if needle in line:
+                return i
+    return 1
+
+
+def _consider_mcp_string(
+    rel: str,
+    text: str,
+    key: str,
+    value: str,
+    hits: list[tuple[str, str, int]],
+) -> None:
+    stripped = value.strip()
+    if _is_env_ref_value(stripped):
+        return
+    line = _line_containing(text, value if value in text else stripped)
+    bearer_lit = bool(_BEARER_LITERAL_RE.search(stripped))
+    secret_key = bool(_SECRET_KEY_RE.search(key))
+    lin_lit = bool(_LIN_API_LITERAL_RE.search(stripped))
+    if bearer_lit:
+        hits.append((rel, "mcp_bearer_literal", line))
+        return
+    if secret_key and stripped:
+        hits.append((rel, "mcp_api_key_literal", line))
+        return
+    if lin_lit:
+        hits.append((rel, "mcp_api_key_literal", line))
+
+
+def scan_mcp_json_lines(rel: str, text: str) -> list[tuple[str, str, int]]:
+    hits: list[tuple[str, str, int]] = []
+    for i, line in enumerate(text.splitlines(), start=1):
+        if _MCP_JSON_KEY_LITERAL_RE.search(line):
+            hits.append((rel, "mcp_api_key_literal", i))
+        if _MCP_JSON_BEARER_LITERAL_RE.search(line):
+            hits.append((rel, "mcp_bearer_literal", i))
+    return hits
+
+
+def scan_mcp_json(rel: str, text: str) -> list[tuple[str, str, int]]:
+    """Fail on API key / Bearer literals in mcp.json. Env refs are allowed."""
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return scan_mcp_json_lines(rel, text)
+    hits: list[tuple[str, str, int]] = []
+
+    def walk(obj: object) -> None:
+        if isinstance(obj, dict):
+            for key, val in obj.items():
+                if isinstance(val, str):
+                    _consider_mcp_string(rel, text, str(key), val, hits)
+                else:
+                    walk(val)
+            return
+        if isinstance(obj, list):
+            for item in obj:
+                walk(item)
+
+    walk(data)
+    return hits
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Grok Cloud Studio secret/lore scan")
     parser.add_argument("--root", default=str(ROOT))
@@ -116,6 +212,8 @@ def main(argv: list[str] | None = None) -> int:
         except UnicodeDecodeError:
             text = data.decode("utf-8", errors="replace")
         hits.extend(scan_text(rel, text))
+        if path.name == "mcp.json":
+            hits.extend(scan_mcp_json(rel, text))
     if hits:
         print("secret_scan=FAIL")
         for rel, rule_id, line in hits:
