@@ -35,5 +35,5 @@ Feature: Opt-in grok mind is --resume plus --prompt-file, never bare -p
 
   Scenario: Do not vendor Hermes or clone LIV-85 / LIV-41
     Then vendor/hermes-agent is absent
-    And hub message:send stays a receipt COMPLETED
+    And hub enqueue is SUBMITTED; COMPLETED / A2A ACK is a receipt
     And mind.py has no LIV-41 must-launch / RUNNING floor

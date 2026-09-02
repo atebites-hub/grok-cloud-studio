@@ -139,6 +139,21 @@ def _prep_mind(
     monkeypatch.setenv("GROK_BIN", str(grok))
     monkeypatch.delenv("GCS_MIND_RUNNER", raising=False)
     monkeypatch.delenv("GCS_CURSOR_BIN", raising=False)
+    orig_home = mind.grok_home_dir
+
+    def _grok_home_with_linear(seat: str) -> Path:
+        d = orig_home(seat)
+        cfg = d / "config.toml"
+        if not cfg.is_file():
+            cfg.write_text(
+                "[mcp_servers.linear]\n"
+                f'url = "{mind.LINEAR_MCP_URL}"\n'
+                'headers = { Authorization = "Bearer ${LINEAR_API_KEY}" }\n',
+                encoding="utf-8",
+            )
+        return d
+
+    monkeypatch.setattr(mind, "grok_home_dir", _grok_home_with_linear)
     return mind, state
 
 
@@ -316,9 +331,10 @@ def test_scenario_no_hermes_no_liv85_no_liv41() -> None:
     hub_src = HUB_PY.read_text(encoding="utf-8")
     for marker in HARVEST_MARKERS:
         assert marker not in mind_src, marker
+    assert '"state": TASK_STATE_SUBMITTED,' in hub_src
     assert '"state": TASK_STATE_COMPLETED,' in hub_src
-    assert '"state": TASK_STATE_SUBMITTED,' not in hub_src
     assert "message:send" in hub_src
+    assert "receipt, not mind-turn done" in hub_src
     for marker in LIV41_MARKERS:
         assert marker not in mind_src, marker
     pyproject = REPO / "vendor" / "hermes-agent" / "pyproject.toml"

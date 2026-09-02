@@ -774,7 +774,7 @@ def assert_pinned_prompt_file_spawn(
 ) -> list[str]:
     """Fail-closed spawn: --prompt-file is seat mail.txt; pin equals mind/session.
 
-    Construction clap (`validate_grok_mind_argv` / OPEN #95) does not bind
+    Construction clap (`validate_grok_mind_argv`) does not bind
     argv to disk. This hook does. Cursor CLI `-p` must not go through here.
     """
     if not argv:
