@@ -1,21 +1,47 @@
-"""Repo-wide secret/lore scan must stay clean."""
+"""Repo-wide secret/lore scan must stay clean.
+
+.cursor/mcp.json must fail closed on API key literals (JSON LINEAR_API_KEY
+values and Bearer tokens). Linear MCP may only use env refs such as
+${LINEAR_API_KEY} / ${env:LINEAR_API_KEY}. This remaining slice does not
+remint PAL-45 Linear MCP (#46 / #56 catalog hunk); the committed catalog
+already uses env refs.
+"""
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCAN = ROOT / "scripts" / "secret_scan.py"
+CURSOR_MCP = ROOT / ".cursor" / "mcp.json"
+LINEAR_MCP_URL = "https://mcp.linear.app/mcp"
 
 
-def test_secret_scan_clean() -> None:
-    proc = subprocess.run(
-        ["python3", str(SCAN), "--root", str(ROOT)],
+def _run_scan(root: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["python3", str(SCAN), "--root", str(root)],
         cwd=str(ROOT),
         capture_output=True,
         text=True,
         timeout=30,
     )
+
+
+def _write_cursor_mcp(root: Path, servers: dict) -> Path:
+    path = root / ".cursor" / "mcp.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"mcpServers": servers}, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def _linear_token(tag: str) -> str:
+    """Build a fake Linear key without embedding a complete literal in this file."""
+    return "lin" + "_api_" + tag + ("x" * 20)
+
+
+def test_secret_scan_clean() -> None:
+    proc = _run_scan(ROOT)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "secret_scan=clean" in proc.stdout
 
@@ -35,3 +61,174 @@ def test_no_private_repo_default_in_launchers() -> None:
             if banned in text:
                 hits.append(str(path.relative_to(ROOT)))
     assert hits == []
+
+
+def test_secret_scan_fails_on_mcp_json_linear_api_key_literal(tmp_path: Path) -> None:
+    """JSON \"LINEAR_API_KEY\": \"…\" is a literal; assignment regex does not catch it."""
+    token = _linear_token("envlit")
+    _write_cursor_mcp(
+        tmp_path,
+        {
+            "linear": {
+                "url": LINEAR_MCP_URL,
+                "env": {"LINEAR_API_KEY": token},
+            }
+        },
+    )
+    proc = _run_scan(tmp_path)
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode != 0, blob
+    assert "secret_scan=FAIL" in proc.stdout
+    assert "mcp_api_key_literal" in blob
+    assert ".cursor/mcp.json" in blob
+    assert token not in blob
+
+
+def test_secret_scan_fails_on_mcp_json_bearer_literal(tmp_path: Path) -> None:
+    token = _linear_token("bearlit")
+    _write_cursor_mcp(
+        tmp_path,
+        {
+            "linear": {
+                "url": LINEAR_MCP_URL,
+                "headers": {"Authorization": "Bearer " + token},
+            }
+        },
+    )
+    proc = _run_scan(tmp_path)
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode != 0, blob
+    assert "secret_scan=FAIL" in proc.stdout
+    assert "mcp_bearer_literal" in blob
+    assert ".cursor/mcp.json" in blob
+    assert token not in blob
+
+
+def test_secret_scan_fails_on_mcp_json_args_bearer_literal(tmp_path: Path) -> None:
+    """stdio args may carry Bearer tokens; list strings must not fail open."""
+    token = _linear_token("argslit")
+    _write_cursor_mcp(
+        tmp_path,
+        {
+            "linear": {
+                "url": LINEAR_MCP_URL,
+                "command": "npx",
+                "args": ["mcp-linear", "--authorization", "Bearer " + token],
+            }
+        },
+    )
+    proc = _run_scan(tmp_path)
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode != 0, blob
+    assert "secret_scan=FAIL" in proc.stdout
+    assert "mcp_bearer_literal" in blob
+    assert ".cursor/mcp.json" in blob
+    assert token not in blob
+
+
+def test_secret_scan_fails_on_mcp_jsonc_lin_api_literal(tmp_path: Path) -> None:
+    """JSONC comments make json.loads fail; lin_api_ literals must still hit."""
+    token = _linear_token("jsonc")
+    path = tmp_path / ".cursor" / "mcp.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "// cursor jsonc\n"
+        "{\n"
+        '  "mcpServers": {\n'
+        '    "linear": {\n'
+        '      "url": "https://mcp.linear.app/mcp",\n'
+        '      "headers": {\n'
+        '        "X-Api-Key": "' + token + '"\n'
+        "      }\n"
+        "    }\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    proc = _run_scan(tmp_path)
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode != 0, blob
+    assert "secret_scan=FAIL" in proc.stdout
+    assert "mcp_api_key_literal" in blob
+    assert ".cursor/mcp.json" in blob
+    assert token not in blob
+
+
+def test_secret_scan_allows_mcp_json_linear_env_refs(tmp_path: Path) -> None:
+    _write_cursor_mcp(
+        tmp_path,
+        {
+            "taskboard": {
+                "command": "bash",
+                "args": ["${workspaceFolder}/scripts/studio/taskboard/run-mcp.sh"],
+            },
+            "linear": {
+                "url": LINEAR_MCP_URL,
+                "headers": {"Authorization": "Bearer ${LINEAR_API_KEY}"},
+                "env": {"LINEAR_API_KEY": "${LINEAR_API_KEY}"},
+            },
+        },
+    )
+    proc = _run_scan(tmp_path)
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    assert "secret_scan=clean" in proc.stdout
+
+
+def test_secret_scan_allows_env_colon_linear_ref(tmp_path: Path) -> None:
+    _write_cursor_mcp(
+        tmp_path,
+        {
+            "linear": {
+                "url": LINEAR_MCP_URL,
+                "headers": {"Authorization": "Bearer ${env:LINEAR_API_KEY}"},
+            }
+        },
+    )
+    proc = _run_scan(tmp_path)
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode == 0, blob
+    assert "secret_scan=clean" in proc.stdout
+
+
+def test_secret_scan_fails_on_linear_api_key_assignment(tmp_path: Path) -> None:
+    token = _linear_token("assign")
+    (tmp_path / "leak.env").write_text("LINEAR_API_KEY=" + token + "\n", encoding="utf-8")
+    proc = _run_scan(tmp_path)
+    blob = proc.stdout + proc.stderr
+    assert proc.returncode != 0, blob
+    assert "linear_key_assignment" in blob
+    assert token not in blob
+
+
+def test_committed_cursor_mcp_linear_uses_env_refs_only() -> None:
+    raw = CURSOR_MCP.read_text(encoding="utf-8")
+    data = json.loads(raw)
+    servers = data.get("mcpServers") or {}
+    assert "linear" in servers, "Linear MCP must be in .cursor/mcp.json (env refs only)"
+    linear = servers["linear"]
+    assert linear.get("url") == LINEAR_MCP_URL
+    headers = linear.get("headers") or {}
+    env = linear.get("env") or {}
+    auth = str(headers.get("Authorization") or headers.get("authorization") or "")
+    env_val = str(env.get("LINEAR_API_KEY") or "")
+    assert "${LINEAR_API_KEY}" in auth or env_val in {
+        "${LINEAR_API_KEY}",
+        "${env:LINEAR_API_KEY}",
+    }
+    if auth:
+        assert "Bearer" in auth
+        assert "${LINEAR_API_KEY}" in auth or "${env:LINEAR_API_KEY}" in auth
+    if env_val:
+        assert env_val in {"${LINEAR_API_KEY}", "${env:LINEAR_API_KEY}"}
+    assert "LINEAR_API_KEY=" not in raw
+    low = raw.lower()
+    assert "lin_api_" not in low
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if (
+            "LINEAR_API_KEY" in stripped
+            and "${LINEAR_API_KEY}" not in stripped
+            and "${env:LINEAR_API_KEY}" not in stripped
+        ):
+            raise AssertionError("LINEAR_API_KEY must only appear as an env ref")
