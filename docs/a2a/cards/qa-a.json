@@ -1,6 +1,6 @@
 {
   "name": "QA A",
-  "description": "Review and squash-merge odd-numbered PRs. Rebase Extra High only \u2014 no feature clouds.",
+  "description": "Review and squash-merge odd-numbered PRs only when pasted pytest -q (N passed) and secret_scan=clean. Empty GitHub leftover-green is not a ship-gate. Never squash CONFLICTING. Rebase Extra High only \u2014 no feature clouds.",
   "version": "1.0.0",
   "protocolVersion": "1.0",
   "provider": {
@@ -24,7 +24,7 @@
     {
       "id": "merge-odd",
       "name": "Odd PR merge",
-      "description": "gh squash-merge odd PRs; conflict rebase Extra High only",
+      "description": "gh squash-merge odd PRs only with pasted pytest -q + secret_scan; leftover-green/CONFLICTING never squash; conflict rebase Extra High only",
       "tags": [
         "qa",
         "merge"
