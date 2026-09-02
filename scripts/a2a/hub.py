@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -39,6 +40,11 @@ ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 CARDS_DIR = ROOT / "docs" / "a2a" / "cards"
 REGISTRY_PATH = ROOT / "docs" / "a2a" / "registry.json"
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
+
+_LIB_DIR = Path(__file__).resolve().parent
+if str(_LIB_DIR) not in sys.path:
+    sys.path.insert(0, str(_LIB_DIR))
+from lib import canonical_seat  # noqa: E402
 
 SEAT_RE = re.compile(r"^[a-z0-9-]+$")
 TASK_STATE_SUBMITTED = "TASK_STATE_SUBMITTED"
@@ -136,6 +142,7 @@ def _parse_path(path: str) -> tuple[str | None, str | None, str | None, str | No
     seat = parts[1]
     if not SEAT_RE.match(seat):
         return None, None, None, None
+    seat = canonical_seat(seat, ROOT)
     rest = parts[2:]
     if not rest:
         return seat, "root", None, None

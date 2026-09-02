@@ -106,6 +106,34 @@ def test_hub_health_and_send_ack(hub: dict) -> None:
     assert record["parts"][0]["text"] == "ping from test"
 
 
+def test_hub_send_routes_audio_narrative_title_aliases(hub: dict) -> None:
+    """Remaining aliases: send.sh + hub fold titles onto first-class inboxes."""
+    cases = (
+        ("audio-director", "audio", "mix notes from audio-director"),
+        ("narrative-lead", "narrative", "lore ping from narrative-lead"),
+        ("audio", "audio", "first-class audio stays audio"),
+        ("narrative", "narrative", "first-class narrative stays narrative"),
+    )
+    for title, seat, text in cases:
+        proc = subprocess.run(
+            ["bash", str(SEND), title, text],
+            cwd=str(ROOT),
+            env=hub["env"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        blob = proc.stdout + proc.stderr
+        assert proc.returncode == 0, blob
+        assert "A2A_SEND_OK" in proc.stdout
+        assert f"seat={seat}" in proc.stdout
+        inbox = Path(hub["state"]) / seat / "inbox.jsonl"
+        assert inbox.is_file(), title
+        record = json.loads(inbox.read_text(encoding="utf-8").splitlines()[-1])
+        assert record["parts"][0]["text"] == text
+        assert not (Path(hub["state"]) / title).exists() or title == seat
+
+
 def test_hub_send_from_seat(hub: dict) -> None:
     proc = subprocess.run(
         ["bash", str(SEND), "--from", "ops", "floor", "ack via from"],

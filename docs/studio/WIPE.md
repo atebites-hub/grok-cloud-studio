@@ -246,7 +246,9 @@ tcarac/taskboard.
 CCGS lead map (aliases in `scripts/a2a/lib.py`): producer=`floor-ops`,
 creative=`floor`, technical=`systems`, game-designer=`content`,
 lead-programmer=`systems` until split, art-director=`art`, qa-lead=`qa-a`,
-release-manager=`studio-ops`. First-class `audio` and `narrative` are
-registry seats, not aliases. Unmapped specialist titles do not mint seats.
-Directors and leads spawn specialists only via
-`scripts/launch-cloud-extra-high.sh`. Do not add 49 specialists.
+release-manager=`studio-ops`, audio-director=`audio`, audio-lead=`audio`,
+narrative-director=`narrative`, narrative-lead=`narrative`. First-class
+`audio` and `narrative` stay themselves (registry seats, not aliases).
+Unmapped specialist titles do not mint seats. Directors and leads spawn
+specialists only via `scripts/launch-cloud-extra-high.sh`. Do not add 49
+specialists.

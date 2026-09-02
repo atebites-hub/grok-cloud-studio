@@ -102,6 +102,8 @@ Directors and leads spawn specialists only via `scripts/launch-cloud-extra-high.
 | release-manager | `studio-ops` |
 | audio | `audio` |
 | narrative | `narrative` |
+| audio-director / audio-lead | `audio` |
+| narrative-director / narrative-lead | `narrative` |
 
 `audio` and `narrative` are first-class registry seats. The other titles are
 aliases (`scripts/a2a/lib.py` `CCGS_LEAD_ALIASES`). `python3 scripts/a2a/lib.py known

@@ -41,6 +41,12 @@ CCGS_LEAD_ALIASES = {
     "art-director": "art",
     "qa-lead": "qa-a",
     "release-manager": "studio-ops",
+    # First-class audio / narrative keep those registry names. Title
+    # aliases fold onto them (same pattern as art-director → art).
+    "audio-director": "audio",
+    "audio-lead": "audio",
+    "narrative-director": "narrative",
+    "narrative-lead": "narrative",
 }
 
 
@@ -136,8 +142,8 @@ def grow_seats(root: Path | None = None) -> frozenset[str]:
 
     Default GCS_GROW_SEATS / GCS_ACP_SEATS is floor,studio-ops. The example
     registry names ops `ops`; both aliases are included so dispatch skip and
-    wake loops agree. CCGS lead aliases fold. Unmapped specialist titles
-    do not mint GROW seats.
+    wake loops agree. CCGS lead titles fold (audio-director → audio).
+    Unmapped specialist titles do not mint GROW seats.
     """
     raw = env_first("GCS_GROW_SEATS", "GCS_ACP_SEATS", default="floor,studio-ops")
     known = set(_seat_entries(root))

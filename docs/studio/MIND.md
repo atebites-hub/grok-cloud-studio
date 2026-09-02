@@ -214,6 +214,19 @@ specialists only via `scripts/launch-cloud-extra-high.sh`.
 | release-manager | `studio-ops` |
 | audio | `audio` (first-class) |
 | narrative | `narrative` (first-class) |
+| audio-director / audio-lead | `audio` |
+| narrative-director / narrative-lead | `narrative` |
+
+Wipe-kit first-class mind seats (`studio.env.example`; aliases in
+`scripts/a2a/lib.py` `CCGS_LEAD_ALIASES`):
+
+```bash
+export GCS_MIND_SEATS=floor-ops,studio-ops,floor,art,content,systems,qa-a,qa-b,audio,narrative
+```
+
+First-class `audio` and `narrative` stay themselves. Title aliases fold
+(`audio-director` → `audio`). Do not add 49 specialists. Distinct from
+`gcs-ccgs-audio-narrative-map-beat1849` (fail-closed unmapped titles).
 
 Unmapped specialist titles do not mint mind or GROW seats (`lib.py known`
 fails closed). Aliases live in `scripts/a2a/lib.py` `CCGS_LEAD_ALIASES`.
