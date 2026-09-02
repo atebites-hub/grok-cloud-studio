@@ -2,7 +2,9 @@
 """Fake grok agent serve: ACP JSON-RPC over a stdlib WebSocket.
 
 GROW wake FAT uses this as the live serve pid. Inbox mail must land as
-ACP ``session/prompt`` on this socket. This process never implements
+ACP ``session/prompt`` on this socket. ``--prompt-mode silent`` stays
+quiet so leftover ACP pin-session can nack and remint after 3 no-start
+fails (``ACP_INJECT_SESSION_DEAD``). This process never implements
 ``grok --resume``. No Hermes. No secrets. Stdlib only.
 """
 from __future__ import annotations
@@ -39,15 +41,21 @@ class FakeAcpServe:
         journal: Path,
         session_id: str,
         status_text: str,
+        prompt_mode: str = "status",
+        reborn_session: str = "",
     ) -> None:
         self.journal_path = journal
         self.session_id = session_id
         self.status_text = status_text
+        self.prompt_mode = prompt_mode
+        self.reborn_session = reborn_session.strip()
         self.port = 0
         self.pid = os.getpid()
         self.methods: list[str] = []
         self.prompts: list[str] = []
         self.session_ids: list[str] = []
+        self.loaded_ids: list[str] = []
+        self.remint_count = 0
         self._lock = asyncio.Lock()
 
     def snapshot(self) -> dict[str, Any]:
@@ -57,8 +65,19 @@ class FakeAcpServe:
             "methods": list(self.methods),
             "prompts": list(self.prompts),
             "session_ids": list(self.session_ids),
+            "prompt_mode": self.prompt_mode,
             "resume_seen": False,
         }
+
+    def next_new_session_id(self) -> str:
+        """First boot (no load) keeps --session. Remint after load is distinct."""
+        if not self.loaded_ids:
+            return self.session_id
+        self.remint_count += 1
+        base = self.reborn_session or f"{self.session_id}-reborn"
+        if self.remint_count == 1:
+            return base
+        return f"{base}-{self.remint_count}"
 
     async def record(self, method: str, **extra: Any) -> None:
         async with self._lock:
@@ -215,20 +234,26 @@ async def _dispatch_rpc(
         return
     if method == "session/load":
         sid = str(params.get("sessionId") or serve.session_id)
+        serve.loaded_ids.append(sid)
         await serve.record(method, session_id=sid)
         await _send_text(writer, {"jsonrpc": "2.0", "id": rid, "result": {}})
         return
     if method == "session/new":
-        await serve.record(method, session_id=serve.session_id)
+        new_id = serve.next_new_session_id()
+        await serve.record(method, session_id=new_id)
         await _send_text(
             writer,
-            {"jsonrpc": "2.0", "id": rid, "result": {"sessionId": serve.session_id}},
+            {"jsonrpc": "2.0", "id": rid, "result": {"sessionId": new_id}},
         )
         return
     if method == "session/prompt":
         text = _prompt_text(params)
         sid = str(params.get("sessionId") or "")
         await serve.record(method, text=text, session_id=sid)
+        if serve.prompt_mode == "silent":
+            # Dead pin-session: load works, actor never starts. No chunks, no RPC
+            # result — inject must nack at GCS_ACP_ACCEPT_DEADLINE.
+            return
         await _send_text(
             writer,
             {
@@ -265,6 +290,8 @@ async def _run(args: argparse.Namespace) -> int:
         journal=Path(args.journal),
         session_id=args.session,
         status_text=args.status_text,
+        prompt_mode=args.prompt_mode,
+        reborn_session=args.reborn_session,
     )
     host, port_s = args.bind.rsplit(":", 1)
     bind_port = int(port_s)
@@ -294,11 +321,24 @@ async def _run(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Fake ACP grok agent serve for GROW wake FAT")
+    parser = argparse.ArgumentParser(
+        description="Fake ACP grok agent serve for leftover ACP FAT (wake + SESSION_DEAD)"
+    )
     parser.add_argument("--bind", default="127.0.0.1:0", help="host:port (port 0 = ephemeral)")
     parser.add_argument("--journal", required=True, help="JSON evidence path")
     parser.add_argument("--ready", default="", help="Write FAKE_ACP_READY here when listening")
     parser.add_argument("--session", default="sess-pinned-grow-fat", help="Pinned ACP session id")
+    parser.add_argument(
+        "--prompt-mode",
+        choices=("status", "silent"),
+        default="status",
+        help="status: STATUS chunk (wake FAT). silent: no-start nacks (SESSION_DEAD FAT).",
+    )
+    parser.add_argument(
+        "--reborn-session",
+        default="",
+        help="sessionId returned by session/new after session/load (dead remint)",
+    )
     parser.add_argument("--status-text", default=DEFAULT_STATUS, help="STATUS chunk after session/prompt")
     args = parser.parse_args()
     try:
