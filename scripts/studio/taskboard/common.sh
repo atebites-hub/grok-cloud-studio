@@ -76,16 +76,58 @@ gcs_taskboard_vendor_dir() {
   printf '%s\n' "$GCS_KIT_ROOT/vendor/taskboard"
 }
 
+_gcs_taskboard_is_wrapper() {
+  local f="$1"
+  [[ -n "$f" && -f "$f" ]] || return 1
+  # Wrappers are tiny shell scripts; never scan a compiled blob.
+  head -c 2048 "$f" 2>/dev/null | grep -q "gcs-.*-taskboard-wrapper"
+}
+
 gcs_taskboard_submodule_prebuilt() {
   local cand
   for cand in \
     "$(gcs_taskboard_vendor_dir)/taskboard" \
     "$(gcs_taskboard_vendor_dir)/bin/taskboard"
   do
-    if [[ -n "$cand" && -f "$cand" && -x "$cand" ]]; then
+    if [[ -n "$cand" && -f "$cand" && -x "$cand" ]] && ! _gcs_taskboard_is_wrapper "$cand"; then
       printf '%s\n' "$cand"
       return 0
     fi
+  done
+  return 1
+}
+
+gcs_host_ticket_script() {
+  printf '%s\n' "$TASKBOARD_SCRIPT_DIR/ticket"
+}
+
+gcs_host_tb_script() {
+  printf '%s\n' "$TASKBOARD_SCRIPT_DIR/tb"
+}
+
+gcs_install_host_ticket_links() {
+  local src_ticket src_tb
+  src_ticket="$(gcs_host_ticket_script)"
+  src_tb="$(gcs_host_tb_script)"
+  [[ -f "$src_ticket" && -f "$src_tb" ]] || return 1
+  chmod +x "$src_ticket" "$src_tb" 2>/dev/null || true
+  mkdir -p "$GCS_KIT_ROOT/bin"
+  ln -sfn "$src_ticket" "$GCS_KIT_ROOT/bin/ticket"
+  ln -sfn "$src_tb" "$GCS_KIT_ROOT/bin/tb"
+  if [[ -n "${HOME:-}" ]]; then
+    mkdir -p "$HOME/.local/bin"
+    ln -sfn "$src_ticket" "$HOME/.local/bin/ticket"
+    ln -sfn "$src_tb" "$HOME/.local/bin/tb"
+  fi
+}
+
+gcs_wait_listen() {
+  local host="$1" port="$2"
+  local tries="${3:-${GCS_TASKBOARD_READY_TRIES:-25}}"
+  local i
+  for ((i = 0; i < tries; i++)); do
+    gcs_port_listening "$host" "$port" && return 0
+    sleep 0.2
   done
   return 1
 }
@@ -104,7 +146,7 @@ gcs_ensure_taskboard_submodule() {
 
 gcs_taskboard_bin() {
   local cand
-  if [[ -n "${TASKBOARD_BIN:-}" && -x "${TASKBOARD_BIN}" ]]; then
+  if [[ -n "${TASKBOARD_BIN:-}" && -x "${TASKBOARD_BIN}" ]] && ! _gcs_taskboard_is_wrapper "${TASKBOARD_BIN}"; then
     printf '%s\n' "$TASKBOARD_BIN"
     return 0
   fi
@@ -119,13 +161,13 @@ gcs_taskboard_bin() {
     /opt/homebrew/bin/taskboard \
     /usr/bin/taskboard
   do
-    if [[ -n "$cand" && -x "$cand" ]]; then
+    if [[ -n "$cand" && -x "$cand" ]] && ! _gcs_taskboard_is_wrapper "$cand"; then
       printf '%s\n' "$cand"
       return 0
     fi
   done
   cand="$(command -v taskboard 2>/dev/null || true)"
-  if [[ -n "$cand" && -x "$cand" ]]; then
+  if [[ -n "$cand" && -x "$cand" ]] && ! _gcs_taskboard_is_wrapper "$cand"; then
     printf '%s\n' "$cand"
     return 0
   fi

@@ -40,11 +40,13 @@ gcs_ensure_taskboard_submodule || true
 
 already="$(gcs_taskboard_bin 2>/dev/null || true)"
 if [[ -n "$already" ]]; then
+  gcs_install_host_ticket_links || true
   echo "TASKBOARD_INSTALL_ALREADY bin=$already"
   exit 0
 fi
 
 if prebuilt="$(gcs_taskboard_submodule_prebuilt)"; then
+  gcs_install_host_ticket_links || true
   echo "TASKBOARD_INSTALL_ALREADY source=vendor/taskboard bin=$prebuilt"
   exit 0
 fi
@@ -112,9 +114,11 @@ install_from_tarball() {
 }
 
 if install_from_brew; then
+  gcs_install_host_ticket_links || true
   echo "TASKBOARD_INSTALL_OK source=brew version=$VERSION"
   exit 0
 fi
 
 echo "TASKBOARD_INSTALL brew unavailable or failed; using GitHub release tarball"
 install_from_tarball
+gcs_install_host_ticket_links || true

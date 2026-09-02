@@ -50,6 +50,8 @@ chmod +x \
   "$ROOT"/scripts/webhook/*.sh \
   "$ROOT"/scripts/studio/*.sh \
   "$ROOT"/scripts/studio/taskboard/*.sh \
+  "$ROOT"/scripts/studio/taskboard/ticket \
+  "$ROOT"/scripts/studio/taskboard/tb \
   "$ROOT"/scripts/host/cursor-grok \
   2>/dev/null || true
 
@@ -72,5 +74,5 @@ echo "install ok — run ./doctor.sh then .venv/bin/pytest -q"
 echo "DR: ./setup.sh (deploy) and ./cleanup.sh (teardown); ./health_check.sh / ./recover.sh; docs/studio/WIPE.md"
 echo "A2A: scripts/a2a/start-studio-bus.sh (hub+dispatch+shepherd; bot-bridge if GCS_BOT_BRIDGE=1); GROW: start --daemons"
 echo "Mind: GCS_MIND_SEATS from studio.env (docs/studio/MIND.md); Palemon wipe: docs/studio/WIPE.md"
-echo "Board: scripts/studio/taskboard/ (install-taskboard.sh is documented, not run here)"
+echo "Board: scripts/studio/taskboard/setup-taskboard.sh start (ticket/tb + UI :3010 + MCP :3011); Palemon wipe: docs/studio/WIPE.md"
 echo "ACP inject timeout overlay 600s via studio.env (code default remains 180s in acp_inject.py)"

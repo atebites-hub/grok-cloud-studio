@@ -54,7 +54,16 @@ Cursor CLI uses a **second catalog**: checkout `.cursor/mcp.json` wrapping `scri
 
 This repository does not vendor the taskboard binary. The IaC pin is `vendor/taskboard` (submodule, v0.6.0). Host install still uses brew or the v0.6.0 tarball when that checkout has no prebuilt. Point seats at the discovered binary (`TASKBOARD_BIN` / `$GCS_ROOT/bin/taskboard`) the same way you point Cursor Cloud at `GCS_CLOUD_REPO`.
 
-Host process scripts (wipe box): `scripts/studio/taskboard/` — `install-taskboard.sh`, `start-taskboard.sh` (UI `127.0.0.1:3010`), `mcp-http.sh` (MCP `127.0.0.1:3011`), `run-mcp.sh` (Cursor CLI stdio). Palemon floor recreate: `docs/studio/WIPE.md`. Two-runtime mind law: `docs/studio/MIND.md`.
+Host process scripts (wipe box): `scripts/studio/taskboard/` —
+`setup-taskboard.sh` (board-only start/stop/wipe + host `ticket`/`tb` PATH
+links), `install-taskboard.sh`, `start-taskboard.sh` (UI `127.0.0.1:3010`),
+`mcp-http.sh` (MCP `127.0.0.1:3011`), `run-mcp.sh` (Cursor CLI stdio).
+`./setup.sh` calls `setup-taskboard.sh start`. `./cleanup.sh` calls
+`setup-taskboard.sh stop` (or `wipe` when `CLEANUP_WIPE_STATE=1`).
+`./recover.sh` still starts the leaf UI/MCP scripts when a port is down
+(no brew/tarball as a recover side effect). Palemon floor recreate:
+`docs/studio/WIPE.md`. Two-runtime mind law: `docs/studio/MIND.md`.
+Studio Linear is Living Sky (linear.app/livingsky, team Livingsky / LIV).
 
 ## Maintainer kit (start / health / docs)
 

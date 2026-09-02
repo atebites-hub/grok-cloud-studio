@@ -33,6 +33,9 @@ START_TB = TASKBOARD_DIR / "start-taskboard.sh"
 MCP_HTTP = TASKBOARD_DIR / "mcp-http.sh"
 MCP_GW = TASKBOARD_DIR / "mcp_http_gateway.py"
 INSTALL_TB = TASKBOARD_DIR / "install-taskboard.sh"
+SETUP_TB = TASKBOARD_DIR / "setup-taskboard.sh"
+HOST_TICKET = TASKBOARD_DIR / "ticket"
+HOST_TB = TASKBOARD_DIR / "tb"
 TS_SERVE = TASKBOARD_DIR / "start-tailscale-serve.sh"
 TB_README = TASKBOARD_DIR / "README.md"
 CURSOR_GROK = REPO / "scripts" / "host" / "cursor-grok"
@@ -78,7 +81,7 @@ def test_agent_kanban_tree_absent() -> None:
     bus = BUS.read_text(encoding="utf-8")
     assert "agent-kanban" not in bus
     assert "ak start" not in bus or "never" in bus.lower()
-    for path in (START_TB, MCP_HTTP, INSTALL_TB, TS_SERVE, MCP_GW):
+    for path in (START_TB, MCP_HTTP, INSTALL_TB, TS_SERVE, MCP_GW, SETUP_TB, HOST_TICKET, HOST_TB):
         text = path.read_text(encoding="utf-8")
         assert "ak start" not in text
         assert "mint-floor-ops-worker" not in text
@@ -95,6 +98,9 @@ def test_wipe_kit_files_exist() -> None:
         MCP_HTTP,
         MCP_GW,
         INSTALL_TB,
+        SETUP_TB,
+        HOST_TICKET,
+        HOST_TB,
         TS_SERVE,
         TB_README,
         TASKBOARD_DIR / "maintainer.sh",
