@@ -65,7 +65,7 @@ See `.env.example`. Prefix is **`GCS_*`**. Important:
 - `GCS_BOT_AGENT_ID` — Grok Bot orchestrator id (binds into A2A on install)
 - `GCS_BOT_SEAT` — default `orchestrator` (`donald` still works; kept in `skipSeats` for back-compat)
 - `GCS_BOT_BIND_OPTIONAL=1` — doctor will not FAIL on placeholder agentId (CI clones only)
-- `GCS_BOT_BRIDGE=1` — start bot-bridge (default off; Bot seats stay standby)
+- `GCS_BOT_BRIDGE=1` — start bot-bridge (default off; Bot seats stay standby). Leftover live `bot-bridge.pid` is not a default start; recover/start keep the same pid only when this is 1.
 - `GCS_CLOUD_REF` — default `main`
 - `GCS_PROMPT_DIR` — director prompts dir; empty uses `prompts/` or `docs/studio/directors`
 - `GCS_SPAWN_WAITER=0` — disable the detached waiter (tests)

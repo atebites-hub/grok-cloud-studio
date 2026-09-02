@@ -165,6 +165,8 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
 
    That is hub + leftover dispatch + shepherd + **mind loops**.
    **bot-bridge stays off** unless `GCS_BOT_BRIDGE=1` (Bot seats standby).
+   Leftover live `bot-bridge.pid` is not a default start; recover/start
+   evict it unless opted in (`ALREADY` only when `GCS_BOT_BRIDGE=1`).
    Bot is not a Cursor CloudAgent.
    It does **not** spawn `grok agent serve` per seat. Never auto-spawn a
    13-seat grok serve floor on a ~15GB box.
