@@ -5,8 +5,11 @@ import { Agent } from "@cursor/sdk";
 import {
   agentUrl,
   cloudCreateOptions,
+  cloudRef,
+  cloudRepo,
   die,
   extraHighModel,
+  isCursorRefVerifyError,
   loadApiKey,
   mapRunStatus,
   safeError,
@@ -102,6 +105,13 @@ async function main(): Promise<void> {
     } catch (err) {
       process.stdout.write("CLOUD_LAUNCH_ERR\n");
       console.error(safeError(err));
+      if (isCursorRefVerifyError(err)) {
+        const sha = (process.env.GCS_RESOLVED_SHA || "").trim();
+        process.stderr.write(
+          `FOLLOWUP_FIRST github_sha=${sha} cursor_cannot_verify_ref=${cloudRef()} repo=${cloudRepo()} use scripts/cloud/followup-cloud-agent.sh <existing-bc-id> (do not retry create)\n`,
+        );
+        process.exit(1);
+      }
       // 75 → REST fallback. Do not fail closed on v1 metadata / unavailable.
       process.exit(sdkCreateFailExitCode(err));
     }

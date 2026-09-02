@@ -174,6 +174,16 @@ export GCS_CLOUD_REF="$CLOUD_REF"
 export CURSOR_CLOUD_REPO="${CURSOR_CLOUD_REPO:-$CLOUD_REPO}"
 export CURSOR_CLOUD_REF="${CURSOR_CLOUD_REF:-$CLOUD_REF}"
 
+# GitHub may have the ref while Cursor Cloud still cannot verify it.
+# Skip live git ls-remote under CURSOR_API_BASE (pytest mock).
+if [[ -z "${CURSOR_API_BASE:-}" ]]; then
+  RESOLVE_OUT="$(python3 "${SCRIPT_DIR}/cloud/resolve_starting_ref.py" "$CLOUD_REPO" "$CLOUD_REF" 2>/dev/null || true)"
+  if [[ "$RESOLVE_OUT" == CLOUD_REF_OK* ]]; then
+    GCS_RESOLVED_SHA="$(printf '%s\n' "$RESOLVE_OUT" | sed -n 's/.*sha=\([^ ]*\).*/\1/p')"
+    export GCS_RESOLVED_SHA
+  fi
+fi
+
 if [[ -n "$name" ]]; then
   refuse_live_name_twin "$name"
 fi

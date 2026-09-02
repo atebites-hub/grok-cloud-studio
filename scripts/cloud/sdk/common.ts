@@ -87,6 +87,12 @@ function errorField(err: unknown, key: string): unknown {
   return undefined;
 }
 
+/** Cursor Cloud GitHub App cannot see a ref that git ls-remote can. Do not REST-retry create. */
+export function isCursorRefVerifyError(err: unknown): boolean {
+  const msg = safeError(err);
+  return /Failed to verify existence of (?:branch|commit) '.+' in repository/i.test(msg);
+}
+
 /**
  * Exit 75 so bash wrappers REST-fall-back. Only for create failures that look
  * retryable/unavailable (including v1 metadata feature_unavailable). Auth and
