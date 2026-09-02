@@ -67,7 +67,7 @@ MERGE_REQUEST / QA squash requires pasted `.venv/bin/pytest -q` (`N passed`) and
 
 | Path | When |
 |---|---|
-| Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`) |
+| Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`). Empty GitHub checks (`check_runs=0`) are not MERGE_REQUEST-ready. MERGEABLE+empty CI is leftover-green theatre. |
 | Webhook | `GCS_WEBHOOK_SECRET` set and `webhook-harness.sh serve` |
 | Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook). Dead `waiter_pid` is evicted on `fleet.jsonl` before notify-once. |
 

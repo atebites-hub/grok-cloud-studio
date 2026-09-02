@@ -57,7 +57,7 @@ RUNNING Extra High count for `GCS_CLOUD_REPO` is below 8, cloud mind MUST
 
 ## Waiter + orphan shepherd
 
-After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.jsonl` and spawns `wait-notify.ts` (SDK `listRuns` + `run.wait()`, REST `GET /v1/agents/{id}/runs` when `CURSOR_API_BASE` / `CLOUD_FORCE_REST`). The waiter GETs **latest** `runStatus`. Leftover `FINISHED` while a newer run is `CREATING`/`RUNNING` is not done. On latest `FINISHED|ERROR|CANCELLED|EXPIRED` the waiter A2A-pings the owning seat and `REPORT_TO` (default `studio-ops`) (`FLEET_DONE` / `PR_READY`) and marks `notified_by=waiter`.
+After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.jsonl` and spawns `wait-notify.ts` (SDK `listRuns` + `run.wait()`, REST `GET /v1/agents/{id}/runs` when `CURSOR_API_BASE` / `CLOUD_FORCE_REST`). The waiter GETs **latest** `runStatus`. Leftover `FINISHED` while a newer run is `CREATING`/`RUNNING` is not done. On latest `FINISHED|ERROR|CANCELLED|EXPIRED` the waiter A2A-pings the owning seat and `REPORT_TO` (default `studio-ops`) (`FLEET_DONE` / `PR_READY`) and marks `notified_by=waiter`. If `prUrl` is a GitHub pull with empty checks (`check_runs=0`), the ping is not MERGE_REQUEST-ready — empty GitHub checks are not evidence; MERGEABLE+empty CI is leftover-green theatre. The required check is GitHub Actions **pytest -q and secret_scan**.
 
 Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
@@ -114,6 +114,8 @@ scripts/cloud/status-cloud-agent.sh bc-…
 
 # 3) On FLEET_DONE / PR_READY
 scripts/cloud/result-cloud-agent.sh bc-…
+# JSON includes emptyChecks / shipGateOk / checkRuns when prUrl is a GitHub pull.
+# emptyChecks=true is not MERGE_REQUEST evidence (MERGEABLE+empty CI is leftover-green theatre).
 # HOLD MERGE_REQUEST until the Extra High RESULT / PR body pastes
 # .venv/bin/pytest -q (N passed) and python3 scripts/secret_scan.py
 # (secret_scan=clean). Empty GitHub leftover-green is not a ship-gate.
