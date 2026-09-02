@@ -12,7 +12,7 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 | ACP seat daemons + pin-session inject (leftover host OS) | `scripts/directors/start-seat-daemon.sh`, `acp_inject.py`, `seat-prompt-acp.sh` |
 | Grok Build seat mind (opt-in, `GCS_MIND_SEATS`) | `scripts/directors/mind.py`, `seat-mind-loop.sh`, `docs/studio/MIND.md` |
 | Extra High SDK + bash wrappers | `scripts/cloud/sdk/`, `scripts/launch-cloud-extra-high.sh` |
-| Waiter (`run.wait` → A2A ping) | `scripts/cloud/spawn-waiter.sh`, `sdk/wait-notify.ts` |
+| Waiter (`run.wait` → A2A ping owner + `REPORT_TO`) | `scripts/cloud/spawn-waiter.sh`, `sdk/wait-notify.ts` |
 | Orphan fleet-shepherd | `scripts/directors/fleet-shepherd.py` |
 | MCP plugins | `plugins/a2a`, `plugins/cursor-cloud` |
 | Webhook harness | `scripts/cloud/webhook_receiver.py`, `webhook-harness.sh` |
@@ -65,12 +65,13 @@ See `.env.example`. Prefix is **`GCS_*`**. Important:
 - `GCS_BOT_AGENT_ID` — Grok Bot orchestrator id (binds into A2A on install)
 - `GCS_BOT_SEAT` — default `orchestrator` (`donald` still works; kept in `skipSeats` for back-compat)
 - `GCS_BOT_BIND_OPTIONAL=1` — doctor will not FAIL on placeholder agentId (CI clones only)
-- `GCS_BOT_BRIDGE=1` — start bot-bridge (default off; Bot seats stay standby)
+- `GCS_BOT_BRIDGE=1` — start bot-bridge (default off; Bot seats stay standby). Leftover live `bot-bridge.pid` is not a default start; recover/start keep the same pid only when this is 1.
 - `GCS_CLOUD_REF` — default `main`
 - `GCS_PROMPT_DIR` — director prompts dir; empty uses `prompts/` or `docs/studio/directors`
 - `GCS_SPAWN_WAITER=0` — disable the detached waiter (tests)
 - `GCS_WEBHOOK_SECRET` — enable signed webhook receiver
 - `CURSOR_API_KEY` — never print; never commit
+- Living Sky Linear (`LINEAR_API_KEY` / `GCS_LINEAR_API_KEY`) — LIV-76 close stale + archive Done/Canceled for the 200 cap; **do not delete**. See `docs/studio/LINEAR.md`. Never Black Swan Money.
 
 ## Grok Bot orchestrator (A2A)
 
@@ -94,6 +95,20 @@ grok plugin install ./plugins/cursor-cloud --trust
 ```
 
 Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_result`. Details: `docs/PLUGINS.md`.
+
+## Linear (Living Sky, LIV-76)
+
+Studio Linear is Living Sky (`linear.app/livingsky`, team **LIV**). Never Black Swan Money.
+The 200-issue cap is handled by closing stale tickets and archiving Done/Canceled
+(`scripts/linear_archive_closed.py`). Do not merge GCS #45 purge-delete. Linear MCP
+has no archive mutation.
+
+```bash
+python3 scripts/linear_archive_closed.py          # dry-run
+python3 scripts/linear_archive_closed.py --apply  # close stale, then issueArchive
+```
+
+Details: [docs/studio/LINEAR.md](docs/studio/LINEAR.md).
 
 ## Tests + secret scan
 

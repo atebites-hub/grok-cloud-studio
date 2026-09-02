@@ -22,7 +22,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus` |
 | `status.sh` / `status-cloud-agent.sh <bc-id>` | Compact agent + latest-run status |
-| `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Poll until terminal; exit 0 on FINISHED |
+| `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run |
 | `result-cloud-agent.sh <bc-id>` | Result/context JSON |
 | `pr_evidence.py judge` | MERGE_REQUEST paste gate: fail-closed unless pasted `.venv/bin/pytest -q` (`N passed`) and `secret_scan=clean`. Empty GitHub leftover-green is not evidence. |
@@ -53,7 +53,7 @@ RUNNING Extra High count for `GCS_CLOUD_REPO` is below 8, cloud mind MUST
 
 ## Waiter + orphan shepherd
 
-After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.jsonl` and spawns `wait-notify.ts` (SDK `run.wait()`, REST poll when `CURSOR_API_BASE` / `CLOUD_FORCE_REST`). On `FINISHED|ERROR|CANCELLED|EXPIRED` the waiter A2A-pings the owning seat (`FLEET_DONE` / `PR_READY`) and marks `notified_by=waiter`.
+After `CLOUD_LAUNCH_OK`, launch registers the bc-id on `.a2a-state/<seat>/fleet.jsonl` and spawns `wait-notify.ts` (SDK `run.wait()`, REST poll when `CURSOR_API_BASE` / `CLOUD_FORCE_REST`). On `FINISHED|ERROR|CANCELLED|EXPIRED` the waiter A2A-pings the owning seat and `REPORT_TO` (default `studio-ops`) (`FLEET_DONE` / `PR_READY`) and marks `notified_by=waiter`.
 
 Disable with `GCS_SPAWN_WAITER=0` or `CLOUD_SPAWN_WAITER=0`.
 
@@ -122,7 +122,7 @@ scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check
 `FINISHED` (success) · `ERROR` · `CANCELLED` · `EXPIRED`  
 In-flight: `CREATING` · `RUNNING`
 
-`watch.sh` / `watch-cloud-agent.sh` poll the agent's latest run. `FINISHED` exits 0; the other three terminals exit non-zero.
+`watch.sh` / `watch-cloud-agent.sh` poll the agent's latest run. `FINISHED` exits 0; the other three terminals exit non-zero. Directors never call these: launch already spawned `wait-notify` (`run.wait`) which A2A-pings the owning seat and `REPORT_TO` (default `studio-ops`). With `GCS_DIRECTOR_SEAT` set they print `CLOUD_WATCH_REFUSED` and exit 2 unless `CLOUD_ALLOW_BLOCK_WAIT=1`.
 
 Poll interval: `CLOUD_WATCH_INTERVAL` (short-name default 10s). Optional deadline: `CLOUD_WATCH_TIMEOUT_SEC` (0 = none on `watch.sh`). Long-name `watch-cloud-agent.sh` defaults timeout 1800s / poll 30s when those env vars are unset.
 

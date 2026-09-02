@@ -6,6 +6,7 @@ Never prints matched secret values — only path, line, and rule id.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import re
 import sys
 from pathlib import Path
@@ -36,6 +37,22 @@ SECRET_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("linear_key_assignment", re.compile(r"LINEAR_API_KEY\s*=\s*['\"]?[A-Za-z0-9_\-]{16,}")),
     ("webhook_assignment", re.compile(r"GCS_WEBHOOK_SECRET\s*=\s*['\"]?[A-Za-z0-9_\-]{12,}")),
 ]
+
+
+def _art_leak_rules() -> list[tuple[str, re.Pattern[str]]]:
+    path = Path(__file__).resolve().parent / "studio" / "higgsfield_sentry.py"
+    spec = importlib.util.spec_from_file_location("gcs_higgsfield_sentry", path)
+    if spec is None or spec.loader is None:
+        raise SystemExit("secret_scan: missing scripts/studio/higgsfield_sentry.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    rules = getattr(mod, "ART_LEAK_RULES", None)
+    if not rules:
+        raise SystemExit("secret_scan: higgsfield_sentry.ART_LEAK_RULES empty")
+    return list(rules)
+
+
+SECRET_RULES.extend(_art_leak_rules())
 
 LORE_RULES: list[tuple[str, re.Pattern[str]]] = [
     (

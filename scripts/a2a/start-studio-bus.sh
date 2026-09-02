@@ -14,9 +14,9 @@
 # Leftover ACP GROW is session/prompt inside serve, not this grok --resume path.
 # start recycles leftover dispatch only when .a2a-state/dispatch.mind-seats
 # differs from current GCS_MIND_SEATS (env / studio.env). Matching keeps
-# STUDIO_BUS_DISPATCH_ALREADY. Recycle does not kill hub, leftover
-# bot-bridge, fleet-shepherd, seat minds, host ticker, or grok agent serve.
-# start / recover.sh do not spawn bot-bridge unless GCS_BOT_BRIDGE=1.
+# STUDIO_BUS_DISPATCH_ALREADY. Recycle does not kill hub, fleet-shepherd,
+# seat minds, host ticker, or grok agent serve. Default-off start/recover
+# evict leftover bot-bridge (ALREADY only when GCS_BOT_BRIDGE=1; do not remint).
 # Host ticker enqueues ACP_PING STATUS/CONTINUE keep-alives (work turns).
 # Ticker also starts when GCS_MIND_SEATS is set (mind stay-up, no --daemons).
 # Agent Kanban / `ak` was removed. Board is tcarac/taskboard (ticket CLI + HTTP /mcp).
@@ -83,6 +83,8 @@ Usage: start-studio-bus.sh [start|stop|status] [--daemons]
 start            hub + dispatch + fleet-shepherd (idempotent; recycle leftover
                  dispatch only when dispatch.mind-seats != current GCS_MIND_SEATS).
                  bot-bridge stays off unless GCS_BOT_BRIDGE=1 (Bot seats standby).
+                 Leftover live bot-bridge.pid is not a default start; ALREADY
+                 only when GCS_BOT_BRIDGE=1 (do not remint that live pid).
 start --daemons  also start per-seat ACP daemons + GROW wake loops + host ticker
                  (ticker also starts when GCS_MIND_SEATS is set, no --daemons)
 stop             stop hub/dispatch/shepherd/wake/mind/ticker (leaves seat serve)
@@ -182,8 +184,8 @@ write_dispatch_mind_seats() {
 
 # Recycle leftover dispatch only when its persisted GCS_MIND_SEATS set differs
 # from current env / studio.env. Missing persist file is the empty set (pre-feature
-# leftovers). Do not touch hub, leftover bot-bridge, shepherd, minds, ticker,
-# or serve. Do not start bot-bridge unless GCS_BOT_BRIDGE=1.
+# leftovers). Do not touch hub, shepherd, minds, ticker, or serve.
+# Default-off start evicts leftover bot-bridge; spawn only if GCS_BOT_BRIDGE=1.
 recycle_dispatch_for_mind_seats() {
   local disp_pid="$1"
   local want have
@@ -553,26 +555,34 @@ case "$cmd" in
     fi
 
     bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
-    if pid_alive "$bridge_pid"; then
-      echo "STUDIO_BUS_BOT_BRIDGE_ALREADY pid=$bridge_pid"
-    elif want_bot_bridge; then
-      rm -f "$BOT_BRIDGE_PID_FILE"
-      if [[ -f "$BOT_BRIDGE_PY" ]]; then
-        nohup python3 "$BOT_BRIDGE_PY" >>"$BOT_BRIDGE_LOG" 2>&1 &
-        echo $! >"$BOT_BRIDGE_PID_FILE"
-        bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
-        sleep 0.2
-        if ! pid_alive "$bridge_pid"; then
-          echo "STUDIO_BUS_FAIL bot-bridge did not stay up; see $BOT_BRIDGE_LOG" >&2
-        else
-          echo "STUDIO_BUS_BOT_BRIDGE_START pid=$bridge_pid log=$BOT_BRIDGE_LOG"
-        fi
+    if want_bot_bridge; then
+      if pid_alive "$bridge_pid"; then
+        echo "STUDIO_BUS_BOT_BRIDGE_ALREADY pid=$bridge_pid"
       else
-        echo "STUDIO_BUS_BOT_BRIDGE_SKIP missing $BOT_BRIDGE_PY"
-        bridge_pid=""
+        rm -f "$BOT_BRIDGE_PID_FILE"
+        if [[ -f "$BOT_BRIDGE_PY" ]]; then
+          nohup python3 "$BOT_BRIDGE_PY" >>"$BOT_BRIDGE_LOG" 2>&1 &
+          echo $! >"$BOT_BRIDGE_PID_FILE"
+          bridge_pid="$(read_pid "$BOT_BRIDGE_PID_FILE")"
+          sleep 0.2
+          if ! pid_alive "$bridge_pid"; then
+            echo "STUDIO_BUS_FAIL bot-bridge did not stay up; see $BOT_BRIDGE_LOG" >&2
+          else
+            echo "STUDIO_BUS_BOT_BRIDGE_START pid=$bridge_pid log=$BOT_BRIDGE_LOG"
+          fi
+        else
+          echo "STUDIO_BUS_BOT_BRIDGE_SKIP missing $BOT_BRIDGE_PY"
+          bridge_pid=""
+        fi
       fi
     else
-      rm -f "$BOT_BRIDGE_PID_FILE"
+      # Leftover live pid is not a default start. ALREADY-keep still
+      # requires kill-after-RECOVER. Evict, then standby skip.
+      if pid_alive "$bridge_pid"; then
+        stop_pid_file "$BOT_BRIDGE_PID_FILE" "BOT_BRIDGE"
+      else
+        rm -f "$BOT_BRIDGE_PID_FILE"
+      fi
       bridge_pid=""
       echo "STUDIO_BUS_BOT_BRIDGE_SKIP reason=standby (set GCS_BOT_BRIDGE=1 to start)"
     fi
