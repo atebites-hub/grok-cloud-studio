@@ -68,7 +68,7 @@ stay-up. After #47 (mail-as-a-turn), the remaining gap was: empty harvest
 left `mind/session` missing. `process_once` now pins a uuid4 even when
 `inbox.jsonl` has no new line. A later empty harvest **does not remint**.
 First grok turn uses `--session-id` of that pin. Empty ticks do **not**
-invent `mail.txt`. This is **not** harvest `mind/heartbeat`. Do not land
+invent `mail.txt`. This is **not** a harvest heartbeat file. Do not land
 #26 and #28. Do not vendor `hermes-agent`.
 
 ### Mail is a turn (grok)
