@@ -1,0 +1,10 @@
+{
+  "id": "PAL-8",
+  "title": "Dewcave generate",
+  "status": "HOLD",
+  "blocked_on": "session",
+  "generate": false,
+  "invent_png": false,
+  "session_unblocked": false,
+  "notes": "Do not launch Dewcave generate until a live Higgsfield session exists. Cursor Agents MCP login is enough when generate is needed. Do not invent PNG. Do not mcp_auth loop."
+}

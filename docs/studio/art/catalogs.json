@@ -1,0 +1,30 @@
+{
+  "ticket": "LIV-93",
+  "cloud_env_ticket": "LIV-84",
+  "remint_cloud_env": false,
+  "catalogs_merged": false,
+  "oauth_retry_loop": false,
+  "merge_gcs_26": false,
+  "merge_gcs_28": false,
+  "grok_build": {
+    "catalog": "GROK_HOME",
+    "template": "docs/studio/art/grok-home-higgsfield.toml.example",
+    "higgsfield": "grok-only"
+  },
+  "cursor_cloud": {
+    "catalog": ".cursor/mcp.json",
+    "mcp_servers": ["taskboard", "linear"],
+    "higgsfield": "cloud-env snapshot login",
+    "copy_grok_home": false,
+    "secrets": ["SENTRY_DSN", "GCS_SENTRY_DSN", "LINEAR_API_KEY"]
+  },
+  "sentry": {
+    "env_names": ["SENTRY_DSN", "GCS_SENTRY_DSN"],
+    "literals_banned": true
+  },
+  "pal8": {
+    "status": "HOLD",
+    "blocked_on": "session",
+    "generate": false
+  }
+}

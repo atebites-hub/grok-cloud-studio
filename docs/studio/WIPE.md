@@ -75,16 +75,18 @@ stay consistent.
   of `plugins/studio-mind`. Studio Linear is Living Sky
   (`linear.app/livingsky`, team Livingsky / `LIV`). NEVER Black Swan Money.
   Grok-home Higgsfield is grok-only, for when grok usage is back.
+  `SENTRY_DSN` from env / `$GCS_A2A_STATE/sentry.env` only (LIV-93).
 - Cursor CLI catalog: repo `.cursor/mcp.json` wrapping
   `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no
   `GROK_HOME`) and Linear HTTP (`Bearer ${LINEAR_API_KEY}`). Linear +
   taskboard only. Do not copy the whole Grok catalog. Higgsfield is Cursor
   catalog login when the runner is Cursor CLI (Art generate). Grok Bot
-  Higgsfield is a different catalog.
+  Higgsfield is a different catalog. Extra High Higgsfield is LIV-84
+  cloud-env snapshot login. Do not mcp_auth loop. Do not remint cloud-env.
 
 Cursor Cloud Extra High cannot scrape `GROK_HOME`. Snapshot env
-`LINEAR_API_KEY` from the cloud-env / dashboard Secrets so those agents
-see Linear via `.cursor/mcp.json`.
+`LINEAR_API_KEY` and `SENTRY_DSN` from the cloud-env / dashboard Secrets so
+those agents see Linear via `.cursor/mcp.json` and Sentry from env (LIV-93).
 
 Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`,
 `scripts/launch-cloud-extra-high.sh`.
@@ -244,12 +246,14 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    names live in `studio.env.example` (`HIGGSFIELD_API_KEY`,
    `HIGGSFIELD_SECRET`, `SENTRY_DSN`, `GCS_SENTRY_DSN`) — never print
    values, never commit them. `./doctor.sh` and `./recover.sh` fail-closed
-   if art MCP would leak keys (argv / literal env). LIV-84 Extra High
-   Higgsfield is the existing cloud-env snapshot login (do not remint).
+   if art MCP would leak keys (argv / literal env). LIV-93 / LIV-84 Extra
+   High Higgsfield is the existing cloud-env snapshot login (do not remint).
    Sentry DSN from dashboard Secrets / env only — not MCP. They also
    fail-closed if the Cursor catalog is merged (Higgsfield or Sentry in
    `.cursor/mcp.json`, even with `${...}` expansions) or cloud-env is
-   reminted. Ship gate remains pytest -q + secret_scan.
+   reminted. PAL-8 Dewcave generate is HOLD, blocked on session. Do not
+   invent PNG. Do not mcp_auth loop. Ship gate remains pytest -q +
+   secret_scan.
 
 10. Grok Build HTTP 402: `mind.py` **switches** the persisted runner
     (`$GCS_A2A_STATE/<seat>/mind/runner`) and retries that same mail line
