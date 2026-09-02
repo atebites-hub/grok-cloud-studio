@@ -24,6 +24,8 @@ studio.env
 acp.secret
 agent.env
 linear.env
+higgsfield.env
+sentry.env
 
 # OS
 .DS_Store

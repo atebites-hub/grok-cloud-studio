@@ -182,7 +182,12 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
 9. Higgsfield: Cursor catalog login when the runner is Cursor CLI (Art
    generate). Grok Bot Higgsfield is a different catalog. Grok-home
    Higgsfield is grok-only, for when grok usage is back. Do not encode
-   OAuth secrets. Do not fake a transfer between catalogs.
+   OAuth secrets. Do not fake a transfer between catalogs. Required env
+   names live in `studio.env.example` (`HIGGSFIELD_API_KEY`,
+   `HIGGSFIELD_SECRET`, `SENTRY_DSN`, `GCS_SENTRY_DSN`) — never print
+   values, never commit them. `./doctor.sh` and `./recover.sh` fail-closed
+   if art MCP would leak keys (argv / literal env). Ship gate remains
+   pytest -q + secret_scan.
 
 10. Grok Build HTTP 402: `mind.py` **switches** the persisted runner
     (`$GCS_A2A_STATE/<seat>/mind/runner`) and retries that same mail line
@@ -200,7 +205,8 @@ python3 scripts/secret_scan.py
 ```
 
 `./doctor.sh` **WARN**s (does not FAIL) if `grok`, `agent`/`cursor-grok`, or
-`taskboard` is missing. It **FAIL**s if `scripts/studio/agent-kanban` reappears.
+`taskboard` is missing. It **FAIL**s if `scripts/studio/agent-kanban` reappears
+or if Higgsfield/Sentry art MCP would leak keys (`scripts/studio/higgsfield_sentry.py`).
 
 ## Seats (first-class)
 

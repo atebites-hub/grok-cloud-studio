@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Restart ONLY down Palemon studio services via official scripts.
 # Do not remint sessions. Do not wipe state. Do not launch Cursor Cloud.
-# Do not pass --daemons. Prints RECOVER_OK then re-runs health_check.sh.
+# Do not pass --daemons. On success prints recover-ok then re-runs health_check.sh.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,7 +25,10 @@ Restart only what health_check would mark down:
 Does not remint sessions, wipe studio.env / inboxes / pins, reconnect
 Agent Kanban, or launch Cursor Cloud.
 
-Prints RECOVER_OK, then runs ./health_check.sh (same exit 0/1/2).
+Fails closed (no restarts) if Higgsfield/Sentry art MCP would leak keys
+(argv / literal env). Never prints secret values.
+
+On success prints a recover-ok line, then runs ./health_check.sh (same exit 0/1/2).
 
 GCS_RECOVER_DRY_RUN=1 prints the start commands without executing them.
 See docs/studio/WIPE.md (DR loop with health_check.sh).
@@ -45,6 +48,17 @@ fi
 STATE="$(gcs_studio_state_dir)"
 export GCS_A2A_STATE="$STATE"
 mkdir -p "$STATE"
+
+# Fail-closed before any restart if art Higgsfield/Sentry MCP would leak keys
+# (argv / literal env). Never print values. Distinct from leftover-green CI.
+_sentry_args=(--root "$ROOT" --state "$STATE")
+if [[ -n "${GROK_HOME:-}" ]]; then
+  _sentry_args+=(--grok-home "$GROK_HOME")
+fi
+if ! python3 "$ROOT/scripts/studio/higgsfield_sentry.py" "${_sentry_args[@]}"; then
+  echo "RECOVER_ERR higgsfield_sentry failed (art MCP would leak keys; values not printed)" >&2
+  exit 1
+fi
 
 need_bus=0
 need_tb=0
