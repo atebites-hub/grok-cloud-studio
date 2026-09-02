@@ -18,6 +18,8 @@ studio.env
 !studio.env.example
 /bin/taskboard
 /bin/taskboard-*
+/bin/ticket
+/bin/tb
 .a2a-state/
 .gcs-state/
 *.log

@@ -58,6 +58,9 @@ for p in \
   scripts/studio/taskboard/mcp-http.sh \
   scripts/studio/taskboard/mcp_http_gateway.py \
   scripts/studio/taskboard/install-taskboard.sh \
+  scripts/studio/taskboard/setup-taskboard.sh \
+  scripts/studio/taskboard/ticket \
+  scripts/studio/taskboard/tb \
   scripts/studio/taskboard/start-tailscale-serve.sh \
   scripts/studio/taskboard/health-taskboard.sh \
   scripts/studio/taskboard/maintainer.sh \

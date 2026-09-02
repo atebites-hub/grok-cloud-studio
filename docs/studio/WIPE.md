@@ -140,7 +140,15 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    snapshot or dashboard Secrets so `.cursor/mcp.json` Linear works.
 
 6. Board + MCP HTTP (tcarac/taskboard v0.6.0; do not compile; do not vendor a
-   binary). Source pin is `vendor/taskboard`. `install-taskboard.sh` prefers a
+   binary). Source pin is `vendor/taskboard`. One-command board path:
+
+   ```bash
+   bash scripts/studio/taskboard/setup-taskboard.sh start   # ticket/tb + UI :3010 + MCP :3011
+   bash scripts/studio/taskboard/setup-taskboard.sh status
+   ```
+
+   Leaf steps (also used by `./recover.sh` when a port is down):
+   `install-taskboard.sh` prefers a
    prebuilt in that checkout; brew tap or the matching v0.6.0 GitHub tarball
    remains the fallback when the submodule has no prebuilt.
 
@@ -157,6 +165,22 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    or POST `/mcp`). It is not `./health_check.sh` (studio DR) and not
    fleet-shepherd (GCS #112). Seat stdio MCP is GCS #100. Agent Kanban stays
    gone. Studio Linear is Living Sky; NEVER Black Swan Money.
+
+   Host PATH tools after setup: `ticket` / `tb` (wrappers under
+   `scripts/studio/taskboard/ticket` and `tb`, linked into `$GCS_ROOT/bin`
+   and `~/.local/bin`). Always `--db $GCS_TASKBOARD_DB`. Not a `GROK_HOME`
+   copy.
+
+   Board-only wipe (inboxes and mind pins stay; `studio.env` stays):
+
+   ```bash
+   GCS_TASKBOARD_WIPE=1 bash scripts/studio/taskboard/setup-taskboard.sh wipe
+   ```
+
+   That runs `taskboard --db $DB clear -f` then removes the sqlite file.
+   `CLEANUP_WIPE_STATE=1 ./cleanup.sh` calls the same wipe, then also
+   deletes inboxes and pins. Living Sky Linear is LIV (`linear.app/livingsky`).
+   NEVER Black Swan.
 
    DB is `$GCS_A2A_STATE/taskboard/taskboard.db` (`PALEMON_A2A_STATE` alias
    accepted). Details: `scripts/studio/taskboard/README.md`.

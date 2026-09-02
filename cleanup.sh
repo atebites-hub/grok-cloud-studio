@@ -16,15 +16,18 @@ Usage: cleanup.sh [--help]
 
 One-command teardown (idempotent). Disaster recovery entrypoint with setup.sh.
 
-Default (soft): stop the bus WITHOUT --daemons, then stop taskboard UI + MCP HTTP.
+Default (soft): stop the bus WITHOUT --daemons, then
+scripts/studio/taskboard/setup-taskboard.sh stop (UI + MCP HTTP;
+leaf processes remain start-taskboard.sh and mcp-http.sh).
 Does not delete .env, studio.env, grok login, Cursor login, inboxes, or pins.
 
   start-studio-bus.sh stop              default (leave seat serve running)
   start-studio-bus.sh stop --daemons    CLEANUP_DAEMONS=1 or CLEANUP_WIPE_STATE=1
 
   CLEANUP_DAEMONS=1     pass stop --daemons (also stop seat grok agent serve)
-  CLEANUP_WIPE_STATE=1  stop daemons too, then remove $GCS_A2A_STATE pid/lock files
-                        and wipe inboxes, mind pins, and taskboard.db.
+  CLEANUP_WIPE_STATE=1  stop daemons too, then setup-taskboard.sh wipe
+                        (taskboard --db $DB clear -f + rm sqlite), then remove
+                        $GCS_A2A_STATE pid/lock files and wipe inboxes + mind pins.
                         WARNING: inboxes and taskboard.db are wiped.
                         studio.env, repo .env, grok login, and Cursor login are kept.
 
@@ -58,8 +61,11 @@ else
   bash "$ROOT/scripts/a2a/start-studio-bus.sh" stop || true
 fi
 
-bash "$ROOT/scripts/studio/taskboard/mcp-http.sh" stop || true
-bash "$ROOT/scripts/studio/taskboard/start-taskboard.sh" stop || true
+if [[ "${CLEANUP_WIPE_STATE:-0}" == "1" ]]; then
+  bash "$ROOT/scripts/studio/taskboard/setup-taskboard.sh" wipe || true
+else
+  bash "$ROOT/scripts/studio/taskboard/setup-taskboard.sh" stop || true
+fi
 
 wipe_runtime_state() {
   local state="$1"

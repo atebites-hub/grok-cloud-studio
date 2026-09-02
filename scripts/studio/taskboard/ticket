@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# gcs-host-taskboard-wrapper
+# Host wipe-box `ticket` CLI. Always passes --db $GCS_TASKBOARD_DB.
+# Not a GROK_HOME copy. Agent Kanban stays gone. Never prints secrets.
+set -euo pipefail
+
+_gcs_host_ticket_script_dir() {
+  local src="${BASH_SOURCE[0]}" dir
+  while [[ -L "$src" ]]; do
+    dir="$(cd "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    [[ "$src" == /* ]] || src="$dir/$src"
+  done
+  cd "$(dirname "$src")" && pwd
+}
+
+SCRIPT_DIR="$(_gcs_host_ticket_script_dir)"
+# shellcheck source=common.sh
+source "$SCRIPT_DIR/common.sh"
+gcs_source_studio_env
+
+bin=""
+if ! bin="$(gcs_taskboard_bin)"; then
+  echo "GCS_TASKBOARD_FAIL missing binary (run scripts/studio/taskboard/setup-taskboard.sh)" >&2
+  exit 127
+fi
+db="$(gcs_taskboard_db)"
+mkdir -p "$(dirname "$db")"
+exec "$bin" --db "$db" ticket "$@"

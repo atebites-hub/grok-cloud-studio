@@ -43,30 +43,32 @@ From a grok-cloud-studio checkout (see `docs/studio/WIPE.md`):
 # 1. Submodule (source pin v0.6.0) then binary (brew tap, else GitHub
 #    release tarball — do not compile, do not vendor a blob)
 git submodule update --init --recursive
-bash scripts/studio/taskboard/install-taskboard.sh
+bash scripts/studio/taskboard/setup-taskboard.sh start
+bash scripts/studio/taskboard/setup-taskboard.sh status
+# Host PATH: ticket / tb  (always --db $GCS_TASKBOARD_DB)
 
-# 2. UI on 127.0.0.1:3010  (DB $GCS_A2A_STATE/taskboard/taskboard.db)
-#    PALEMON_A2A_STATE is accepted if GCS_A2A_STATE is unset.
-bash scripts/studio/taskboard/start-taskboard.sh start
-bash scripts/studio/taskboard/start-taskboard.sh status
+# Leaf equivalents if you need to start one process:
+# bash scripts/studio/taskboard/install-taskboard.sh
+# bash scripts/studio/taskboard/start-taskboard.sh start
+# bash scripts/studio/taskboard/mcp-http.sh start
 
-# 3. HTTP MCP on 127.0.0.1:3011  (child: taskboard --db $DB mcp)
-bash scripts/studio/taskboard/mcp-http.sh start
-
-# 4. Then the bus (NO --daemons) with GCS_MIND_SEATS from studio.env
+# 2. Then the bus (NO --daemons) with GCS_MIND_SEATS from studio.env
 scripts/a2a/start-studio-bus.sh start
 
-# 5. Optional Tailscale Serve only if the node is already joined
+# 3. Optional Tailscale Serve only if the node is already joined
 #    PALEMON_TAILSCALE_SERVE=0 skips. Funnel stays off.
 #    Host default: palemon-studio.panther-arctic.ts.net
 bash scripts/studio/taskboard/start-tailscale-serve.sh start
 ```
 
-Stop:
+Stop / board-only wipe (inboxes stay; Living Sky Linear is LIV, never Black Swan):
 
 ```bash
-bash scripts/studio/taskboard/mcp-http.sh stop
-bash scripts/studio/taskboard/start-taskboard.sh stop
+bash scripts/studio/taskboard/setup-taskboard.sh stop
+GCS_TASKBOARD_WIPE=1 bash scripts/studio/taskboard/setup-taskboard.sh wipe
+# Leaf:
+# bash scripts/studio/taskboard/mcp-http.sh stop
+# bash scripts/studio/taskboard/start-taskboard.sh stop
 ```
 
 ## Ports
@@ -88,6 +90,8 @@ proxies `http://127.0.0.1:3010` and `:3011`.
 | `GCS_A2A_STATE` / `PALEMON_A2A_STATE` | Live state dir (studio.env + board DB) |
 | `GCS_TASKBOARD_DB` | Override SQLite path |
 | `TASKBOARD_BIN` | Override binary |
+| `GCS_TASKBOARD_WIPE=1` | Allow `setup-taskboard.sh wipe` (`clear -f` + rm db) |
+| `GCS_TASKBOARD_SKIP_READY=1` | Skip UI/MCP listen wait after start |
 | `PALEMON_TAILSCALE_SERVE=0` | Skip Tailscale Serve |
 
 Never print or commit `CURSOR_API_KEY` or Tailscale auth keys.

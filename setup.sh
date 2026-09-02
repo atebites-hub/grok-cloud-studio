@@ -21,12 +21,12 @@ One-command deploy (idempotent). Disaster recovery entrypoint with cleanup.sh.
      there (does not overwrite a live studio.env).
   2. Run ./install.sh (venv + chmod).
   3. Init vendor/taskboard submodule if missing (git submodule update --init).
-  4. Install taskboard if missing (prefer vendor/taskboard prebuilt; else brew/tarball).
-  5. Start board UI + MCP HTTP.
-  6. Start scripts/a2a/start-studio-bus.sh start   (NO --daemons)
-  7. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if Agent Kanban returns)
-  8. Print SETUP_OK with hub/board ports and mind seat list.
-  9. Run ./health_check.sh (HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN).
+  4. Board: scripts/studio/taskboard/setup-taskboard.sh start
+     (host ticket/tb PATH links, start-taskboard.sh UI :3010, mcp-http.sh :3011).
+  5. Start scripts/a2a/start-studio-bus.sh start   (NO --daemons)
+  6. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if Agent Kanban returns)
+  7. Print SETUP_OK with hub/board ports and mind seat list.
+  8. Run ./health_check.sh (HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN).
 
 Never auto-spawn a 13-seat grok serve floor. Do not pass --daemons.
 GCS_ACP_SEATS comes from env (studio.env) only; this script does not set it.
@@ -84,11 +84,8 @@ if [[ "${GCS_SETUP_SKIP_SUBMODULE:-0}" != "1" ]]; then
 fi
 
 if [[ "${GCS_SETUP_SKIP_START:-0}" != "1" ]]; then
-  if ! gcs_taskboard_bin >/dev/null; then
-    bash "$ROOT/scripts/studio/taskboard/install-taskboard.sh"
-  fi
-  bash "$ROOT/scripts/studio/taskboard/start-taskboard.sh" start
-  bash "$ROOT/scripts/studio/taskboard/mcp-http.sh" start
+  # Board-only path: host ticket/tb + start-taskboard.sh UI + mcp-http.sh MCP.
+  bash "$ROOT/scripts/studio/taskboard/setup-taskboard.sh" start
   # Crash-safe: never pass --daemons. Do not start a 13-seat serve.
   bash "$ROOT/scripts/a2a/start-studio-bus.sh" start
 fi
