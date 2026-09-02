@@ -9,7 +9,9 @@ Grok `--plugin-dir` is a grok **agent** flag (not headless). Opted-in seat mind
 installs grok `plugin.json` plugins into seat `GROK_HOME` via
 `install_mind_grok_plugins` / `grok plugin install --trust` (not Hermes
 `plugin.yaml`; do not vendor hermes-agent; see `docs/studio/MIND.md` and
-`tests/features/liv63_mind_plugins.feature`):
+`tests/features/liv63_mind_plugins.feature`). The copied stdio server must not
+close on `initialize`; install stamps `$GROK_HOME/gcs-root` so off-tree
+`server.py` can import repo scripts (`python3 -u`):
 
 - `plugins/studio-mind` — `ticket`, `a2a_send`, `cloud_launch`
 - `plugins/a2a` — `a2a_list_seats`, `a2a_send`

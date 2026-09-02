@@ -2,7 +2,7 @@
   "mcpServers": {
     "studio-mind": {
       "command": "python3",
-      "args": ["server.py"]
+      "args": ["-u", "server.py"]
     }
   }
 }

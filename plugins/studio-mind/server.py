@@ -4,6 +4,7 @@
 Grok is the agent. This process only exposes tools. Python mind.py does not
 parse grok stdout for function calls. Installed into seat GROK_HOME with
 `grok plugin install --trust` (not `--plugin-dir` on headless grok).
+The stdio handshake must not close on initialize.
 """
 from __future__ import annotations
 
@@ -12,7 +13,35 @@ import sys
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
+
+def _resolve_gcs_root() -> Path:
+    """Repo root after `grok plugin install` copies this file into GROK_HOME.
+
+    Prefer GCS_ROOT, then GROK_HOME/gcs-root (stamped by
+    install_studio_mind_plugin), then a walk-up looking for scripts/mcp.
+    """
+    env = (os.environ.get("GCS_ROOT") or "").strip()
+    if env:
+        return Path(env).expanduser().resolve()
+    grok_home = (os.environ.get("GROK_HOME") or "").strip()
+    if grok_home:
+        stamp = Path(grok_home).expanduser() / "gcs-root"
+        try:
+            text = stamp.read_text(encoding="utf-8").strip()
+        except OSError:
+            text = ""
+        if text:
+            return Path(text).expanduser().resolve()
+    here = Path(__file__).resolve().parent
+    for cand in (here, *here.parents):
+        if (cand / "scripts" / "mcp" / "gcs_mcp.py").is_file() and (
+            cand / "scripts" / "directors" / "mind.py"
+        ).is_file():
+            return cand
+    return Path(__file__).resolve().parents[2]
+
+
+ROOT = _resolve_gcs_root()
 sys.path.insert(0, str(ROOT / "scripts" / "mcp"))
 sys.path.insert(0, str(ROOT / "scripts" / "directors"))
 
@@ -39,6 +68,7 @@ def handle(msg: dict[str, Any]) -> dict[str, Any] | None:
     method = msg.get("method")
     req_id = msg.get("id")
     if method == "initialize":
+        # Reply and keep serving. Do not close stdio after this result.
         return {
             "jsonrpc": "2.0",
             "id": req_id,
@@ -80,6 +110,8 @@ def handle(msg: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def main() -> int:
+    # Stay connected after initialize. EOF on stdin is the only shutdown.
+    # notifications/initialized is silent; tools/list uses the same pid.
     ndjson = os.environ.get("GCS_MCP_NDJSON") == "1"
     while True:
         try:
