@@ -36,7 +36,7 @@ Timeout with no STATUS/work-tool is ACP_INJECT_TIMEOUT reason=no-accept
 (not HANDOFF). After N consecutive no-accept/hangup fails on the same
 acp.session id, one session/new (SESSION_DEAD). Do not session/cancel a
 handed-off live turn. ACP_INJECT_HANDOFF logs reason=status|work (never
-queue, tool, harvest, substantial).
+queue, tool, harvest, substantial). HANDOFF_REASONS is the allowlist.
 
 Leftover dispatch (no pin): completes on streamed work/STATUS (or this-prompt
 tool+text), not on session/prompt RPC end. Timeout and prompt-fail
@@ -77,6 +77,8 @@ PIN_NACK_SEC = float(os.environ.get("GCS_ACP_ACCEPT_DEADLINE", "120"))
 # before one session/new (dead session: load works, actor never starts).
 # One silence nack is not SESSION_DEAD.
 DEAD_STREAK_N = int(os.environ.get("GCS_ACP_DEAD_STREAK", "3"))
+# Legal ACP_INJECT_HANDOFF reasons. Never queue, tool, harvest, substantial.
+HANDOFF_REASONS = frozenset({"status", "work"})
 # Same markers duplex.py harvests. Inject completes on this line, not on RPC end.
 _RESULT_LINE_RE = re.compile(
     r"^(RESULT|QA_A_RESULT|QA_B_RESULT|PARK_ACK)\b.*$",
@@ -291,16 +293,20 @@ def pin_session_handoff_reason(
 ) -> str | None:
     """ACP_INJECT_HANDOFF reason: status | work | None.
 
-    Never queue, tool, harvest, or substantial — keep-alive chatter is
-    not a leave. tool_events are ignored.
+    Members of HANDOFF_REASONS only. Never queue, tool, harvest, or
+    substantial — keep-alive chatter is not a leave. tool_events are ignored.
     """
     del tool_events
     raw = "" if text is None else str(text)
     if _STATUS_LINE_RE.search(raw):
-        return "status"
-    if int(work_tools or 0) > 0:
-        return "work"
-    return None
+        reason = "status"
+    elif int(work_tools or 0) > 0:
+        reason = "work"
+    else:
+        return None
+    if reason not in HANDOFF_REASONS:
+        return None
+    return reason
 
 
 def prompt_chunk_is_accept_signal(text: str) -> bool:
@@ -1164,7 +1170,7 @@ async def inject(
                 reply,
                 work_tools=int(getattr(client, "_work_tools", 0) or 0),
             )
-            if reason in ("status", "work"):
+            if reason in HANDOFF_REASONS:
                 print(
                     f"ACP_INJECT_HANDOFF seat={seat} session={session_id} reason={reason}",
                     flush=True,
