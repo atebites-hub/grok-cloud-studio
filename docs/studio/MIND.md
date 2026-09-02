@@ -62,9 +62,11 @@ Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Pro
 Executable BDD example (Living Sky **LIV-63** remaining, grok-bot-like):
 [`tests/features/liv63_mind_bot_like.feature`](../../tests/features/liv63_mind_bot_like.feature).
 Mailbox harvest writes `mind/mail.txt` + `mind/turn.txt` before the runner
-(Bot-like wake analog). Spawn PATH remaining is `cloud_launch` →
+(Bot-like wake analog). Spawn PATH remaining is `cloud_launch` which execs
 `scripts/launch-cloud-extra-high.sh` plus `a2a_send` → `scripts/a2a/send.sh`.
-Do not vendor Hermes. Do not land harvest mailbox PRs #26 and #28.
+Never grok --resume for Cloud create. Do not vendor Hermes. Do not land harvest
+mailbox PRs #26 and #28. Extra High spawn BDD:
+[`tests/features/mind_exec_launch_sh.feature`](../../tests/features/mind_exec_launch_sh.feature).
 
 Each inbox line (`scripts/directors/mind.py` `grok_cli_argv`). Live clap (2026-08-21, #21):
 
@@ -109,8 +111,9 @@ RESULT bc-id=<id or none> pr=<url or none> a2a=<task-id or none> notes=<one line
 
 `wrap_mind_mail` prepends that law plus `A2A_TASK_ID` / `A2A_CONTEXT`. RESULT-only /
 PONG is a bug. PONG is not a RESULT line. A2A_REPLY is a duplex caller ping — never
-launch a Cursor Cloud agent or Bot CloudAgent for it. Extra High stays **grok-4.6
-xhigh**, `fast=false`.
+launch a Cursor Cloud agent or Bot CloudAgent for it. Extra High spawn execs
+`cloud_launch` or `scripts/launch-cloud-extra-high.sh`. Never grok --resume for Cloud create.
+Extra High stays **grok-4.6 xhigh**, `fast=false`.
 
 No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.
 
