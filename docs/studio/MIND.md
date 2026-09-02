@@ -27,7 +27,7 @@ Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/of
 
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
-- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio `taskboard --db $GCS_TASKBOARD_DB mcp` plus Linear HTTP `https://mcp.linear.app/mcp`). Grok minds get Linear via this GROK_HOME catalog, not via Cursor `.cursor/mcp.json`. Studio Linear is **Living Sky** (`linear.app/livingsky`, team Livingsky / `LIV`). **NEVER Black Swan Money.** `${LINEAR_API_KEY}` expands at grok load time (never print, never commit). Linear tools: `save_issue`, `save_comment`, `prepare_attachment_upload`. Plus `grok plugin install --trust` of `plugins/studio-mind`. Grok-home Higgsfield is grok-only, for when grok usage is back. Do not put Higgsfield keys on MCP argv.
+- Grok catalog: seat `GROK_HOME/config.toml` (taskboard stdio `taskboard --db $GCS_TASKBOARD_DB mcp` plus Linear HTTP `https://mcp.linear.app/mcp`). Grok minds get Linear via this GROK_HOME catalog, not via Cursor `.cursor/mcp.json`. Studio Linear is **Living Sky** (`linear.app/livingsky`, team Livingsky / `LIV`). **NEVER Black Swan Money.** `${LINEAR_API_KEY}` expands at grok load time (never print, never commit). Linear tools: `save_issue`, `save_comment`, `prepare_attachment_upload`. Plus `grok plugin install --trust` of grok `plugin.json` plugins `studio-mind`, `a2a`, and `cursor-cloud` (not Hermes `plugin.yaml`; do not vendor `NousResearch/hermes-agent`). Grok-home Higgsfield is grok-only, for when grok usage is back. Do not put Higgsfield keys on MCP argv.
 - Cursor CLI catalog: repo `.cursor/mcp.json` wrapping `scripts/studio/taskboard/run-mcp.sh` (same `taskboard --db $DB mcp`, no `GROK_HOME`) **and** Linear HTTP at `https://mcp.linear.app/mcp` with `Authorization: Bearer ${LINEAR_API_KEY}`. Linear + taskboard only — do not copy the Grok MCP catalog into Cursor. Higgsfield is Cursor catalog login when the runner is Cursor CLI (Art generate). Grok Bot Higgsfield is a different catalog. `doctor.sh` / `recover.sh` fail-closed if art MCP would leak keys.
 
 Cursor Cloud Extra High agents cannot scrape `GROK_HOME`. Give them Linear via cloud-env: snapshot / dashboard Secrets / process env `LINEAR_API_KEY`, plus checkout `.cursor/mcp.json` (Linear + taskboard). RUNNING specialists `save_comment` on Living Sky (`LIV`). They never inherit seat GROK_HOME `config.toml`.
@@ -64,8 +64,11 @@ Executable BDD example (Living Sky **LIV-63** remaining, grok-bot-like):
 Mailbox harvest writes `mind/mail.txt` + `mind/turn.txt` before the runner
 (Bot-like wake analog). Spawn PATH remaining is `cloud_launch` which execs
 `scripts/launch-cloud-extra-high.sh` plus `a2a_send` → `scripts/a2a/send.sh`.
-Never grok --resume for Cloud create. Do not vendor Hermes. Do not land harvest
-mailbox PRs #26 and #28. Extra High spawn BDD:
+Never grok --resume for Cloud create. Grok-bot-like plugins remaining:
+[`tests/features/liv63_mind_plugins.feature`](../../tests/features/liv63_mind_plugins.feature)
+(`plugin.json` for `studio-mind` / `a2a` / `cursor-cloud`, not Hermes
+`plugin.yaml`). Do not vendor Hermes. Do not land harvest mailbox PRs #26 and #28.
+Extra High spawn BDD:
 [`tests/features/mind_exec_launch_sh.feature`](../../tests/features/mind_exec_launch_sh.feature).
 
 Each inbox line (`scripts/directors/mind.py` `grok_cli_argv`). Live clap (2026-08-21, #21):
@@ -168,9 +171,9 @@ agent --resume "$CURSOR_CHAT_ID" -p --force --output-format json --trust \
 |---|---|
 | Grok builtins | Shell, files, etc. inside grok |
 | Seat `GROK_HOME/config.toml` | Taskboard stdio MCP: `taskboard --db $GCS_TASKBOARD_DB mcp`. Linear HTTP catalog: `url = "https://mcp.linear.app/mcp"` (`save_issue`, `save_comment`). Living Sky / `LIV`. Never Black Swan Money. |
-| `grok plugin install --trust` | `plugins/studio-mind` into seat `GROK_HOME` from `seat-mind-loop.sh` (`ticket`, `a2a_send`, `cloud_launch`) |
+| `grok plugin install --trust` | `plugins/studio-mind`, `plugins/a2a`, and `plugins/cursor-cloud` into seat `GROK_HOME` from `seat-mind-loop.sh` (`install_mind_grok_plugins`; grok `plugin.json`, not Hermes `plugin.yaml`) |
 
-`--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `grok plugin install "$ROOT/plugins/studio-mind" --trust` with that seat’s `GROK_HOME`. Already-installed / idempotent reinstall is `MIND_PLUGIN_OK` (grok may print `Error: repo studio-mind-... already installed` and exit non-zero). If install is skipped (no grok, missing dir, genuine install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (tests, the studio-mind MCP server) — they are **not** a second agent loop. Do not copy `GROK_HOME` MCP into Cursor CLI.
+`--plugin-dir` cannot go on grok headless. `seat-mind-loop.sh` runs `install_mind_grok_plugins` → `grok plugin install --trust` of `plugins/studio-mind`, `plugins/a2a`, and `plugins/cursor-cloud` with that seat’s `GROK_HOME`. Already-installed / idempotent reinstall is `MIND_PLUGIN_OK` (grok may print `Error: repo studio-mind-... already installed` and exit non-zero). If install is skipped (no grok, missing dir, genuine install fail), mind is MCP-only: taskboard is already in `config.toml`. Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers (`ticket`, `a2a_send`, `cloud_launch` only — do not restack #47 `cloud_list` / `cloud_followup` here). They are **not** a second agent loop. Do not copy `GROK_HOME` MCP into Cursor CLI. Do not vendor `NousResearch/hermes-agent`.
 
 Cursor runner: GROK_HOME taskboard MCP, Linear GROK_HOME HTTP, and grok `--plugin-dir` **do not transfer**. Two catalogs (see Two-runtime mind law). Cursor CLI uses Cursor builtins plus repo `.cursor/mcp.json` (Linear + taskboard only), never a copied `GROK_HOME`. Shared tools on PATH only: `ticket` / `tb`, `scripts/a2a/send.sh`, `scripts/launch-cloud-extra-high.sh`. No third Python tool loop.
 

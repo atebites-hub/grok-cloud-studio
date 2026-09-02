@@ -5,6 +5,9 @@ MCP tools for the local A2A hub:
 - `a2a_list_seats` — seats from `docs/a2a/registry.json`
 - `a2a_send` — POST a text ping via `scripts/a2a/send.sh`
 
+Requires grok `plugin.json` in this folder (not Hermes `plugin.yaml`).
+Copied servers honor `GCS_ROOT`.
+
 ## Install
 
 From the Grok Cloud Studio repo root:
