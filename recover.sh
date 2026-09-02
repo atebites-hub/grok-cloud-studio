@@ -28,7 +28,9 @@ Does not remint sessions, wipe studio.env / inboxes / pins, reconnect
 Agent Kanban, or launch Cursor Cloud.
 
 Fails closed (no restarts) if Higgsfield/Sentry art MCP would leak keys
-(argv / literal env). Never prints secret values.
+(argv / literal env), or if the LIV-84 Extra High Cursor catalog is merged
+(Higgsfield/Sentry MCP, even with ${...} expansions) or cloud-env is reminted.
+Never prints secret values. Do not remint LIV-84.
 
 On success prints a recover-ok line, then runs ./health_check.sh (same exit 0/1/2).
 
@@ -59,6 +61,13 @@ if [[ -n "${GROK_HOME:-}" ]]; then
 fi
 if ! python3 "$ROOT/scripts/studio/higgsfield_sentry.py" "${_sentry_args[@]}"; then
   echo "RECOVER_ERR higgsfield_sentry failed (art MCP would leak keys; values not printed)" >&2
+  exit 1
+fi
+
+# Fail-closed before any restart if LIV-84 Cursor catalog is merged or
+# cloud-env is reminted. Distinct from argv/literal leak scanning (#143).
+if ! python3 "$ROOT/scripts/studio/liv84_art_env.py" --root "$ROOT" --state "$STATE"; then
+  echo "RECOVER_ERR liv84_art_env failed (LIV-84 Cursor catalog merged or cloud-env reminted; values not printed)" >&2
   exit 1
 fi
 

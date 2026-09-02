@@ -43,6 +43,7 @@ for p in \
   health_check.sh \
   recover.sh \
   scripts/studio/higgsfield_sentry.py \
+  scripts/studio/liv84_art_env.py \
   .gitmodules \
   .cursor/mcp.json \
   scripts/studio/taskboard/run-mcp.sh \
@@ -170,6 +171,20 @@ if python3 "$ROOT/scripts/studio/higgsfield_sentry.py" "${_sentry_args[@]}"; the
   ok "higgsfield_sentry=clean"
 else
   bad "higgsfield_sentry failed (art MCP would leak keys; values not printed)"
+fi
+
+# LIV-84 art env: fail-closed if Extra High Cursor catalog already contains
+# Higgsfield/Sentry (merge, even with ${...} expansions) or cloud-env is reminted.
+# Grok-home Higgsfield is grok-only and is not this gate. Never print values.
+# Distinct from argv/literal leak scanning (#143).
+_liv84_args=(--root "$ROOT")
+if [[ -d "$STATE" ]]; then
+  _liv84_args+=(--state "$STATE")
+fi
+if python3 "$ROOT/scripts/studio/liv84_art_env.py" "${_liv84_args[@]}"; then
+  ok "liv84_art_env=clean"
+else
+  bad "liv84_art_env failed (LIV-84 Cursor catalog merged or cloud-env reminted; values not printed)"
 fi
 _gcs_warn_workspace_folder_mcp() {
   local f="$1"
