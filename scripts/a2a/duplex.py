@@ -6,6 +6,12 @@ Idempotent per taskId (.duplex marker). Local studio only. Stdlib.
 Hub enqueue is TASK_STATE_SUBMITTED. set_task_state marks COMPLETED after
 the Grok Build mind harvests and the runner exits 0. RESULT duplex is
 optional overlay, not a fake ACP HANDOFF.
+
+A2A_REPLY must succeed after Director RESULT and must not 404 skipSeat
+donald (no shipped Agent Card; not an ACP inject target). Map donald →
+floor-ops, then orchestrator. If neither card exists, skip notify without
+failing the task reply. Hub TASK_STATE_SUBMITTED / later COMPLETED is a
+receipt, not Director RESULT.
 """
 from __future__ import annotations
 
@@ -30,6 +36,11 @@ RESULT_LINE_RE = re.compile(
 FROM_TEXT_RE = re.compile(r"\bfrom=([a-z0-9-]+)\b", re.IGNORECASE)
 SEAT_RE = re.compile(r"^[a-z0-9-]+$")
 SendFn = Callable[[str, str], bool]
+# skipSeats that 404 on hub message:send (no Agent Card). Prefer Palemon
+# floor-ops (Donald-clone Director), then orchestrator (Bot card).
+NOTIFY_FALLBACKS: dict[str, tuple[str, ...]] = {
+    "donald": ("floor-ops", "orchestrator"),
+}
 
 
 def now_iso() -> str:
@@ -84,6 +95,45 @@ def extract_caller(record: dict[str, Any]) -> str | None:
                 match = FROM_TEXT_RE.search(text)
                 if match:
                     return match.group(1).lower()
+    return None
+
+
+def _cards_dir(root: Path | None = None) -> Path:
+    return Path(root or ROOT) / "docs" / "a2a" / "cards"
+
+
+def has_hub_card(seat: str, root: Path | None = None) -> bool:
+    """True when hub will accept POST /a2a/{seat}/message:send (Agent Card)."""
+    if not seat or not SEAT_RE.match(seat):
+        return False
+    return (_cards_dir(root) / f"{seat}.json").is_file()
+
+
+def resolve_notify_seat(
+    caller: str | None,
+    *,
+    working_seat: str | None = None,
+    root: Path | None = None,
+) -> str | None:
+    """Seat that can receive A2A_REPLY without a hub 404.
+
+    donald (skipSeat, no card) maps to floor-ops then orchestrator. A candidate
+    equal to the working seat is skipped so the Director is not pinged for its
+    own RESULT. Missing card → None (caller should skip notify).
+    """
+    if not caller:
+        return None
+    seat = str(caller).strip().lower().replace("_", "-")
+    if not SEAT_RE.match(seat):
+        return None
+    work = (working_seat or "").strip().lower().replace("_", "-")
+    fallbacks = NOTIFY_FALLBACKS.get(seat)
+    candidates = list(fallbacks) if fallbacks else [seat]
+    for cand in candidates:
+        if work and cand == work:
+            continue
+        if has_hub_card(cand, root):
+            return cand
     return None
 
 
@@ -231,11 +281,19 @@ def default_send(seat: str, text: str) -> bool:
     return proc.returncode == 0
 
 
-def notify_caller(from_seat: str, text: str, *, send_fn: SendFn | None = None) -> bool:
-    if not from_seat or not SEAT_RE.match(from_seat):
+def notify_caller(
+    from_seat: str,
+    text: str,
+    *,
+    send_fn: SendFn | None = None,
+    working_seat: str | None = None,
+    root: Path | None = None,
+) -> bool:
+    target = resolve_notify_seat(from_seat, working_seat=working_seat, root=root)
+    if not target:
         return False
     sender = send_fn or default_send
-    return sender(from_seat, text)
+    return sender(target, text)
 
 
 def duplex_from_output(
@@ -245,6 +303,7 @@ def duplex_from_output(
     record: dict[str, Any],
     output_text: str,
     send_fn: SendFn | None = None,
+    root: Path | None = None,
 ) -> dict[str, Any]:
     task_id = str(record.get("taskId") or record.get("id") or "").strip()
     if not task_id:
@@ -258,19 +317,41 @@ def duplex_from_output(
     write_task_reply(state_dir, seat, task_id, line, extra={"via": "duplex"})
     caller = extract_caller(record)
     notified = False
-    if caller and caller != seat:
+    notify_skipped: str | None = None
+    target = resolve_notify_seat(caller, working_seat=seat, root=root)
+    if target:
         ping = (
             f"A2A_REPLY seat={seat} task={task_id} context={record.get('contextId') or ''} "
             f"{line}"
         )
-        notified = notify_caller(caller, ping, send_fn=send_fn)
-    marker.write_text(json.dumps({"taskId": task_id, "at": now_iso(), "caller": caller}) + "\n")
+        notified = notify_caller(
+            caller, ping, send_fn=send_fn, working_seat=seat, root=root
+        )
+        if not notified:
+            notify_skipped = "send-fail"
+    elif caller and caller != seat:
+        key = str(caller).strip().lower().replace("_", "-")
+        notify_skipped = "skipSeat" if key in NOTIFY_FALLBACKS else "no-card"
+    marker.write_text(
+        json.dumps(
+            {
+                "taskId": task_id,
+                "at": now_iso(),
+                "caller": caller,
+                "notifySeat": target,
+                "notifySkipped": notify_skipped,
+            }
+        )
+        + "\n"
+    )
     return {
         "ok": True,
         "taskId": task_id,
         "result": line,
         "caller": caller,
+        "notify_seat": target,
         "notified": notified,
+        "notify_skipped": notify_skipped,
     }
 
 

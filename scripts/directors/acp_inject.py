@@ -404,7 +404,10 @@ def _duplex_after_inject(seat: str, prompt: str, reply: str) -> None:
         if result.get("ok"):
             print(
                 f"ACP_INJECT_DUPLEX seat={seat} task={result.get('taskId')} "
-                f"caller={result.get('caller') or 'none'}",
+                f"caller={result.get('caller') or 'none'} "
+                f"notify_seat={result.get('notify_seat') or 'none'} "
+                f"notified={result.get('notified')} "
+                f"notify_skipped={result.get('notify_skipped') or 'none'}",
                 flush=True,
             )
     except Exception as e:  # noqa: BLE001 — inject succeeded even if duplex fails
