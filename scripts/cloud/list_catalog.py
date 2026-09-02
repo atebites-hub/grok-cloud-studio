@@ -85,8 +85,12 @@ def fetch_catalog(
     *,
     page_size: int = API_PAGE_MAX,
     max_pages: int = DEFAULT_MAX_PAGES,
+    max_items: int | None = None,
 ) -> CatalogResult:
     """Walk GET /v1/agents pages until nextCursor is omitted.
+
+    ``max_items`` stops after N rows (list.sh --limit) without fail-closing
+    while a cursor remains. Occupancy omits it and walks the full hive.
 
     Raises CatalogError(reason=page) on a page failure or if max_pages is
     hit while a cursor remains (incomplete catalog — fail closed).
@@ -95,6 +99,7 @@ def fetch_catalog(
     if limit > API_PAGE_MAX:
         limit = API_PAGE_MAX
     pages_cap = max_pages if max_pages > 0 else DEFAULT_MAX_PAGES
+    wanted = max_items if max_items is not None and max_items > 0 else None
     collected: list[Any] = []
     seen: set[str] = set()
     cursor: str | None = None
@@ -116,6 +121,8 @@ def fetch_catalog(
                     continue
                 seen.add(agent_id)
             collected.append(row if isinstance(row, dict) else raw)
+            if wanted is not None and len(collected) >= wanted:
+                return CatalogResult(items=collected[:wanted], pages=pages)
         nxt = next_cursor_of(payload)
         if not nxt:
             return CatalogResult(items=collected, pages=pages)
@@ -187,6 +194,7 @@ def fetch_catalog_from_api(
     page_size: int = API_PAGE_MAX,
     max_pages: int | None = None,
     timeout: float | None = None,
+    max_items: int | None = None,
 ) -> CatalogResult:
     wait = _request_timeout() if timeout is None else timeout
     cap = max_pages_from_env() if max_pages is None else max_pages
@@ -194,4 +202,6 @@ def fetch_catalog_from_api(
     def fetch_page(cursor: str | None, limit: int) -> dict[str, Any]:
         return api_get_page(catalog_path(limit=limit, cursor=cursor), wait)
 
-    return fetch_catalog(fetch_page, page_size=page_size, max_pages=cap)
+    return fetch_catalog(
+        fetch_page, page_size=page_size, max_pages=cap, max_items=max_items
+    )

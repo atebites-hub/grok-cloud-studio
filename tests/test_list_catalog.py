@@ -30,6 +30,8 @@ CLOUD = REPO / "scripts" / "cloud"
 CATALOG_PY = CLOUD / "list_catalog.py"
 OCCUPANCY_PY = CLOUD / "occupancy_count.py"
 OCCUPANCY_SH = CLOUD / "occupancy-count.sh"
+LIST_SH = CLOUD / "list.sh"
+LIST_ROWS_PY = CLOUD / "list_rows.py"
 LIST_TS = CLOUD / "sdk" / "list.ts"
 LIST_CATALOG_TS = CLOUD / "sdk" / "list_catalog.ts"
 OCCUPANCY_TS = CLOUD / "sdk" / "occupancy.ts"
@@ -75,6 +77,22 @@ def _run_occupancy(
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(OCCUPANCY_SH), *(args or [])],
+        cwd=str(REPO),
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=timeout,
+    )
+
+
+def _run_list(
+    env: dict[str, str],
+    args: list[str] | None = None,
+    *,
+    timeout: float = 20,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(LIST_SH), *(args or [])],
         cwd=str(REPO),
         capture_output=True,
         text=True,
@@ -420,6 +438,83 @@ def test_cli_first_page_http_err_fail_closed(tmp_path: Path) -> None:
     assert FAKE_KEY not in blob
 
 
+def test_fetch_catalog_stops_at_max_items_without_fail_closed() -> None:
+    """list.sh --limit N must stop after N rows; occupancy still walks the hive."""
+    cat = _load(CATALOG_PY, "gcs_list_catalog")
+    requested: list[tuple[str | None, int]] = []
+
+    def fetch_page(cursor: str | None, limit: int) -> dict[str, Any]:
+        requested.append((cursor, limit))
+        start = 0 if not cursor else int(cursor)
+        end = min(start + limit, 250)
+        payload: dict[str, Any] = {
+            "items": [{"id": f"bc-{i:04d}", "status": "ACTIVE"} for i in range(start, end)]
+        }
+        if end < 250:
+            payload["nextCursor"] = str(end)
+        return payload
+
+    catalog = cat.fetch_catalog(fetch_page, page_size=API_PAGE_MAX, max_items=150)
+    assert catalog.listed == 150
+    assert catalog.pages == 2
+    assert len(requested) == 2
+    assert catalog.items[-1]["id"] == "bc-0149"
+
+
+def test_list_sh_pages_next_cursor_beyond_100_and_sees_running(
+    tmp_path: Path,
+) -> None:
+    """REST list.sh must walk nextCursor so Directors can count RUNNING past 100.
+
+    Occupancy-count already paginates. SDK list.ts paginates when --limit exceeds
+    one page. REST list.sh still did a single GET /v1/agents?limit=N (API caps at
+    100), so a live worker on page 3 looked like running=0.
+    """
+    n = 201
+    items = _hive_items(n)
+    runs = {f"run-{i}": "FINISHED" for i in range(n)}
+    runs["run-200"] = "RUNNING"
+    with PaginatedListAPI(list_items=items, run_status_by_id=runs) as api:
+        env = _script_env(tmp_path, api.base)
+        listed = _run_list(env, ["--limit", "201"], timeout=45)
+    assert listed.returncode == 0, listed.stdout + listed.stderr
+    rows = [line for line in listed.stdout.splitlines() if line.startswith("id=")]
+    assert len(rows) == 201, listed.stdout
+    live = [line for line in rows if "runStatus=RUNNING" in line]
+    assert len(live) == 1, listed.stdout
+    assert "id=bc-0200" in live[0]
+    assert "runStatus=FINISHED" in rows[0]
+    assert len(api.list_queries) == 3, api.gets
+    assert api.list_queries[0].get("limit") == [str(API_PAGE_MAX)]
+    assert "cursor" not in api.list_queries[0] or api.list_queries[0].get("cursor") == [""]
+    assert api.list_queries[1].get("cursor") == ["100"]
+    assert api.list_queries[2].get("cursor") == ["200"]
+    blob = listed.stdout + listed.stderr
+    assert FAKE_KEY not in blob
+    assert all(user == FAKE_KEY for user in api.auth_users)
+
+
+def test_list_sh_page_error_fail_closed_does_not_print_partial(tmp_path: Path) -> None:
+    """A later catalog page error must not look like a complete list (never fake 0 RUNNING)."""
+    items = _hive_items(150)
+    runs = {f"run-{i}": "FINISHED" for i in range(150)}
+    runs["run-120"] = "RUNNING"
+    with PaginatedListAPI(
+        list_items=items,
+        run_status_by_id=runs,
+        page_http={"100": 500},
+    ) as api:
+        env = _script_env(tmp_path, api.base)
+        listed = _run_list(env, ["--limit", "150"])
+    assert listed.returncode != 0
+    blob = listed.stdout + listed.stderr
+    assert "error:" in blob.lower() or "CLOUD_LIST" in blob
+    assert "id=bc-0120" not in listed.stdout
+    assert "runStatus=RUNNING" not in listed.stdout
+    assert FAKE_KEY not in blob
+    assert len(api.list_queries) >= 2
+
+
 def test_sdk_and_docs_paginate_agent_list_not_cap_at_100() -> None:
     """Occupancy catalog follows nextCursor. Do not twin GCS #132 occupancy_lib."""
     list_catalog_ts = LIST_CATALOG_TS.read_text(encoding="utf-8")
@@ -428,6 +523,8 @@ def test_sdk_and_docs_paginate_agent_list_not_cap_at_100() -> None:
     catalog_py = CATALOG_PY.read_text(encoding="utf-8")
     run_sh = RUN_SH.read_text(encoding="utf-8")
     list_ts = LIST_TS.read_text(encoding="utf-8")
+    list_sh = LIST_SH.read_text(encoding="utf-8")
+    list_rows = LIST_ROWS_PY.read_text(encoding="utf-8")
     assert "nextCursor" in list_catalog_ts
     assert "Agent.list" in list_catalog_ts
     assert "cursor" in list_catalog_ts
@@ -453,7 +550,20 @@ def test_sdk_and_docs_paginate_agent_list_not_cap_at_100() -> None:
     assert "fail-closed" in cloud.lower() or "fail closed" in cloud.lower()
     assert "Living Sky" in cloud or "LIV" in cloud
     assert "Black Swan" not in footer
+    # REST list.sh remaining slice: page nextCursor (not a single GET ?limit=).
+    assert "list_catalog" in list_rows
+    assert "max_items" in catalog_py
+    assert 'GET "/v1/agents?limit=${limit}"' not in list_sh
+    assert "--limit" in list_sh
     banned = "Bot " + "CloudAgent"
-    for path in (OCCUPANCY_PY, CATALOG_PY, OCCUPANCY_SH, OCCUPANCY_TS, LIST_CATALOG_TS):
+    for path in (
+        OCCUPANCY_PY,
+        CATALOG_PY,
+        OCCUPANCY_SH,
+        OCCUPANCY_TS,
+        LIST_CATALOG_TS,
+        LIST_SH,
+        LIST_ROWS_PY,
+    ):
         text = path.read_text(encoding="utf-8")
         assert banned not in text, path
