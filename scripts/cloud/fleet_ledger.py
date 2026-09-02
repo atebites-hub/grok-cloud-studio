@@ -272,16 +272,27 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
                 or payload.get("mergeable_state")
                 or "unknown"
             )
+            empty = payload_empty_checks(payload) or check_runs == 0 or check_runs == []
+            if empty:
+                reason = (
+                    "Empty GitHub checks are not evidence "
+                    "(MERGEABLE+empty CI is leftover-green theatre). "
+                )
+            else:
+                reason = (
+                    "Required GitHub check pytest -q and secret_scan is not SUCCESS. "
+                    "MERGEABLE is not a substitute. "
+                )
             return (
                 f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
                 f"runStatus=FINISHED pr={pr} check_runs={check_runs} "
                 f"mergeable={mergeable} url={url}. "
                 f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
-                f"Empty GitHub checks are not evidence "
-                f"(MERGEABLE+empty CI is leftover-green theatre). "
+                f"{reason}"
                 f"Need pull_request ship-gate: .venv/bin/pytest -q AND "
                 f"python3 scripts/secret_scan.py. "
-                f"Do not ping QA MERGE_REQUEST. RESULT with bc-id + pr."
+                f"Do not ping QA MERGE_REQUEST until that check is SUCCESS; "
+                f"then re-collect and ping QA. RESULT with bc-id + pr."
             )
         pr_is_url = pr not in {"", "none"}
         paste = paste_from_payload(payload)

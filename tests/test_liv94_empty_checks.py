@@ -175,7 +175,28 @@ def test_notify_text_empty_checks_is_not_merge_request() -> None:
     assert "leftover-green theatre" in text.lower()
     assert MERGE_READY not in text
     assert "not evidence" in text.lower()
+    assert "re-collect" in text.lower()
     assert FAKE_TOKEN not in text
+
+
+def test_notify_text_failed_ship_gate_is_not_empty_theatre() -> None:
+    text = notify_text(
+        "bc-liv94-fail",
+        {
+            "runStatus": "FINISHED",
+            "prUrl": GCS41,
+            "name": "LIV-94",
+            "url": "https://cursor.com/agents/bc-liv94-fail",
+            "emptyChecks": False,
+            "checkRuns": 1,
+            "mergeableState": "clean",
+            "shipGateOk": False,
+        },
+    )
+    assert MERGE_READY not in text
+    assert "leftover-green theatre" not in text.lower()
+    assert "not SUCCESS" in text
+    assert "re-collect" in text.lower()
 
 
 def test_notify_text_ship_gate_ok_may_merge_request() -> None:

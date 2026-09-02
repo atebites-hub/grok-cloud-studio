@@ -17,6 +17,7 @@ Feature: unique remaining — empty GitHub checks are not merge evidence
     And combined commit statuses total_count=0
     Then that snapshot is not ship-gate evidence
     And FLEET_DONE must not ping QA MERGE_REQUEST
+    And directors re-collect after the required check is SUCCESS
 
   Scenario: unique ship-gate already on main is not reminted
     Given origin/main already has .github/workflows/ship-gate.yml
