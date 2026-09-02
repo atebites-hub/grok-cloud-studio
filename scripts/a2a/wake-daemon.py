@@ -53,6 +53,7 @@ _LIB_DIR = Path(__file__).resolve().parent
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from lib import canonical_seat, seat_acp_port  # noqa: E402
+from lib import inbox_dropped, physical_inbox_offset, rotate_inbox  # noqa: E402
 
 _DISPATCH: Any = None
 _DUPLEX: Any = None
@@ -592,14 +593,25 @@ def _extract_text(parts: Any) -> str:
     return "\n".join(bits).strip()
 
 
-def _read_new_records(seat: str) -> list[tuple[int, dict[str, Any]]]:
-    path = _seat_dir(seat) / "inbox.jsonl"
+def _commit_offset(seat: str, end_offset: int, dropped_at_start: int) -> None:
+    _write_offset(
+        seat,
+        physical_inbox_offset(end_offset, dropped_at_start, _seat_dir(seat)),
+    )
+
+
+def _read_new_records(seat: str) -> tuple[list[tuple[int, dict[str, Any]]], int]:
+    seat_dir = _seat_dir(seat)
+    rotate_inbox(seat_dir)
+    dropped_at_start = inbox_dropped(seat_dir)
+    path = seat_dir / "inbox.jsonl"
     if not path.is_file():
-        return []
+        return [], dropped_at_start
     size = path.stat().st_size
     offset = _read_offset(seat)
     if offset > size:
-        offset = size
+        # Compacted or truncated file — do not clamp to EOF (that drops unread).
+        offset = 0
     records: list[tuple[int, dict[str, Any]]] = []
     with path.open("rb") as fh:
         fh.seek(offset)
@@ -624,7 +636,7 @@ def _read_new_records(seat: str) -> list[tuple[int, dict[str, Any]]]:
                 records.append((end, {"__corrupt__": True, "taskId": f"corrupt-{end}"}))
                 continue
             records.append((end, rec))
-    return records
+    return records, dropped_at_start
 
 
 def _compose_prompt(seat: str, rec: dict[str, Any], text: str) -> str:
@@ -646,7 +658,7 @@ def process_once(seat: str, *, dry_run: bool = False) -> dict[str, Any]:
     seat = canonical_seat(seat, ROOT)
     seat_dir = _seat_dir(seat)
     ensure_identity(seat, seat_dir)
-    records = _read_new_records(seat)
+    records, dropped_at_start = _read_new_records(seat)
     if not records:
         return {
             "consumed": 0,
@@ -658,7 +670,7 @@ def process_once(seat: str, *, dry_run: bool = False) -> dict[str, Any]:
     for end_offset, rec in records:
         if rec.get("__corrupt__"):
             if not dry_run:
-                _write_offset(seat, end_offset)
+                _commit_offset(seat, end_offset, dropped_at_start)
             continue
         task_id = str(rec.get("taskId") or "")
         context_id = str(rec.get("contextId") or "")
@@ -666,7 +678,7 @@ def process_once(seat: str, *, dry_run: bool = False) -> dict[str, Any]:
         if not text:
             print(f"WAKE_SKIP seat={seat} reason=empty task={task_id}", flush=True)
             if not dry_run:
-                _write_offset(seat, end_offset)
+                _commit_offset(seat, end_offset, dropped_at_start)
             continue
         extra = _compose_prompt(seat, rec, text)
         if dry_run:
@@ -715,7 +727,7 @@ def process_once(seat: str, *, dry_run: bool = False) -> dict[str, Any]:
                 "acp_session": pin_acp_session(seat_dir),
                 "reason": "prompt-fail",
             }
-        _write_offset(seat, end_offset)
+        _commit_offset(seat, end_offset, dropped_at_start)
         session = pin_acp_session(seat_dir)
         _append_log(
             seat,
@@ -746,10 +758,10 @@ def process_once(seat: str, *, dry_run: bool = False) -> dict[str, Any]:
 def wait_for_inbox(seat: str, timeout: float = 30.0) -> None:
     """Block until inbox.jsonl grows past wake.offset (or timeout)."""
     inbox = _seat_dir(seat) / "inbox.jsonl"
-    offset = _read_offset(seat)
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
+            offset = _read_offset(seat)
             if inbox.is_file() and inbox.stat().st_size > offset:
                 return
         except OSError:

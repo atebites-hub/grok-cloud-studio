@@ -23,7 +23,7 @@ scripts/a2a/start-studio-bus.sh start
 
 ### Two-runtime mind law
 
-Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/offset` + pin (`mind/session` grok UUID, `mind/cursor-session` Cursor chat id). Grok runner and Cursor CLI runner **share** that mailbox. Offset advances only on runner exit 0.
+Mind is mind/IaC, not another ACP wrapper. One mailbox: `inbox.jsonl` + `mind/offset` + pin (`mind/session` grok UUID, `mind/cursor-session` Cursor chat id). Grok runner and Cursor CLI runner **share** that mailbox. Offset advances only on runner exit 0. When `inbox.jsonl` exceeds `GCS_INBOX_MAX_BYTES` (default 1 MiB), rotate drops the consumed prefix and rewrites `mind/offset` (and `wake.offset` when present). Unread lines are never dropped. Leftover dispatch may compact on skip using those offsets but must not steal `mind/offset`.
 
 **Do not copy GROK_HOME MCP into Cursor CLI.** Two catalogs. Never fake a transfer.
 
@@ -184,7 +184,7 @@ A missing binary returns an error string from the MCP tool. Plugin output is red
 - **In addition:** set `GCS_MIND_PLUS_ACP_WAKE=1` to also start ACP wake for the same seats.
 - **Do not kill existing serve.** Mind never calls `stop-seat-daemon.sh` / `ensure_seat_serve`. Leftover `grok agent serve` can keep running.
 
-Leftover dispatch skips a live `mind/pid` and current `GCS_MIND_SEATS` (`DISPATCH_SKIP reason=mind-owns-inbox`) and does not steal `mind/offset`. It re-reads `mind_seats()` on each poll (does not freeze the set at import), so a long-lived process still skips a newly staffed mind seat even before a bounce.
+Leftover dispatch skips a live `mind/pid` and current `GCS_MIND_SEATS` (`DISPATCH_SKIP reason=mind-owns-inbox`) and does not steal `mind/offset`. On skip it still rotates a huge `inbox.jsonl` from existing `mind/offset` / `wake.offset` so a later leftover harvest cannot reread megabyte consumed tails. It re-reads `mind_seats()` on each poll (does not freeze the set at import), so a long-lived process still skips a newly staffed mind seat even before a bounce.
 
 `start-studio-bus.sh start` recycles leftover dispatch **only** when `.a2a-state/dispatch.mind-seats` differs from the current env / `studio.env` set (missing file is the empty set). Matching keeps `STUDIO_BUS_DISPATCH_ALREADY`. Recycle does not kill hub, fleet-shepherd, seat minds, host ticker, or `grok agent serve`. Default-off `start` / `recover.sh` evict leftover live `bot-bridge.pid` (`ALREADY` only when `GCS_BOT_BRIDGE=1`; do not remint). `start` / `recover.sh` do not start bot-bridge unless `GCS_BOT_BRIDGE=1`.
 
