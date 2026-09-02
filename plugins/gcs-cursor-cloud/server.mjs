@@ -9,10 +9,15 @@ function run(scriptRel, argv) {
   const r = spawnSync("bash", [resolve(root, scriptRel), ...argv], { encoding: "utf8", env: process.env });
   return { out: `${r.stdout || ""}${r.stderr || ""}`.trim() || `exit=${r.status}`, ok: r.status === 0 };
 }
+function runPy(scriptRel, argv) {
+  const r = spawnSync("python3", [resolve(root, scriptRel), ...argv], { encoding: "utf8", env: process.env });
+  return { out: `${r.stdout || ""}${r.stderr || ""}`.trim() || `exit=${r.status}`, ok: r.status === 0 };
+}
 const server = new Server({ name: "gcs-cursor-cloud", version: "1.0.0" }, { capabilities: { tools: {} } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     { name: "cloud_launch", description: "Launch Extra High grunt", inputSchema: { type: "object", properties: { prompt: { type: "string" }, name: { type: "string" } }, required: ["prompt"] } },
+    { name: "cloud_list", description: "List Extra High agents. Each row prints agent status and latest-run runStatus (RUNNING vs FINISHED). ACTIVE+FINISHED leftovers are not live workers.", inputSchema: { type: "object", properties: { limit: { type: "string" } } } },
     { name: "cloud_status", description: "Status for bc-id", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
     { name: "cloud_result", description: "Result JSON for bc-id", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
     { name: "cloud_followup", description: "Follow-up on bc-id", inputSchema: { type: "object", properties: { id: { type: "string" }, prompt: { type: "string" } }, required: ["id", "prompt"] } },
@@ -23,6 +28,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const args = req.params.arguments || {};
   let r;
   if (name === "cloud_launch") r = run("scripts/launch-cloud-extra-high.sh", args.name ? ["--name", String(args.name), String(args.prompt)] : [String(args.prompt)]);
+  else if (name === "cloud_list") r = runPy("scripts/cloud/list_helper.py", args.limit ? [String(args.limit)] : []);
   else if (name === "cloud_status") r = run("scripts/cloud/status-cloud-agent.sh", [String(args.id)]);
   else if (name === "cloud_result") r = run("scripts/cloud/result-cloud-agent.sh", [String(args.id)]);
   else if (name === "cloud_followup") r = run("scripts/cloud/followup-cloud-agent.sh", [String(args.id), String(args.prompt)]);
