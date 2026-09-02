@@ -71,6 +71,8 @@ class MockCursorAPI:
     run_not_found_ids: set[str] = field(default_factory=set)
     followup_http: int = 201
     list_http: int = 200
+    wrap_agent: bool = False
+    wrap_run: bool = False
     posts: list[dict[str, Any]] = field(default_factory=list)
     gets: list[str] = field(default_factory=list)
     auth_users: list[str] = field(default_factory=list)
@@ -136,16 +138,16 @@ class MockCursorAPI:
                         latest = listed.get("detailLatestRunId") or ""
                     else:
                         latest = ""
-                    self._send(
-                        200,
-                        {
-                            "id": agent_id,
-                            "name": (listed or {}).get("name") or "mock-agent",
-                            "status": (listed or {}).get("status") or "ACTIVE",
-                            "url": (listed or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
-                            "latestRunId": latest,
-                        },
-                    )
+                    payload: dict[str, Any] = {
+                        "id": agent_id,
+                        "name": (listed or {}).get("name") or "mock-agent",
+                        "status": (listed or {}).get("status") or "ACTIVE",
+                        "url": (listed or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
+                        "latestRunId": latest,
+                    }
+                    if api.wrap_agent:
+                        payload = {"agent": payload}
+                    self._send(200, payload)
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
                     run_id = parts[4]
@@ -161,14 +163,14 @@ class MockCursorAPI:
                             api._run_i += 1
                         else:
                             status = seq[-1]
-                    self._send(
-                        200,
-                        {
-                            "id": run_id,
-                            "agentId": parts[2],
-                            "status": status,
-                        },
-                    )
+                    payload = {
+                        "id": run_id,
+                        "agentId": parts[2],
+                        "status": status,
+                    }
+                    if api.wrap_run:
+                        payload = {"run": payload}
+                    self._send(200, payload)
                     return
                 self._send(404, {"error": "not_found"})
 
