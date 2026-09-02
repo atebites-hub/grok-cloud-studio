@@ -214,5 +214,7 @@ python3 scripts/secret_scan.py
 CCGS lead map (aliases in `scripts/a2a/lib.py`): producer=`floor-ops`,
 creative=`floor`, technical=`systems`, game-designer=`content`,
 lead-programmer=`systems` until split, art-director=`art`, qa-lead=`qa-a`,
-release-manager=`studio-ops`. Directors and leads spawn specialists only via
+release-manager=`studio-ops`. First-class `audio` and `narrative` are
+registry seats, not aliases. Unmapped specialist titles do not mint seats.
+Directors and leads spawn specialists only via
 `scripts/launch-cloud-extra-high.sh`. Do not add 49 specialists.

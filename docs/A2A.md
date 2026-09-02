@@ -93,6 +93,12 @@ Directors and leads spawn specialists only via `scripts/launch-cloud-extra-high.
 | audio | `audio` |
 | narrative | `narrative` |
 
-`audio` and `narrative` are first-class registry seats. The other titles are aliases (`scripts/a2a/lib.py` `CCGS_LEAD_ALIASES`).
+`audio` and `narrative` are first-class registry seats. The other titles are
+aliases (`scripts/a2a/lib.py` `CCGS_LEAD_ALIASES`). `python3 scripts/a2a/lib.py known
+producer` prints `floor-ops`. Unmapped specialist titles (`composer`,
+`narrative-designer`, …) do not mint seats: `known` exits 1, and
+`mind-seats` / `grow-seats` / `launch-seats` / the host ticker drop them.
+FAT: [`tests/features/ccgs_audio_narrative_map.feature`](../tests/features/ccgs_audio_narrative_map.feature).
+Distinct from LIV-41 mind-must-launch clones.
 
 Board is **tcarac/taskboard** (ticket CLI + HTTP `/mcp`). See `docs/studio/TASKBOARD.md`. Agent Kanban was removed; do not reconnect `ak`. The local HTML dashboard under `scripts/studio/dashboard/` is LEGACY.
