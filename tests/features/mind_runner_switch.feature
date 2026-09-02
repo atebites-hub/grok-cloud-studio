@@ -10,8 +10,8 @@ Feature: Mind runner SWITCH persists grok|cursor and flips once on quota
   Extra High grunts stay grok-4.6 xhigh fast=false. Cursor CLI is
   cursor-grok-4.6-xhigh with a separate mind/cursor-session pin.
   Never remint the grok UUID because the runner switched. Never Bot
-  CloudAgent. Do not vendor Hermes. Do not clone LIV-85 mail.txt PRs
-  (in-flight mail hold, hub COMPLETE-as-receipt, SUBMITTED vs COMPLETE).
+  CloudAgent. Do not vendor Hermes. LIV-85 mail.txt hold (`mail.in-flight`)
+  may sit beside this FAT; SWITCH does not remint COMPLETE-as-receipt.
 
   Demonstrate, don't theatre. Offset advances only on runner exit 0.
 
@@ -56,4 +56,4 @@ Feature: Mind runner SWITCH persists grok|cursor and flips once on quota
     Then grok argv still pins grok-4.6 xhigh
     And Extra High launch stays fast=false
     And the tree does not vendor Hermes
-    And mind.py does not grow LIV-85 mail.in-flight writers
+    And LIV-85 mail hold may sit beside this SWITCH FAT

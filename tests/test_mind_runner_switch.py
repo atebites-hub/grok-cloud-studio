@@ -5,7 +5,8 @@ Executable binding for tests/features/mind_runner_switch.feature.
 Default GCS_MIND_RUNNER=auto persists $GCS_A2A_STATE/<seat>/mind/runner
 (grok|cursor). On quota / HTTP 402, flip and retry that same mail line
 once (MIND_SWITCH). Forced grok|cursor does not flip. Never Bot
-CloudAgent. Do not vendor Hermes. Do not clone LIV-85 mail.txt PRs.
+CloudAgent. Do not vendor Hermes. LIV-85 mail hold (`mail.in-flight`)
+may sit beside this FAT; SWITCH does not remint COMPLETE-as-receipt.
 
 BDD: demonstrate, don't theatre. No LGTM without evidence.
 """
@@ -25,9 +26,9 @@ MIND_PY = tm.MIND_PY
 MIND_DOC = tm.MIND_DOC
 AGENTS_DOC = tm.AGENTS_DOC
 PRIVATE_GAME = "atebites-hub/" + "palemon"
+# LIV-85 remaining on this stack owns mail.in-flight / write_seat_mail.
+# SWITCH still must not put hub enqueue SUBMITTED into mind.py.
 LIV85_MAIL_MARKERS = (
-    "mail.in-flight",
-    "write_seat_mail",
     "TASK_STATE_SUBMITTED",
 )
 HERMES_MARKERS = (
