@@ -65,6 +65,8 @@ LIB_PY="$SCRIPT_DIR/lib.py"
 # Comma-separated seats to keep as ACP daemons + GROW wake.
 # Default floor+ops (studio-ops on product floors) — full registry OOMs ~15GB VMs.
 DEFAULT_ACP_SEATS="floor,studio-ops"
+# shellcheck source=../studio/no-ak.sh
+source "$ROOT/scripts/studio/no-ak.sh"
 
 mkdir -p "$STATE_DIR"
 
@@ -490,6 +492,9 @@ done
 
 case "$cmd" in
   start)
+    if ! gcs_refuse_agent_kanban "$ROOT"; then
+      exit 1
+    fi
     hub_pid="$(read_pid "$HUB_PID_FILE")"
     disp_pid="$(read_pid "$DISPATCH_PID_FILE")"
     hub_running=0

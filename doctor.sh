@@ -9,6 +9,12 @@ FAIL=0
 ok() { printf 'OK  %s\n' "$*"; }
 bad() { printf 'ERR %s\n' "$*"; FAIL=1; }
 
+# shellcheck source=scripts/studio/no-ak.sh
+source "$ROOT/scripts/studio/no-ak.sh"
+if ! gcs_refuse_agent_kanban "$ROOT"; then
+  bad "Agent Kanban reconnect refused — board is tcarac/taskboard"
+fi
+
 if command -v python3 >/dev/null 2>&1; then
   ok "python3 $(python3 -c 'import sys; print("%d.%d"%sys.version_info[:2])')"
 else
@@ -23,6 +29,7 @@ for p in \
   scripts/a2a/host-ticker.py \
   scripts/a2a/send.sh \
   scripts/a2a/start-studio-bus.sh \
+  scripts/studio/no-ak.sh \
   scripts/directors/acp_inject.py \
   scripts/directors/seat-prompt-acp.sh \
   scripts/directors/seat-wake-loop.sh \

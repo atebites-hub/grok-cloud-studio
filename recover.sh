@@ -10,6 +10,8 @@ export GCS_ROOT="${GCS_ROOT:-$ROOT}"
 
 # shellcheck source=scripts/studio/health-lib.sh
 source "$ROOT/scripts/studio/health-lib.sh"
+# shellcheck source=scripts/studio/no-ak.sh
+source "$ROOT/scripts/studio/no-ak.sh"
 gcs_source_studio_env
 
 usage() {
@@ -47,6 +49,10 @@ if [[ $# -gt 0 ]]; then
   echo "error: unknown argument $1" >&2
   usage >&2
   exit 2
+fi
+
+if ! gcs_refuse_agent_kanban "$ROOT"; then
+  exit 1
 fi
 
 STATE="$(gcs_studio_state_dir)"

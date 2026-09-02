@@ -10,7 +10,7 @@ git submodule update --init --recursive
 
 `./setup.sh` inits that submodule if missing. This repository does **not** vendor a compiled `taskboard` binary. If `vendor/taskboard` has no prebuilt, `scripts/studio/taskboard/install-taskboard.sh` uses brew tap or the matching v0.6.0 GitHub release tarball.
 
-Agent Kanban (`ak`, AMA, `scripts/studio/agent-kanban/`) was removed from this control plane. Do not reconnect it. Do not run `ak start` from the A2A bus.
+Agent Kanban (`ak`, AMA, `scripts/studio/agent-kanban/`) was removed from this control plane. Do not reconnect it. Do not run `ak start` from the A2A bus. `scripts/a2a/start-studio-bus.sh start`, `./recover.sh`, and `./doctor.sh` fail closed if `PALEMON_AK_BRIDGE` is on or the tree reappears.
 
 ## What Directors should use
 
