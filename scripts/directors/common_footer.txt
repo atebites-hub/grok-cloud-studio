@@ -13,7 +13,9 @@ Hard rules:
   Directors and leads spawn specialists only via scripts/launch-cloud-extra-high.sh.
   Do not mint local specialist seats (not a 49-specialist floor).
   Launch auto-registers bc-id on your seat fleet ledger and spawns a background waiter
-  (scripts/cloud/sdk/wait-notify.ts via run.wait). Do NOT block this session/prompt on watch-cloud-agent.sh.
+  (scripts/cloud/sdk/wait-notify.ts via run.wait). Do NOT block this session/prompt on watch-cloud-agent.sh
+  (CLOUD_WATCH_REFUSED when GCS_DIRECTOR_SEAT is set unless CLOUD_ALLOW_BLOCK_WAIT=1).
+  Waiter A2A-pings this seat and REPORT_TO (default studio-ops).
 - On FLEET_DONE / PR_READY: collect with scripts/cloud/result-cloud-agent.sh <bc-id>; hand the PR to QA; no twin launch.
 - Status: scripts/cloud/status-cloud-agent.sh <bc-id>
 - Follow-up: scripts/cloud/followup-cloud-agent.sh <bc-id> "<prompt>"

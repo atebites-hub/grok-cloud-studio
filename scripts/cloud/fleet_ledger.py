@@ -47,6 +47,19 @@ def _seat_name() -> str:
     return env_first("GCS_DIRECTOR_SEAT", "CLOUD_OWNER_SEAT", default="ops")
 
 
+def report_to_seat() -> str:
+    """LIV-104: waiter/webhook A2A copy. Default studio-ops."""
+    return env_first("REPORT_TO", "GCS_REPORT_TO", default="studio-ops")
+
+
+def notify_targets(owner: str) -> list[str]:
+    targets = [owner]
+    report = report_to_seat()
+    if report and report not in targets:
+        targets.append(report)
+    return targets
+
+
 def fleet_path(seat: str | None = None) -> Path:
     return _state() / (seat or _seat_name()) / "fleet.jsonl"
 
@@ -213,16 +226,16 @@ def notify_owner(
     notified_by: str = "waiter",
     seat: str | None = None,
 ) -> dict[str, Any]:
-    """A2A-ping the owning seat, then mark the ledger closed.
+    """A2A-ping the owning seat and REPORT_TO, then mark the ledger closed.
 
-    If the ping fails, the row stays open so fleet-shepherd can retry.
+    If any ping fails, the row stays open so fleet-shepherd can retry.
     """
     hit = find_by_bc(bc_id)
     seat_name = seat or (hit[0] if hit else _seat_name())
     text = notify_text(bc_id, payload)
-    ok = ping_seat(seat_name, text)
-    if not ok:
-        raise RuntimeError(f"A2A ping failed seat={seat_name} id={bc_id}")
+    for target in notify_targets(seat_name):
+        if not ping_seat(target, text):
+            raise RuntimeError(f"A2A ping failed seat={target} id={bc_id}")
     return complete(bc_id, payload, notified_by=notified_by, seat=seat_name)
 
 

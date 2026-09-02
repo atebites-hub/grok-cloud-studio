@@ -28,6 +28,12 @@ if [[ $# -ge 3 && "$3" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
 fi
 start_ts="$(date +%s)"
 
+# LIV-103: directors never block-wait. Operator override: CLOUD_ALLOW_BLOCK_WAIT=1.
+if [[ -n "${GCS_DIRECTOR_SEAT:-}" && "${CLOUD_ALLOW_BLOCK_WAIT:-0}" != "1" ]]; then
+  echo "CLOUD_WATCH_REFUSED seat=${GCS_DIRECTOR_SEAT} use=spawn-waiter/result-cloud-agent.sh override=CLOUD_ALLOW_BLOCK_WAIT=1" >&2
+  exit 2
+fi
+
 if ! cloud_load_auth; then
   echo "error: CURSOR_API_KEY is not set (export it or add it to ~/.config/cursor/agent.env)" >&2
   exit 1
