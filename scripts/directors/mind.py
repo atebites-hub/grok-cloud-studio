@@ -255,7 +255,9 @@ def wrap_mind_mail(task_id: str, context_id: str, text: str) -> str:
         "RESULT-only / PONG is a bug. Remain this seat. "
         "Do not send.sh / a2a_send to ack the caller — duplex notifies. "
         "A2A_REPLY is a duplex caller ping — never launch a Cursor Cloud agent "
-        "or Bot CloudAgent for it. Extra High is grok-4.6 xhigh fast=false.\n"
+        "or Bot CloudAgent for it. You own Extra High spawn: exec cloud_launch "
+        "or scripts/launch-cloud-extra-high.sh. Never grok --resume for Cloud "
+        "create. Never Bot CloudAgent. Extra High is grok-4.6 xhigh fast=false.\n"
         f"MESSAGE:\n{text}\n"
     )
 
@@ -407,11 +409,26 @@ def plugin_a2a_send(arguments: dict[str, Any]) -> str:
     return _run_cmd(cmd, timeout=60)
 
 
+def extra_high_spawn_argv(prompt: str, name: str = "") -> list[str]:
+    """Cloud create argv: exec launch-cloud-extra-high.sh.
+
+    Never grok --resume. Never Bot CloudAgent. Model grok-4.6 xhigh.
+    """
+    script = ROOT / "scripts" / "launch-cloud-extra-high.sh"
+    cmd = [str(script)]
+    key = (name or "").strip()
+    if key:
+        cmd.extend(["--name", key])
+    cmd.append(prompt)
+    return cmd
+
+
 def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
-    """scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT.
+    """Exec scripts/launch-cloud-extra-high.sh [--name NAME] PROMPT.
 
     --name REFUSE if a live runStatus=RUNNING Extra High already has that name.
     Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent.
+    Never grok --resume for Cloud create.
     """
     script = ROOT / "scripts" / "launch-cloud-extra-high.sh"
     if not script.is_file():
@@ -419,12 +436,8 @@ def plugin_cloud_launch(arguments: dict[str, Any]) -> str:
     prompt = str(arguments.get("prompt") or "").strip()
     if not prompt:
         return "PLUGIN_ERR cloud_launch: prompt is required"
-    cmd = ["bash", str(script)]
     name = str(arguments.get("name") or "").strip()
-    if name:
-        cmd.extend(["--name", name])
-    cmd.append(prompt)
-    return _run_cmd(cmd, timeout=180)
+    return _run_cmd(extra_high_spawn_argv(prompt, name), timeout=180)
 
 
 TICKET_SCHEMA: dict[str, Any] = {

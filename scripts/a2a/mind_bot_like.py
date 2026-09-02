@@ -3,7 +3,8 @@
 
 Mailbox harvest writes a disk turn (mind/mail.txt + mind/turn.txt, Bot
 wake analog) before the runner. Mind spawn PATH is Extra High
-(cloud_launch) plus a2a_send. Not leftover ACP overlay. Not a Grok Bot
+(cloud_launch) plus a2a_send. cloud_launch execs
+scripts/launch-cloud-extra-high.sh. Not leftover ACP overlay. Not a Grok Bot
 grunt runtime.
 
 Do not vendor Hermes. Do not land harvest envelope helpers. Do not
@@ -113,9 +114,9 @@ def _write_exec_wrapper(dest: Path, script: Path) -> None:
     quoted = shlex.quote(str(script.resolve()))
     dest.write_text(
         "#!/bin/bash\n"
-        "# gcs-mind-bot-like-wrapper\n"
+        "# gcs-mind-bot-like-wrapper: exec Extra High launcher\n"
         "set -euo pipefail\n"
-        f"exec bash {quoted} \"$@\"\n",
+        f"exec {quoted} \"$@\"\n",
         encoding="utf-8",
     )
     dest.chmod(0o755)
