@@ -140,6 +140,21 @@ def _prep_mind(
     monkeypatch.setenv("GROK_BIN", str(grok))
     monkeypatch.delenv("GCS_MIND_RUNNER", raising=False)
     monkeypatch.delenv("GCS_CURSOR_BIN", raising=False)
+    orig_home = mind.grok_home_dir
+
+    def _grok_home_with_linear(seat: str) -> Path:
+        d = orig_home(seat)
+        cfg = d / "config.toml"
+        if not cfg.is_file():
+            cfg.write_text(
+                "[mcp_servers.linear]\n"
+                f'url = "{mind.LINEAR_MCP_URL}"\n'
+                'headers = { Authorization = "Bearer ${LINEAR_API_KEY}" }\n',
+                encoding="utf-8",
+            )
+        return d
+
+    monkeypatch.setattr(mind, "grok_home_dir", _grok_home_with_linear)
     return mind, state
 
 

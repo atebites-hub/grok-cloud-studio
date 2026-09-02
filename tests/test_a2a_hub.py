@@ -212,6 +212,25 @@ def _mind_offset(state: Path, seat: str) -> int:
     return int(path.read_text(encoding="utf-8").strip() or "0")
 
 
+def _seed_linear_grok_home(mind, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Happy-path grok harvests still need Living Sky Linear in GROK_HOME."""
+    orig_home = mind.grok_home_dir
+
+    def _grok_home_with_linear(seat: str) -> Path:
+        d = orig_home(seat)
+        cfg = d / "config.toml"
+        if not cfg.is_file():
+            cfg.write_text(
+                "[mcp_servers.linear]\n"
+                f'url = "{mind.LINEAR_MCP_URL}"\n'
+                'headers = { Authorization = "Bearer ${LINEAR_API_KEY}" }\n',
+                encoding="utf-8",
+            )
+        return d
+
+    monkeypatch.setattr(mind, "grok_home_dir", _grok_home_with_linear)
+
+
 def test_hub_send_stays_submitted_until_mind_not_completed_ack(hub: dict) -> None:
     """Enqueue is not done. send.sh + hub must not fake COMPLETED or HANDOFF."""
     proc = _send(hub, "floor", "queued until mind harvests")
@@ -273,6 +292,7 @@ def test_mind_harvest_finish_marks_hub_task_completed(
     monkeypatch.setenv("GCS_A2A_STATE", str(hub["state"]))
     monkeypatch.setenv("GROK_BIN", str(grok))
     monkeypatch.delenv("GCS_MIND_RUNNER", raising=False)
+    _seed_linear_grok_home(mind, monkeypatch)
 
     result = mind.process_once("floor")
     assert result.get("consumed") == 1, result
@@ -315,6 +335,7 @@ def test_mind_runner_fail_leaves_hub_task_queued(
     monkeypatch.setenv("GCS_A2A_STATE", str(hub["state"]))
     monkeypatch.setenv("GROK_BIN", str(grok))
     monkeypatch.setenv("GCS_MIND_RUNNER", "grok")
+    _seed_linear_grok_home(mind, monkeypatch)
 
     result = mind.process_once("floor")
     assert result.get("consumed") == 0
@@ -401,6 +422,7 @@ def test_hub_completed_after_harvest_is_receipt_not_mind_turn_status(
     monkeypatch.setenv("GCS_A2A_STATE", str(state))
     monkeypatch.setenv("GROK_BIN", str(grok))
     monkeypatch.delenv("GCS_MIND_RUNNER", raising=False)
+    _seed_linear_grok_home(mind, monkeypatch)
 
     result = mind.process_once("floor")
     captured = capsys.readouterr()
