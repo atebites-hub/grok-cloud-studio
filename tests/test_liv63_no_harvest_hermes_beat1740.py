@@ -14,7 +14,9 @@ docs/studio/LIV63_HERMES_BEAT1740.md plus FORBIDDEN_HARVEST_PRS below.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -224,8 +226,7 @@ def test_studio_pointer_keeps_skipseats_orchestrator_donald() -> None:
     assert REGISTRY.is_file(), REGISTRY
     registry = json.loads(REGISTRY.read_text(encoding="utf-8"))
     skip = [str(s) for s in (registry.get("skipSeats") or [])]
-    assert "orchestrator" in skip
-    assert "donald" in skip
+    assert skip == ["orchestrator", "donald"], skip
 
 
 def test_studio_pointer_names_mailbox_spawn_already_on_main() -> None:
@@ -234,7 +235,8 @@ def test_studio_pointer_names_mailbox_spawn_already_on_main() -> None:
     assert "#76" in text
     low = text.lower()
     assert "mailbox" in low
-    assert "#134" in text or "#114" in text or "#90" in text
+    for leftover in ("#114", "#134", "#90"):
+        assert leftover in text, leftover
 
 
 def test_harvest_mailbox_helpers_absent_from_mind_bot_like() -> None:
@@ -251,11 +253,25 @@ def test_harvest_mailbox_helpers_absent_from_mind_bot_like() -> None:
 
 def test_mind_grok_argv_is_prompt_file_never_bare_dash_p() -> None:
     """Mind path is grok --resume pinned UUID --prompt-file, never bare -p."""
-    mind = MIND_PY.read_text(encoding="utf-8")
-    assert "def grok_cli_argv" in mind
-    assert "--prompt-file" in mind
-    assert "--resume" in mind
-    argv_src = mind.split("def grok_cli_argv", 1)[1].split("\ndef ", 1)[0]
-    assert '"-p"' not in argv_src
-    assert "'-p'" not in argv_src
-    assert "session/prompt" not in argv_src
+    spec = importlib.util.spec_from_file_location(
+        "gcs_liv63_harvest_mind_argv", MIND_PY
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    mail = Path("/tmp/gcs-liv63-mail.txt")
+    pin = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    first = mod.grok_cli_argv(session_id=pin, minted=False, mail_path=mail)
+    later = mod.grok_cli_argv(session_id=pin, minted=True, mail_path=mail)
+    assert "--session-id" in first
+    assert pin in first
+    assert "--prompt-file" in first
+    assert str(mail) in first
+    assert "-p" not in first
+    assert "--resume" in later
+    assert pin in later
+    assert "--prompt-file" in later
+    assert "-p" not in later
+    assert "session/prompt" not in first
+    assert "session/prompt" not in later
