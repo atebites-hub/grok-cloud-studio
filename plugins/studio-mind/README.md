@@ -25,15 +25,19 @@ repo scripts. `mcp.json` runs `python3 -u server.py`. The MCP handshake must
 not close on `initialize`: stay connected through `notifications/initialized`
 then `tools/list` on the same stdio pid. If install is skipped (no grok,
 missing dir, genuine fail), mind is MCP-only: seat `GROK_HOME/config.toml`
-still owns taskboard stdio MCP (`taskboard --db`).
-
-Not a Cursor `${workspaceFolder}` MCP. Not ACP `session/prompt`.
+still owns taskboard stdio MCP (`taskboard --db`) and chrome-devtools
+stdio MCP (`npx -y chrome-devtools-mcp@latest`). chrome-devtools is not a
+`grok plugin install` target. That is the live Chrome for qa-a playtest
+of `http://127.0.0.1:5173/` (`tools/call navigate_page` then
+`take_screenshot` in one session). Not this studio-mind plugin. Not Cursor
+`${workspaceFolder}`. Not ACP `session/prompt`. Two catalogs. Python
+`mind.py` does not call chrome-devtools.
 
 Python `PLUGINS` in `scripts/directors/mind.py` remain as `call_plugin` helpers
 only — they are not a second agent loop.
 
 Cursor CLI (`GCS_MIND_RUNNER=cursor`, or auto after `MIND_SWITCH`) does not get
-this plugin or seat `GROK_HOME` taskboard MCP. Those do not transfer. Cursor
-uses Cursor builtins (shell/files); `ticket`, `scripts/a2a/send.sh`, and
-`scripts/launch-cloud-extra-high.sh` stay on PATH.
+this plugin, seat `GROK_HOME` taskboard MCP, or chrome-devtools. Those do not
+transfer. Cursor uses Cursor builtins (shell/files); `ticket`,
+`scripts/a2a/send.sh`, and `scripts/launch-cloud-extra-high.sh` stay on PATH.
 

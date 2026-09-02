@@ -400,6 +400,14 @@ def test_mind_scripts_and_docs_exist() -> None:
     assert "TASK_STATE_COMPLETED" in ARCH_DOC.read_text(encoding="utf-8")
     assert "format_mail_turn" not in src
     assert "hermes-agent" not in src.lower()
+    assert "chrome-devtools" in doc
+    assert "chrome-devtools-mcp" in doc
+    assert "127.0.0.1:5173" in doc
+    assert "qa-a" in doc
+    assert "not cursor cli" in doc.lower() or "not cursor" in doc.lower()
+    assert "cloudagent" in doc.lower() or "bot cloudagent" in doc.lower() or "grok bot" in doc.lower()
+    cursor_mcp = json.loads((REPO / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+    assert "chrome-devtools" not in (cursor_mcp.get("mcpServers") or {})
 
 
 def test_fake_grok_mints_then_resumes_same_uuid(

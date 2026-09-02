@@ -52,3 +52,17 @@ grok plugin install . --trust
 ```
 
 See root `.cursor-plugin/plugin.json` and `mcp.json`.
+
+## Grok catalog browser (`chrome-devtools`)
+
+Not in-tree. xAI Grok catalog live Chrome (Chrome DevTools MCP). Seat
+`GROK_HOME/config.toml` registers stdio `npx -y chrome-devtools-mcp@latest`.
+That is config.toml stdio, not `grok plugin install chrome-devtools`.
+`seat-mind-loop.sh` does not install it.
+
+qa-a uses this to visually playtest `http://127.0.0.1:5173/` via
+`tools/call navigate_page` then `take_screenshot` in one session. Pytest
+proves a grok-equivalent client can issue that call
+(`scripts/directors/grok_catalog_mcp.py`). Not Cursor CLI.
+Not Bot CloudAgent. Do not add chrome-devtools to `.cursor/mcp.json`.
+Two catalogs. See `docs/studio/MIND.md`.

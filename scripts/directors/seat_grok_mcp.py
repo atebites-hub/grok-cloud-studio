@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
-"""Merge taskboard stdio + Living Sky Linear HTTP into GROK_HOME/config.toml.
+"""Merge taskboard stdio + Living Sky Linear HTTP + chrome-devtools into GROK_HOME.
 
 Idempotent: a second write (or a grok rewrite that dropped the marker
 comments) must not append a duplicate `[compat.cursor]` /
-`[mcp_servers.taskboard]` / `[mcp_servers.linear]` table. Duplicate tables
-fail grok's TOML parse.
+`[mcp_servers.taskboard]` / `[mcp_servers.linear]` /
+`[mcp_servers.chrome-devtools]` table. Duplicate tables fail grok's TOML parse.
 
 Linear stays in this Grok catalog (`url = "https://mcp.linear.app/mcp"`).
+chrome-devtools is stdio `npx -y chrome-devtools-mcp@latest` (live Chrome).
+qa-a visually playtests CLIENT_PLAYTEST_URL with chrome-devtools
+`navigate_page` then `take_screenshot` in one grok-catalog session.
+Python mind.py does not call those tools (no second agent loop).
+Not Cursor CLI. Not Bot CloudAgent.
+
 Do not copy GROK_HOME into Cursor CLI. `${LINEAR_API_KEY}` expands at grok
 load time. Never print or commit the key.
 
@@ -19,9 +25,16 @@ import re
 import sys
 import tomllib
 from pathlib import Path
+from typing import Any
 
 MARK_START = "# gcs-seat-taskboard-mcp"
 MARK_END = "# gcs-seat-taskboard-mcp-end"
+
+CHROME_DEVTOOLS_SERVER = "chrome-devtools"
+CHROME_DEVTOOLS_COMMAND = "npx"
+CHROME_DEVTOOLS_PACKAGE = "chrome-devtools-mcp@latest"
+CHROME_DEVTOOLS_ARGS = ("-y", CHROME_DEVTOOLS_PACKAGE)
+CLIENT_PLAYTEST_URL = "http://127.0.0.1:5173/"
 
 _MARKED_BLOCK = re.compile(
     r"(?ms)^"
@@ -33,12 +46,51 @@ _MARKED_BLOCK = re.compile(
 _MARK_LINE = re.compile(
     r"(?m)^" + re.escape(MARK_START) + r"(?:-end)?[ \t]*\n?"
 )
-_OWNED_TABLES = ("compat.cursor", "mcp_servers.taskboard", "mcp_servers.linear")
+_OWNED_TABLES = (
+    "compat.cursor",
+    "mcp_servers.taskboard",
+    "mcp_servers.linear",
+    "mcp_servers.chrome-devtools",
+)
 LINEAR_MCP_URL = "https://mcp.linear.app/mcp"
 
 
 def q(value: str) -> str:
     return json.dumps(value)
+
+
+def chrome_devtools_toml(command: str = CHROME_DEVTOOLS_COMMAND) -> str:
+    args = ", ".join(q(a) for a in CHROME_DEVTOOLS_ARGS)
+    return (
+        f"[mcp_servers.{CHROME_DEVTOOLS_SERVER}]\n"
+        f"command = {q(command)}\n"
+        f"args = [{args}]\n"
+    )
+
+
+def chrome_devtools_open_client_tool(
+    url: str | None = None,
+) -> dict[str, Any]:
+    """Grok catalog chrome-devtools `navigate_page` for visual QA.
+
+    Directors (qa-a) ask grok to use this MCP tool. Python mind.py does
+    not parse grok stdout or invoke chrome-devtools itself.
+    """
+    origin = url if url else CLIENT_PLAYTEST_URL
+    return {
+        "server": CHROME_DEVTOOLS_SERVER,
+        "name": "navigate_page",
+        "arguments": {"url": origin},
+    }
+
+
+def chrome_devtools_screenshot_tool() -> dict[str, Any]:
+    """Grok catalog chrome-devtools `take_screenshot` after navigate_page."""
+    return {
+        "server": CHROME_DEVTOOLS_SERVER,
+        "name": "take_screenshot",
+        "arguments": {},
+    }
 
 
 def mcp_block(command: str, db: str) -> str:
@@ -56,6 +108,8 @@ def mcp_block(command: str, db: str) -> str:
         "headers = { Authorization = "
         + q("Bearer ${LINEAR_API_KEY}")
         + " }\n"
+        "\n"
+        f"{chrome_devtools_toml()}"
         f"{MARK_END}\n"
     )
 
@@ -78,7 +132,7 @@ def _owned_header(header: str) -> bool:
 
 
 def strip_owned_toml_tables(text: str) -> str:
-    """Drop owned Cursor/taskboard/Linear tables even without markers."""
+    """Drop owned Cursor/taskboard/Linear/chrome-devtools tables even without markers."""
     out: list[str] = []
     dropping = False
     for line in text.splitlines(keepends=True):
@@ -97,7 +151,7 @@ def _collapse_blank_lines(text: str) -> str:
 
 
 def merge_seat_taskboard_mcp(text: str, command: str, db: str) -> str:
-    """Return config.toml with one marked taskboard + Linear HTTP MCP block."""
+    """Return config.toml with one marked taskboard + Linear HTTP + chrome-devtools block."""
     text = _MARKED_BLOCK.sub("", text or "")
     text = _MARK_LINE.sub("", text)
     text = strip_owned_toml_tables(text)

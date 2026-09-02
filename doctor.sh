@@ -35,6 +35,7 @@ for p in \
   scripts/directors/seat-wake-loop.sh \
   scripts/directors/mind.py \
   scripts/directors/seat-mind-loop.sh \
+  scripts/directors/grok_catalog_mcp.py \
   scripts/directors/start-seat-daemon.sh \
   scripts/directors/prompt-dir.sh \
   scripts/directors/fleet-shepherd.py \
@@ -152,6 +153,12 @@ if [[ -e "$ROOT/vendor/taskboard/.git" ]]; then
   ok "vendor/taskboard submodule"
 else
   printf 'WARN vendor/taskboard submodule not initialized (git clone --recurse-submodules, or git submodule update --init --recursive)\n'
+fi
+
+if command -v npx >/dev/null 2>&1; then
+  ok "npx (chrome-devtools MCP)"
+else
+  printf 'WARN npx not on PATH (Grok catalog chrome-devtools visual QA needs Node npx + Chrome; see docs/studio/MIND.md)\n'
 fi
 
 if command -v node >/dev/null 2>&1; then

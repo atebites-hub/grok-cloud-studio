@@ -17,6 +17,12 @@ close on `initialize`; install stamps `$GROK_HOME/gcs-root` so off-tree
 - `plugins/a2a` — `a2a_list_seats`, `a2a_send`
 - `plugins/cursor-cloud` — Extra High `cloud_launch` / `cloud_list` / `cloud_status` / `cloud_result` (do not restack `cloud_followup` into `mind.py`)
 
+Grok catalog live Chrome (not in-tree): registered as stdio
+`npx -y chrome-devtools-mcp@latest` in seat `GROK_HOME/config.toml`.
+Do not `grok plugin install chrome-devtools`. qa-a playtests
+`http://127.0.0.1:5173/` via grok `tools/call navigate_page` then
+`take_screenshot` in one session. Not Cursor CLI. Not Bot CloudAgent.
+
 ```bash
 grok plugin install ./plugins/a2a --trust
 grok plugin install ./plugins/cursor-cloud --trust
