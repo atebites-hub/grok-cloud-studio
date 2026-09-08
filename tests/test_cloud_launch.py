@@ -106,6 +106,8 @@ class MockCursorAPI:
     run_delay_sec: float = 0.0
     followup_http: int = 201
     list_http: int = 200
+    wrap_agent: bool = False
+    wrap_run: bool = False
     posts: list[dict[str, Any]] = field(default_factory=list)
     gets: list[str] = field(default_factory=list)
     auth_users: list[str] = field(default_factory=list)
@@ -188,7 +190,10 @@ class MockCursorAPI:
                     }
                     if api.agent_repos is not None:
                         agent["repos"] = api.agent_repos
-                    self._send(200, agent)
+                    payload: dict[str, Any] = agent
+                    if api.wrap_agent:
+                        payload = {"agent": payload}
+                    self._send(200, payload)
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
                     run_id = parts[4]
@@ -223,7 +228,10 @@ class MockCursorAPI:
                         run["git"] = listed["runGit"]
                     if api.run_git is not None:
                         run["git"] = api.run_git
-                    self._send(200, run)
+                    payload = run
+                    if api.wrap_run:
+                        payload = {"run": payload}
+                    self._send(200, payload)
                     return
                 self._send(404, {"error": "not_found"})
 
