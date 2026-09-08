@@ -60,6 +60,7 @@ from ship_gate_evidence import (  # noqa: E402
 )
 
 TERMINAL = frozenset({"FINISHED", "ERROR", "CANCELLED", "EXPIRED"})
+MEMBERSHIP_NOT_LIVENESS = frozenset({"ACTIVE", "IDLE"})
 MERGE_READY = "ping QA (odd→qa-a, even→qa-b) MERGE_REQUEST"
 _MERGEABLE_TOKENS = frozenset({"CONFLICTING", "MERGEABLE", "UNKNOWN"})
 _CONFLICTING_STATES = frozenset({"dirty", "conflicting"})
@@ -72,6 +73,32 @@ def normalize_run_status(value: object) -> str:
     if raw == "CANCELED":
         return "CANCELLED"
     return raw or "unknown"
+
+
+def run_status_from_payload(payload: dict[str, Any] | None) -> str:
+    """Latest-run liveness from a result payload.
+
+    Prefer ``runStatus`` / ``run_status``. Agent membership ``ACTIVE``/``IDLE``
+    (Cloud Agents stay ACTIVE until archive) is not a live RUNNING run and
+    must not be used as ``run_status``.
+    """
+    if not payload:
+        return "unknown"
+    for key in ("runStatus", "run_status"):
+        raw = payload.get(key)
+        if raw is None or str(raw).strip() == "":
+            continue
+        token = normalize_run_status(raw)
+        if token in MEMBERSHIP_NOT_LIVENESS:
+            continue
+        return token
+    status = str(payload.get("status") or "").strip()
+    if not status:
+        return "unknown"
+    token = normalize_run_status(status)
+    if token in MEMBERSHIP_NOT_LIVENESS:
+        return "unknown"
+    return token
 
 
 def context_snippet(payload: dict[str, Any], limit: int = 240) -> str:
@@ -291,7 +318,9 @@ def is_leftover_shell(
         return True
     run_status = ""
     if payload is not None:
-        run_status = str(payload.get("runStatus") or "").strip()
+        token = run_status_from_payload(payload)
+        if token != "unknown":
+            run_status = token
     if not run_status:
         run_status = _latest_run_status(entry)
     return run_status.upper() == "FINISHED"
@@ -569,9 +598,7 @@ def notify_owner(
 
 
 def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
-    run_status = normalize_run_status(
-        payload.get("runStatus") or payload.get("status") or "unknown"
-    )
+    run_status = run_status_from_payload(payload)
     pr = payload.get("prUrl") or "none"
     name = payload.get("name") or ""
     url = payload.get("url") or f"https://cursor.com/agents/{bc_id}"
@@ -691,9 +718,7 @@ def complete(
                 row = entry
                 break
     assert row is not None
-    row["run_status"] = normalize_run_status(
-        payload.get("runStatus") or payload.get("status") or ""
-    )
+    row["run_status"] = run_status_from_payload(payload)
     row["pr_url"] = payload.get("prUrl")
     mergeable = payload_mergeable(payload)
     if mergeable is not None:
