@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Send a follow-up prompt to an existing Cursor Cloud agent. SDK-first.
 # REFUSE when the latest runStatus is RUNNING (do not stack a second live Extra High).
-# Leftover ACTIVE+FINISHED may follow up. Never Bot CloudAgent.
-# Prints CLOUD_FOLLOWUP_OK only on success. Never prints API keys.
+# HTTP 409 / agent_busy prints CLOUD_FOLLOWUP_ERR and must not launch a unique --name twin.
+# Distinct from leftover waiter 429 backoff. Leftover ACTIVE+FINISHED may follow up.
+# Never Bot CloudAgent. Prints CLOUD_FOLLOWUP_OK only on success. Never prints API keys.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,6 +23,14 @@ refuse_live_followup() {
   local rs="${1:-unknown}"
   printf '%s\n' "CLOUD_FOLLOWUP_ERR runStatus=${rs}"
   printf '%s\n' "error: refuse live Extra High runStatus=${rs}; do not stack a second run" >&2
+  exit 1
+}
+
+# HTTP 409 / agent_busy: do not REST-retry and do not mint a unique --name Extra High.
+refuse_busy_followup() {
+  local http="${1:-409}"
+  printf '%s\n' "CLOUD_FOLLOWUP_ERR http=${http} agent_busy=1"
+  printf '%s\n' "error: follow-up HTTP ${http} agent_busy; do not launch a second unique --name twin" >&2
   exit 1
 }
 
@@ -121,6 +130,15 @@ if ! cloud_http_request POST "/v1/agents/${agent_id}/runs" \
   -H "Content-Type: application/json" \
   --data-binary @"$payload"; then
   fail_followup "error: curl failed http=${CLOUD_HTTP_CODE:-000}"
+fi
+
+# 409 / agent_busy is not waiter 429 backoff and must not remint a unique --name twin.
+if python3 "${HERE}/followup_busy.py" --check "${CLOUD_HTTP_CODE:-000}" "${CLOUD_HTTP_BODY:-}"; then
+  echo "http=${CLOUD_HTTP_CODE}" >&2
+  if [[ -n "${CLOUD_HTTP_BODY:-}" && -f "$CLOUD_HTTP_BODY" ]]; then
+    cloud_redact_stream <"$CLOUD_HTTP_BODY" >&2 || true
+  fi
+  refuse_busy_followup "${CLOUD_HTTP_CODE:-409}"
 fi
 
 if ! cloud_http_is_create_ok; then

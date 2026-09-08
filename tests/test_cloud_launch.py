@@ -105,6 +105,7 @@ class MockCursorAPI:
     run_not_found_ids: set[str] = field(default_factory=set)
     run_delay_sec: float = 0.0
     followup_http: int = 201
+    followup_body: dict[str, Any] | None = None
     list_http: int = 200
     posts: list[dict[str, Any]] = field(default_factory=list)
     gets: list[str] = field(default_factory=list)
@@ -247,16 +248,14 @@ class MockCursorAPI:
                     self._send(api.create_http, payload)
                     return
                 if len(parts) == 4 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
-                    self._send(
-                        api.followup_http,
-                        {
-                            "run": {
-                                "id": "run-followup",
-                                "agentId": parts[2],
-                                "status": "CREATING",
-                            }
-                        },
-                    )
+                    payload = api.followup_body or {
+                        "run": {
+                            "id": "run-followup",
+                            "agentId": parts[2],
+                            "status": "CREATING",
+                        }
+                    }
+                    self._send(api.followup_http, payload)
                     return
                 self._send(404, {"error": "not_found"})
 
