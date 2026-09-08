@@ -38,6 +38,7 @@ for p in \
   scripts/directors/grok_catalog_mcp.py \
   scripts/directors/install-grok-mcp.sh \
   scripts/directors/seat_grok_mcp.py \
+  scripts/directors/linear_key.py \
   scripts/directors/start-seat-daemon.sh \
   scripts/directors/prompt-dir.sh \
   scripts/directors/fleet-shepherd.py \
@@ -154,6 +155,14 @@ else
 fi
 unset _launch_repo_set _launch_key_set _launch_key_file
 
+if [[ -n "${LINEAR_API_KEY:-}" ]]; then
+  ok "LINEAR_API_KEY is set (value not printed)"
+elif [[ -f "${GCS_LINEAR_KEY_FILE:-${GCS_A2A_STATE:-$ROOT/.a2a-state}/linear.env}" ]]; then
+  ok "LINEAR_API_KEY file present (value not printed)"
+else
+  printf 'WARN LINEAR_API_KEY unset (Living Sky Linear MCP; never Black Swan Money)\n'
+fi
+
 if command -v grok >/dev/null 2>&1; then
   ok "grok CLI on PATH"
 else
@@ -237,6 +246,9 @@ _gcs_warn_workspace_folder_mcp() {
   [[ -f "$f" ]] || return 0
   if grep -F '${workspaceFolder}' "$f" >/dev/null 2>&1; then
     printf 'WARN seat MCP config contains ${workspaceFolder} (never expands; register stdio MCP in GROK_HOME/config.toml): %s\n' "$f"
+  fi
+  if ! grep -F '[mcp_servers.linear]' "$f" >/dev/null 2>&1; then
+    printf 'WARN seat MCP config missing Linear HTTP catalog (Living Sky; never Black Swan Money): %s\n' "$f"
   fi
 }
 _gcs_warn_seat_taskboard_mcp_catalog() {

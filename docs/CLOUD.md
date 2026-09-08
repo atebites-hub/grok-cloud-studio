@@ -22,8 +22,9 @@ Cursor Cloud Extra High agents **cannot scrape `GROK_HOME`**. They get Linear
 via the cloud environment (cloud-env snapshot / dashboard Secrets / process
 env):
 
-- Set `LINEAR_API_KEY` on the Cursor Cloud snapshot or Secrets. Never print
-  or commit the key.
+- Set `LINEAR_API_KEY` on the Cursor Cloud snapshot or Secrets, or snapshot
+  it from `$GCS_A2A_STATE/linear.env` / `GCS_LINEAR_KEY_FILE` (`chmod 600`).
+  Never print or commit the key.
 - Checkout `.cursor/mcp.json` is Linear HTTP (`https://mcp.linear.app/mcp`)
   plus taskboard only — not a copy of the Grok MCP catalog.
 - RUNNING specialists `save_comment` on Living Sky issues

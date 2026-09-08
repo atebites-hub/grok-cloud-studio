@@ -163,7 +163,9 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
    Studio Linear is **Living Sky** (`https://linear.app/livingsky`, team
    Livingsky / `LIV`). **NEVER Black Swan Money.** Cursor Cloud Extra High
    agents cannot scrape `GROK_HOME`: put `LINEAR_API_KEY` in the cloud-env
-   snapshot or dashboard Secrets so `.cursor/mcp.json` Linear works.
+   snapshot or dashboard Secrets so `.cursor/mcp.json` Linear works. Host
+   minds load the same key from `$GCS_A2A_STATE/linear.env` (`chmod 600`) or
+   `GCS_LINEAR_KEY_FILE`. Never commit that file.
 
 6. Board + MCP HTTP (tcarac/taskboard v0.6.0; do not compile; do not vendor a
    binary). Source pin is `vendor/taskboard`. One-command board path:

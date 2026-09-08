@@ -58,6 +58,11 @@ from lib import inbox_dropped, physical_inbox_offset, rotate_inbox  # noqa: E402
 from mind_bot_like import extract_mail_text, prepare_mail_turn  # noqa: E402
 import duplex as a2a_duplex  # noqa: E402
 
+_DIRECTORS_DIR = Path(__file__).resolve().parent
+if str(_DIRECTORS_DIR) not in sys.path:
+    sys.path.append(str(_DIRECTORS_DIR))
+from linear_key import apply_linear_key_env  # noqa: E402
+
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
 STATE_DIR = Path(os.environ.get("GCS_A2A_STATE", str(ROOT / ".a2a-state")))
 
@@ -868,6 +873,7 @@ def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str,
     env["GCS_A2A_STATE"] = str(STATE_DIR)
     env["GROK_HOME"] = str(grok_home)
     env["GROK_MEMORY"] = "1"
+    apply_linear_key_env(env, state_dir=STATE_DIR)
     timeout_raw = os.environ.get("GCS_MIND_TURN_TIMEOUT", "").strip()
     timeout: float | None = float(timeout_raw) if timeout_raw else None
 
@@ -1089,6 +1095,7 @@ def _cursor_subprocess_env() -> dict[str, str]:
     key = load_cursor_api_key()
     if key:
         env["CURSOR_API_KEY"] = key
+    apply_linear_key_env(env, state_dir=STATE_DIR)
     return env
 
 
@@ -1434,6 +1441,7 @@ def main(argv: list[str] | None = None) -> int:
     seat = canonical_seat(args.seat, ROOT)
     os.environ["GCS_DIRECTOR_SEAT"] = seat
     STATE_DIR.mkdir(parents=True, exist_ok=True)
+    apply_linear_key_env(os.environ, state_dir=STATE_DIR)
     if args.once:
         process_once(seat)
         return 0

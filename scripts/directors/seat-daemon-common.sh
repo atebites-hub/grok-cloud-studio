@@ -222,6 +222,40 @@ _gcs_abs_path() {
   python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$1"
 }
 
+load_linear_api_key() {
+  # Source LINEAR_API_KEY from a secret file. Never echo the value.
+  # Studio Linear is Living Sky (linear.app/livingsky, team Livingsky / LIV).
+  # NEVER Black Swan Money.
+  local f raw
+  if [[ -n "${LINEAR_API_KEY:-}" ]]; then
+    return 0
+  fi
+  f="${GCS_LINEAR_KEY_FILE:-}"
+  if [[ -z "$f" ]]; then
+    f="${GCS_A2A_STATE:-$STATE_DIR}/linear.env"
+  fi
+  if [[ ! -f "$f" && -n "${HOME:-}" && -f "${HOME}/.config/linear/api.key" ]]; then
+    f="${HOME}/.config/linear/api.key"
+  fi
+  if [[ ! -f "$f" ]]; then
+    return 0
+  fi
+  set -a
+  # shellcheck disable=SC1090
+  source "$f" 2>/dev/null || true
+  set +a
+  if [[ -n "${LINEAR_API_KEY:-}" ]]; then
+    return 0
+  fi
+  raw="$(tr -d '[:space:]' <"$f" 2>/dev/null || true)"
+  case "$raw" in
+    lin_*)
+      export LINEAR_API_KEY="$raw"
+      ;;
+  esac
+  return 0
+}
+
 _write_seat_taskboard_mcp_config() {
   # Merge stdio MCP into GROK_HOME/config.toml. Equivalent to:
   #   GROK_HOME=$gh grok mcp add taskboard -- "$bin" --db "$db" mcp
@@ -243,6 +277,7 @@ install_seat_grok_mcp() {
   # User-scope ~/.grok/config.toml is not inherited. Do not remint serve.
   local seat="${1:-}"
   local sd gh db bin cfg
+  load_linear_api_key
   sd="$(seat_state_dir "${seat:-floor}")"
   gh="${GROK_HOME:-$sd/grok-home}"
   db="${GCS_TASKBOARD_DB:-${TASKBOARD_DB:-$STATE_DIR/taskboard/taskboard.db}}"
@@ -383,6 +418,7 @@ export_seat_serve_env() {
   export GROK_MEMORY="${GROK_MEMORY:-1}"
   export GROK_HOME="${GROK_HOME:-$sd/grok-home}"
   mkdir -p "$GROK_HOME"
+  load_linear_api_key
   install_seat_identity "$seat"
   export PATH="${GROK_HOME}/bin:${HOME}/.grok/bin:${PATH:-}"
 }
@@ -394,6 +430,7 @@ install_seat_identity() {
   src="$ROOT/docs/studio/directors/souls/$seat"
   alias="$ROOT/docs/studio/directors/souls/$(python3 "$LIB_PY" canonical "$seat" 2>/dev/null || echo "$seat")"
   mkdir -p "$sd/grok-home"
+  load_linear_api_key
   install_seat_grok_auth "$seat"
   install_seat_taskboard_cli "$seat"
   install_seat_grok_mcp "$seat"
