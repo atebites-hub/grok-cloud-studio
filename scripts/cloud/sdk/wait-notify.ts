@@ -7,8 +7,11 @@ import {
   boundRepoUrl,
   boundRepos,
   die,
+  isRateLimitError,
   loadApiKey,
   mapRunStatus,
+  rateLimitBackoffMs,
+  retryAfterFromError,
   safeError,
 } from "./common.ts";
 import {
@@ -73,6 +76,24 @@ function basicAuthHeader(apiKey: string): string {
   return `Basic ${Buffer.from(`${apiKey}:`, "utf8").toString("base64")}`;
 }
 
+type HttpErr = Error & { status?: number; retryAfter?: string | null };
+
+function httpStatus(err: unknown): number {
+  if (err && typeof err === "object" && "status" in err) {
+    const raw = (err as HttpErr).status;
+    const status = typeof raw === "number" ? raw : Number(raw);
+    return Number.isFinite(status) ? status : 0;
+  }
+  return 0;
+}
+
+/** 401/403 fail closed. 429 is retried by the outer poll. Other misses stay collection gaps. */
+function rethrowWaiterHttp(err: unknown): void {
+  if (isRateLimitError(err)) throw err;
+  const status = httpStatus(err);
+  if (status === 401 || status === 403) throw err;
+}
+
 async function restGet(path: string, apiKey: string): Promise<Record<string, unknown>> {
   const base = (process.env.CURSOR_API_BASE || "https://api.cursor.com").replace(/\/$/, "");
   const res = await fetch(`${base}${path}`, {
@@ -82,9 +103,20 @@ async function restGet(path: string, apiKey: string): Promise<Record<string, unk
     },
   });
   if (!res.ok) {
-    throw new Error(`REST ${res.status} ${path}`);
+    const err: HttpErr = new Error(`REST ${res.status} ${path}`);
+    err.status = res.status;
+    err.retryAfter = res.headers.get("retry-after");
+    throw err;
   }
   return (await res.json()) as Record<string, unknown>;
+}
+
+async function pauseForRateLimit(err: unknown, attempt: number, agentId: string): Promise<void> {
+  const delay = rateLimitBackoffMs(attempt, retryAfterFromError(err));
+  process.stdout.write(
+    `CLOUD_WAITER_RETRY id=${agentId} status=429 backoffMs=${delay} attempt=${attempt}\n`,
+  );
+  await sleep(delay);
 }
 
 function unwrap(data: Record<string, unknown>, key: string): Record<string, unknown> {
@@ -143,56 +175,69 @@ async function restPoll(agentId: string, runId: string, apiKey: string): Promise
   const started = Date.now();
   const deadline = timeoutSec > 0 ? started + timeoutSec * 1000 : Number.POSITIVE_INFINITY;
   let last = "unknown";
+  let rateLimitAttempt = 0;
+  // 429 must not abort the waiter. Resume until the run is terminal even if
+  // the agent row is leftover ACTIVE (membership) with a FINISHED run.
   while (Date.now() < deadline) {
-    const agentRaw = unwrap(await restGet(`/v1/agents/${agentId}`, apiKey), "agent");
-    let collectionOk = false;
-    let runs: RunLike[] = [];
     try {
-      runs = await restLatestRuns(agentId, apiKey);
-      collectionOk = true;
-    } catch {
-      collectionOk = false;
-    }
-    let pinned: RunLike | undefined;
-    if (runId) {
+      const agentRaw = unwrap(await restGet(`/v1/agents/${agentId}`, apiKey), "agent");
+      let collectionOk = false;
+      let runs: RunLike[] = [];
       try {
-        pinned = await restGetRun(agentId, runId, apiKey);
-      } catch {
-        pinned = undefined;
+        runs = await restLatestRuns(agentId, apiKey);
+        collectionOk = true;
+      } catch (err) {
+        rethrowWaiterHttp(err);
+        collectionOk = false;
       }
-    }
-    const observed = waiterObserve(runs, pinned);
-    const latestId = String(observed?.id || "");
-    let runRaw: Record<string, unknown> = { ...((observed || {}) as Record<string, unknown>) };
-    let runStatusMapped = mapRunStatus(String(observed?.status || ""));
-    if (latestId) {
-      try {
-        runRaw = unwrap(await restGet(`/v1/agents/${agentId}/runs/${latestId}`, apiKey), "run");
-        runStatusMapped = mapRunStatus(String(runRaw.status || observed?.status || ""));
-      } catch {
-        runStatusMapped = mapRunStatus(String(observed?.status || ""));
+      let pinned: RunLike | undefined;
+      if (runId) {
+        try {
+          pinned = await restGetRun(agentId, runId, apiKey);
+        } catch (err) {
+          rethrowWaiterHttp(err);
+          pinned = undefined;
+        }
       }
+      const observed = waiterObserve(runs, pinned);
+      const latestId = String(observed?.id || "");
+      let runRaw: Record<string, unknown> = { ...((observed || {}) as Record<string, unknown>) };
+      let runStatusMapped = mapRunStatus(String(observed?.status || ""));
+      if (latestId) {
+        try {
+          runRaw = unwrap(await restGet(`/v1/agents/${agentId}/runs/${latestId}`, apiKey), "run");
+          runStatusMapped = mapRunStatus(String(runRaw.status || observed?.status || ""));
+        } catch (err) {
+          rethrowWaiterHttp(err);
+          runStatusMapped = mapRunStatus(String(observed?.status || ""));
+        }
+      }
+      last = runStatusMapped || last;
+      const refreshed: RunLike = { ...(runRaw as RunLike), id: latestId, status: runStatusMapped };
+      const current = waiterObserve(
+        runs.map((row) => (String(row.id || "") === latestId ? refreshed : row)),
+        pinned,
+      );
+      const canFleetDone =
+        collectionOk &&
+        runs.length > 0 &&
+        mayFleetDone(current) &&
+        String(current?.id || "") === latestId;
+      if (canFleetDone) {
+        return directorResultFromRest(agentId, agentRaw, runRaw, runStatusMapped);
+      }
+      rateLimitAttempt = 0;
+      process.stdout.write(
+        `CLOUD_WAITER_POLL id=${agentId} run=${latestId || "none"} runStatus=${runStatusMapped || "none"}\n`,
+      );
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      await sleep(Math.min(pollSec * 1000, remaining));
+    } catch (err) {
+      if (!isRateLimitError(err)) throw err;
+      await pauseForRateLimit(err, rateLimitAttempt, agentId);
+      rateLimitAttempt += 1;
     }
-    last = runStatusMapped || last;
-    const refreshed: RunLike = { ...(runRaw as RunLike), id: latestId, status: runStatusMapped };
-    const current = waiterObserve(
-      runs.map((row) => (String(row.id || "") === latestId ? refreshed : row)),
-      pinned,
-    );
-    const canFleetDone =
-      collectionOk &&
-      runs.length > 0 &&
-      mayFleetDone(current) &&
-      String(current?.id || "") === latestId;
-    if (canFleetDone) {
-      return directorResultFromRest(agentId, agentRaw, runRaw, runStatusMapped);
-    }
-    process.stdout.write(
-      `CLOUD_WAITER_POLL id=${agentId} run=${latestId || "none"} runStatus=${runStatusMapped || "none"}\n`,
-    );
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
-    await sleep(Math.min(pollSec * 1000, remaining));
   }
   throw new Error(`CLOUD_WAITER_TIMEOUT id=${agentId} lastStatus=${last}`);
 }
@@ -208,7 +253,8 @@ async function latestRun(
   if (runId) {
     try {
       pinned = await Agent.getRun(runId, { runtime: "cloud", agentId, apiKey });
-    } catch {
+    } catch (err) {
+      rethrowWaiterHttp(err);
       pinned = undefined;
     }
   }
@@ -227,33 +273,46 @@ async function sdkWait(agentId: string, runId: string, apiKey: string): Promise<
   const started = Date.now();
   const deadline = timeoutSec > 0 ? started + timeoutSec * 1000 : Number.POSITIVE_INFINITY;
   let last = "unknown";
+  let rateLimitAttempt = 0;
   while (Date.now() < deadline) {
-    const { run, listed } = await latestRun(agentId, apiKey, runId || undefined);
-    const runStatus = mapRunStatus(run?.status);
-    last = runStatus;
-    if (run && listed > 0 && mayFleetDone({ id: run.id, status: runStatus })) {
-      return collectResult(agentId, run.id);
-    }
-    if (run && typeof run.supports === "function" && run.supports("wait")) {
+    try {
+      const { run, listed } = await latestRun(agentId, apiKey, runId || undefined);
+      const runStatus = mapRunStatus(run?.status);
+      last = runStatus;
+      if (run && listed > 0 && mayFleetDone({ id: run.id, status: runStatus })) {
+        return collectResult(agentId, run.id);
+      }
+      rateLimitAttempt = 0;
+      if (run && typeof run.supports === "function" && run.supports("wait")) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        try {
+          // timeout=0 => remaining is Infinity; sleep(Infinity) hung FLEET_DONE.
+          const slice = Math.min(pollSec * 1000, Number.isFinite(remaining) ? remaining : pollSec * 1000);
+          await Promise.race([
+            run.wait(),
+            sleep(slice).then(() => {
+              throw new Error("wait-poll");
+            }),
+          ]);
+          continue;
+        } catch (err) {
+          if (safeError(err).includes("wait-timeout")) break;
+          if (isRateLimitError(err)) {
+            await pauseForRateLimit(err, rateLimitAttempt, agentId);
+            rateLimitAttempt += 1;
+            continue;
+          }
+        }
+      }
       const remaining = deadline - Date.now();
       if (remaining <= 0) break;
-      try {
-        // timeout=0 => remaining is Infinity; sleep(Infinity) hung FLEET_DONE.
-        const slice = Math.min(pollSec * 1000, Number.isFinite(remaining) ? remaining : pollSec * 1000);
-        await Promise.race([
-          run.wait(),
-          sleep(slice).then(() => {
-            throw new Error("wait-poll");
-          }),
-        ]);
-        continue;
-      } catch (err) {
-        if (safeError(err).includes("wait-timeout")) break;
-      }
+      await sleep(Math.min(pollSec * 1000, remaining));
+    } catch (err) {
+      if (!isRateLimitError(err)) throw err;
+      await pauseForRateLimit(err, rateLimitAttempt, agentId);
+      rateLimitAttempt += 1;
     }
-    const remaining = deadline - Date.now();
-    if (remaining <= 0) break;
-    await sleep(Math.min(pollSec * 1000, remaining));
   }
   throw new Error(`CLOUD_WAITER_TIMEOUT id=${agentId} lastStatus=${last}`);
 }
