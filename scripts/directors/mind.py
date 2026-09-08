@@ -7,14 +7,18 @@ persists json stdout, marks the hub task COMPLETED, and stays up. Empty
 harvest does not remint. Grok is the agent for that turn (its own
 tool loop, `--max-turns 40`). send.sh / hub enqueue is SUBMITTED; mail
 stays queued until this harvest finishes. Hub TASK_STATE_COMPLETED / A2A
-ACK is a receipt, not mind-turn done; offset (mail consumed) only on
-runner exit 0. A runner that did not run is not success. Failed runner
+ACK is a receipt, not mind-turn done; offset (mail consumed) on
+runner exit 0, or when skipping a duplicate identical FLEET_DONE line.
+A runner that did not run is not success. Failed runner
 does not complete the task and does not advance offset. Default
 `GCS_MIND_RUNNER=auto` persists `$GCS_A2A_STATE/<seat>/mind/runner` (`grok` or
 `cursor`). Each mail line uses that file. On quota / HTTP 402, flip the file
 and retry that same mail line once on the other runner (`MIND_SWITCH`). Forced
 `GCS_MIND_RUNNER=grok|cursor` does not flip. Never remint the grok UUID because
-harvest was empty or because the runner switched.
+harvest was empty or because the runner switched. Skip duplicate identical
+FLEET_DONE mailbox lines (waiter+shepherd double ping) without a second grok
+turn (`MIND_SKIP reason=duplicate-fleet-done`); do not remint fleet-ledger
+notify_owner idempotency.
 
 Do not parse grok stdout for function calls. Do not run a second tool-calling
 loop. Do not use grok agent serve or leftover ACP inject on opted-in mind
@@ -51,7 +55,7 @@ if str(_LIB_DIR) not in sys.path:
 from duplex import set_task_state  # noqa: E402
 from lib import canonical_seat, skip_seats  # noqa: E402
 from lib import inbox_dropped, physical_inbox_offset, rotate_inbox  # noqa: E402
-from mind_bot_like import prepare_mail_turn  # noqa: E402
+from mind_bot_like import extract_mail_text, prepare_mail_turn  # noqa: E402
 import duplex as a2a_duplex  # noqa: E402
 
 ROOT = Path(os.environ.get("GCS_ROOT", Path(__file__).resolve().parents[2]))
@@ -309,6 +313,40 @@ def yaml_agent_file(path: str | Path | None) -> str | None:
 def _session_already_in_use(stderr: str, stdout: str = "") -> bool:
     blob = f"{stderr}\n{stdout}"
     return bool(_SESSION_IN_USE_RE.search(blob))
+
+
+def last_fleet_done_file(seat: str) -> Path:
+    return mind_dir(seat) / "last-fleet-done"
+
+
+def is_fleet_done_mail(text: str) -> bool:
+    """Waiter/shepherd/webhook notify lines start with FLEET_DONE."""
+    return (text or "").lstrip().startswith("FLEET_DONE")
+
+
+def load_last_fleet_done(seat: str) -> str:
+    path = last_fleet_done_file(seat)
+    if not path.is_file():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def save_last_fleet_done(seat: str, text: str) -> None:
+    path = last_fleet_done_file(seat)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    tmp.replace(path)
+
+
+def is_duplicate_fleet_done(seat: str, prompt: str) -> bool:
+    """True when this FLEET_DONE text already consumed a grok turn."""
+    if not is_fleet_done_mail(prompt):
+        return False
+    last = load_last_fleet_done(seat)
+    return bool(last) and last == prompt
 
 
 def wrap_mind_mail(task_id: str, context_id: str, text: str) -> str:
@@ -1202,14 +1240,15 @@ def _is_skip_seat(seat: str) -> bool:
 
 
 def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict[str, Any]:
-    """One inbox line → one agent turn. Offset advances only on runner exit 0.
+    """One inbox line → one agent turn. Offset advances on runner exit 0.
 
-    Mailbox harvest writes mind/mail.txt + mind/turn.txt before the runner
-    (Bot-like disk turn). Empty harvest pins mind/session once, does not
-    remint, and does not invent a turn file. Hub TASK_STATE_COMPLETED /
-    A2A ACK is a receipt, not mind-turn done. Do not treat a COMPLETE hub
-    task as mail consumed. A runner that did not run (None) is runner-fail,
-    not harvest-fake success.
+    Duplicate identical FLEET_DONE lines (waiter+shepherd double ping) advance
+    offset without a grok turn (`reason=duplicate-fleet-done`). Mailbox harvest
+    writes mind/mail.txt + mind/turn.txt before the runner (Bot-like disk
+    turn). Empty harvest pins mind/session once, does not remint, and does not
+    invent a turn file. Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not
+    mind-turn done. Do not treat a COMPLETE hub task as mail consumed. A runner
+    that did not run (None) is runner-fail, not harvest-fake success.
     """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
@@ -1225,12 +1264,22 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
         return {"consumed": 0, "reason": "empty", "offset": _read_offset(seat)}
 
     run = runner if runner is not None else DEFAULT_RUNNER
+    skipped_dup = False
     for end_offset, rec in records:
         if rec.get("__corrupt__"):
             _commit_offset(seat, end_offset, dropped_at_start)
             continue
         task_id = str(rec.get("taskId") or "")
         context_id = str(rec.get("contextId") or "")
+        mail_text = extract_mail_text(rec)
+        if is_duplicate_fleet_done(seat, mail_text):
+            _commit_offset(seat, end_offset, dropped_at_start)
+            skipped_dup = True
+            print(
+                f"MIND_SKIP seat={seat} task={task_id} reason=duplicate-fleet-done",
+                flush=True,
+            )
+            continue
         raw_text = prepare_mail_turn(STATE_DIR, seat, rec)
         prompt = wrap_mind_mail(task_id, context_id, raw_text)
         try:
@@ -1294,6 +1343,8 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
                 "format": "json",
             },
         )
+        if is_fleet_done_mail(raw_text):
+            save_last_fleet_done(seat, raw_text)
         _commit_offset(seat, end_offset, dropped_at_start)
         if task_id:
             set_task_state(
@@ -1314,6 +1365,12 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
             "offset": end_offset,
         }
 
+    if skipped_dup:
+        return {
+            "consumed": 0,
+            "reason": "duplicate-fleet-done",
+            "offset": _read_offset(seat),
+        }
     return {"consumed": 0, "reason": "no-actionable", "offset": _read_offset(seat)}
 
 
