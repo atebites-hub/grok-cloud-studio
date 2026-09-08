@@ -278,6 +278,8 @@ Effort **grok-4.6 xhigh**, `fast=false`. Grok mind CLI:
 10. Grok Build HTTP 402: `mind.py` **switches** the persisted runner
     (`$GCS_A2A_STATE/<seat>/mind/runner`) and retries that same mail line
     once on Cursor CLI (`cursor-grok` or `agent --model cursor-grok-4.6-xhigh`).
+    Stamp `mind/switch-offset` so the next harvest of that unconsumed line
+    does not ping-pong. `seat-mind-loop.sh` only execs `mind.py`.
     Default `GCS_MIND_RUNNER=auto`. Forced `grok`/`cursor` does not flip.
     Not a wipe blocker.
 

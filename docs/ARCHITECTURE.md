@@ -26,7 +26,7 @@ Grok Cloud Studio is a **local control plane**:
 ```
 send.sh → hub.py (enqueue SUBMITTED + inbox JSONL; ACK is a receipt, not mind-turn done)
             ↓
-        mind.py         → grok --resume pinned UUID --prompt-file; auto mind/runner; 402 MIND_SWITCH once
+        mind.py         → grok --resume pinned UUID --prompt-file; auto mind/runner; 402 MIND_SWITCH once per unconsumed mail
                         → COMPLETED only after harvest + runner exit 0 (still a receipt)
         wake-daemon.py  → seat-prompt-acp.sh --pin-session  (GROW seats, leftover)
         dispatch.py     → leftover acp_inject.py            (non-GROW only)

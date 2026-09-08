@@ -51,6 +51,21 @@ Feature: Mind runner SWITCH persists grok|cursor and flips once on quota
     And the same mail line is not ping-ponged
     And offset stays 0
 
+  Scenario: HTTP 402 retry uses the exact same wrapped mail bytes
+    Given auto mode and grok writes mind/mail.txt then returns HTTP 402
+    When cursor retries that mail line
+    Then the cursor positional prompt equals grok --prompt-file contents
+    And inbox offset stays 0 until the effective runner exits 0
+
+  Scenario: Unconsumed 402 mail does not ping-pong on the next harvest tick
+    Given auto mode and grok then cursor both returned HTTP 402
+    And offset is still 0 so the inbox line is unconsumed
+    When process_once runs again on that same inbox line
+    Then MIND_SWITCH is not logged again
+    And grok is not invoked again
+    And mind/runner stays cursor
+    And seat-mind-loop.sh still only execs mind.py (persist lives in mind.py)
+
   Scenario: Constraints stay intact
     Given this FAT slice
     Then grok argv still pins grok-4.6 xhigh
