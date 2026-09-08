@@ -185,7 +185,18 @@ def register(
 
 
 def set_waiter_pid(bc_id: str, waiter_pid: int, seat: str | None = None) -> None:
-    path = fleet_path(seat)
+    """Stamp waiter_pid on the row's owning seat.
+
+    Prefer an explicit seat, then the seat that already registered this
+    bc-id. Do not silently fork a second row onto the env default
+    (ops/floor) when Extra High was registered on GCS_DIRECTOR_SEAT=cloud.
+    """
+    seat_name = (seat or "").strip() or None
+    if seat_name is None:
+        hit = find_by_bc(bc_id)
+        if hit is not None:
+            seat_name = hit[0]
+    path = fleet_path(seat_name)
     entries = load_entries(path)
     for entry in entries:
         if entry.get("bc_id") == bc_id:
@@ -194,7 +205,7 @@ def set_waiter_pid(bc_id: str, waiter_pid: int, seat: str | None = None) -> None
             entry["updated_at"] = _now()
             write_entries(path, entries)
             return
-    register(bc_id, seat=seat, waiter_pid=waiter_pid)
+    register(bc_id, seat=seat_name, waiter_pid=waiter_pid)
 
 
 def waiter_alive(entry: dict[str, Any]) -> bool:

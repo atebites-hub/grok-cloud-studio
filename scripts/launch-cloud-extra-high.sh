@@ -289,5 +289,7 @@ run_id="$(cloud_json_get "$CLOUD_HTTP_BODY" run.id)"
 [[ -n "$url" ]] && printf 'url=%s\n' "$url"
 [[ -n "$run_id" ]] && printf 'run_id=%s\n' "$run_id"
 if [[ -n "$id" ]]; then
-  bash "${SCRIPT_DIR}/cloud/spawn-waiter.sh" --id "$id" ${run_id:+--run "$run_id"} ${name:+--name "$name"} || true
+  owner_seat="${GCS_DIRECTOR_SEAT:-${CLOUD_OWNER_SEAT:-}}"
+  # Pass --seat so GCS_DIRECTOR_SEAT=cloud is not dropped (silent floor default).
+  bash "${SCRIPT_DIR}/cloud/spawn-waiter.sh" --id "$id" ${run_id:+--run "$run_id"} ${name:+--name "$name"} ${owner_seat:+--seat} ${owner_seat:+"$owner_seat"} || true
 fi

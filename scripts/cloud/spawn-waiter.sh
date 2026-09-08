@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # After CLOUD_LAUNCH_OK: register the run in the fleet ledger and spawn a
 # detached waiter that blocks on SDK run.wait() (or REST poll) then A2A-pings
-# the owning seat and REPORT_TO (default studio-ops). Directors must not
-# block-wait on watch.sh. Disable with GCS_SPAWN_WAITER=0 / CLOUD_SPAWN_WAITER=0.
+# the owning seat and REPORT_TO (default studio-ops). Owner is
+# GCS_DIRECTOR_SEAT (example cloud) / CLOUD_OWNER_SEAT / --seat. Launch Extra
+# High must pass --seat so cloud does not silently default to floor.
+# Directors must not block-wait on watch.sh. Disable with GCS_SPAWN_WAITER=0 /
+# CLOUD_SPAWN_WAITER=0. CLOUD_WAITER_BIN overrides wait-notify (tests).
+# Supervisor pid is what the ledger stores (GCS #35 429 restart). Do not remint.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -27,7 +31,7 @@ if [[ "${GCS_SPAWN_WAITER:-${CLOUD_SPAWN_WAITER:-1}}" == "0" ]]; then
   exit 0
 fi
 if [[ "${CLOUD_WAITER_DRY:-0}" == "1" ]]; then
-  echo "CLOUD_WAITER_DRY id=${ID:-unset} run=${RUN:-unset}"
+  echo "CLOUD_WAITER_DRY id=${ID:-unset} run=${RUN:-unset} seat=${SEAT}"
   exit 0
 fi
 
@@ -114,5 +118,5 @@ done
 WAITER_PID=$!
 disown "$WAITER_PID" 2>/dev/null || true
 
-python3 "$LEDGER" set-waiter --id "$LOOKUP_KEY" --pid "$WAITER_PID" >/dev/null || true
-echo "CLOUD_WAITER_SPAWNED id=${ID:-} run=${RUN:-} pid=$WAITER_PID log=$LOG"
+python3 "$LEDGER" set-waiter --id "$LOOKUP_KEY" --pid "$WAITER_PID" --seat "$SEAT" >/dev/null || true
+echo "CLOUD_WAITER_SPAWNED id=${ID:-} run=${RUN:-} seat=$SEAT pid=$WAITER_PID log=$LOG"

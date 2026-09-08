@@ -350,10 +350,23 @@ async function withMergeableFlag(payload: DirectorResult): Promise<WaiterPayload
   return { ...payload, mergeable };
 }
 
+function ownerSeat(): string {
+  return (process.env.GCS_DIRECTOR_SEAT || process.env.CLOUD_OWNER_SEAT || "").trim();
+}
+
 function ledgerNotify(agentId: string, payload: WaiterPayload): void {
+  const seat = ownerSeat();
   const proc = spawnSync(
     "python3",
-    [LEDGER, "notify", "--id", agentId, "--notified-by", "waiter"],
+    [
+      LEDGER,
+      "notify",
+      "--id",
+      agentId,
+      "--notified-by",
+      "waiter",
+      ...(seat ? ["--seat", seat] : []),
+    ],
     {
       cwd: ROOT,
       input: JSON.stringify(payload),
