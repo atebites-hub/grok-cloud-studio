@@ -55,7 +55,10 @@ if str(_LIB_DIR) not in sys.path:
 from duplex import set_task_state  # noqa: E402
 from lib import canonical_seat, skip_seats  # noqa: E402
 from lib import inbox_dropped, physical_inbox_offset, rotate_inbox  # noqa: E402
-from mind_bot_like import extract_mail_text, prepare_mail_turn  # noqa: E402
+from mind_bot_like import MAIL_HELD_ERR  # noqa: E402
+from mind_bot_like import begin_mail_turn, clear_mail_hold, end_mail_turn  # noqa: E402
+from mind_bot_like import extract_mail_text, is_status_ack, mail_turn_held  # noqa: E402
+from mind_bot_like import prepare_mail_turn, try_write_mail  # noqa: E402
 import duplex as a2a_duplex  # noqa: E402
 
 _DIRECTORS_DIR = Path(__file__).resolve().parent
@@ -866,7 +869,13 @@ def grok_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[str,
     session_id = load_or_create_session(seat)
     minted = session_is_minted(seat)
     mail_path = mind_dir(seat) / "mail.txt"
-    mail_path.write_text(prompt, encoding="utf-8")
+    if not try_write_mail(STATE_DIR, seat, prompt):
+        return {
+            "text": MAIL_HELD_ERR,
+            "returncode": 1,
+            "stderr": "",
+            "backend": "grok",
+        }
     agent = yaml_agent_file(soul_profile(seat))
     env = os.environ.copy()
     env["GCS_ROOT"] = str(ROOT)
@@ -1149,8 +1158,13 @@ def cursor_cli_runner(prompt: str, *, seat: str = "", **_kwargs: Any) -> dict[st
     if not cursor_catalog_has_linear(ROOT):
         return _missing_linear_catalog_result("cursor")
     mind_dir(seat)
-    mail_path = mind_dir(seat) / "mail.txt"
-    mail_path.write_text(prompt, encoding="utf-8")
+    if not try_write_mail(STATE_DIR, seat, prompt):
+        return {
+            "text": MAIL_HELD_ERR,
+            "returncode": 1,
+            "stderr": "",
+            "backend": "cursor",
+        }
     env = _cursor_subprocess_env()
     if not (env.get("CURSOR_API_KEY") or "").strip():
         return {
@@ -1256,6 +1270,8 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
     invent a turn file. Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not
     mind-turn done. Do not treat a COMPLETE hub task as mail consumed. A runner
     that did not run (None) is runner-fail, not harvest-fake success.
+    STATUS ACK must not overwrite an in-flight TASK in mind/mail.txt until
+    the runner exits 0 (nested process_once returns reason=in-flight).
     """
     seat = canonical_seat(seat, ROOT)
     if _is_skip_seat(seat):
@@ -1266,6 +1282,9 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
     grok_home_dir(seat)
     # Stay-up identity: pin UUID even when harvest is empty. Never remint.
     load_or_create_session(seat)
+    if mail_turn_held(STATE_DIR, seat):
+        print(f"MIND_SKIP seat={seat} reason=in-flight", flush=True)
+        return {"consumed": 0, "reason": "in-flight", "offset": _read_offset(seat)}
     records, dropped_at_start = _read_new_records(seat)
     if not records:
         return {"consumed": 0, "reason": "empty", "offset": _read_offset(seat)}
@@ -1287,90 +1306,95 @@ def process_once(seat: str, *, runner: Callable[..., Any] | None = None) -> dict
                 flush=True,
             )
             continue
-        raw_text = prepare_mail_turn(STATE_DIR, seat, rec)
-        prompt = wrap_mind_mail(task_id, context_id, raw_text)
+        begin_mail_turn(seat)
         try:
-            raw = run(prompt, seat=seat)
-        except Exception as e:
-            print(
-                f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail "
-                f"err={stderr_log_snippet(str(e))}",
-                file=sys.stderr,
-            )
-            return {"consumed": 0, "reason": "runner-fail", "task_id": task_id}
+            raw_text = prepare_mail_turn(STATE_DIR, seat, rec)
+            prompt = wrap_mind_mail(task_id, context_id, raw_text)
+            try:
+                raw = run(prompt, seat=seat)
+            except Exception as e:
+                print(
+                    f"MIND_FAIL seat={seat} task={task_id} reason=runner-fail "
+                    f"err={stderr_log_snippet(str(e))}",
+                    file=sys.stderr,
+                )
+                return {"consumed": 0, "reason": "runner-fail", "task_id": task_id}
 
-        assistant_text, returncode, stderr = _runner_payload(raw)
-        if returncode != 0:
-            reason = "runner-fail"
-            if isinstance(raw, dict) and raw.get("reason"):
-                reason = str(raw.get("reason"))
-            elif MISSING_LINEAR_CATALOG in f"{assistant_text}\n{stderr}":
-                reason = MISSING_LINEAR_CATALOG
-            print(
-                f"MIND_FAIL seat={seat} task={task_id} reason={reason} "
-                f"rc={returncode} stderr={stderr_log_snippet(stderr)}",
-                file=sys.stderr,
-            )
-            return {
-                "consumed": 0,
-                "reason": reason,
-                "task_id": task_id,
-                "returncode": returncode,
-            }
+            assistant_text, returncode, stderr = _runner_payload(raw)
+            if returncode != 0:
+                reason = "runner-fail"
+                if isinstance(raw, dict) and raw.get("reason"):
+                    reason = str(raw.get("reason"))
+                elif MISSING_LINEAR_CATALOG in f"{assistant_text}\n{stderr}":
+                    reason = MISSING_LINEAR_CATALOG
+                print(
+                    f"MIND_FAIL seat={seat} task={task_id} reason={reason} "
+                    f"rc={returncode} stderr={stderr_log_snippet(stderr)}",
+                    file=sys.stderr,
+                )
+                return {
+                    "consumed": 0,
+                    "reason": reason,
+                    "task_id": task_id,
+                    "returncode": returncode,
+                }
 
-        backend = ""
-        if isinstance(raw, dict):
-            backend = str(raw.get("backend") or "")
-        if backend != "cursor":
-            mark_session_minted(seat)
-        duplex_info = duplex_after_mind(seat, rec, assistant_text)
-        if duplex_info.get("ok") and not duplex_info.get("skipped"):
+            backend = ""
+            if isinstance(raw, dict):
+                backend = str(raw.get("backend") or "")
+            if backend != "cursor":
+                mark_session_minted(seat)
+            duplex_info = duplex_after_mind(seat, rec, assistant_text)
+            if duplex_info.get("ok") and not duplex_info.get("skipped"):
+                print(
+                    f"MIND_DUPLEX seat={seat} task={duplex_info.get('taskId')} "
+                    f"caller={duplex_info.get('caller') or 'none'} "
+                    f"notify_seat={duplex_info.get('notify_seat') or 'none'} "
+                    f"notified={duplex_info.get('notified')} "
+                    f"notify_skipped={duplex_info.get('notify_skipped') or 'none'}",
+                    flush=True,
+                )
+            _append_transcript(
+                seat,
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "taskId": task_id,
+                    "contextId": context_id,
+                },
+            )
+            _append_transcript(
+                seat,
+                {
+                    "role": "assistant",
+                    "content": assistant_text,
+                    "format": "json",
+                },
+            )
+            if is_fleet_done_mail(raw_text):
+                save_last_fleet_done(seat, raw_text)
+            _commit_offset(seat, end_offset, dropped_at_start)
+            if task_id:
+                set_task_state(
+                    STATE_DIR,
+                    seat,
+                    task_id,
+                    "TASK_STATE_COMPLETED",
+                    text=f"ACK seat={seat} task={task_id} kind=receipt",
+                )
+            clear_mail_hold(STATE_DIR, seat)
             print(
-                f"MIND_DUPLEX seat={seat} task={duplex_info.get('taskId')} "
-                f"caller={duplex_info.get('caller') or 'none'} "
-                f"notify_seat={duplex_info.get('notify_seat') or 'none'} "
-                f"notified={duplex_info.get('notified')} "
-                f"notify_skipped={duplex_info.get('notify_skipped') or 'none'}",
+                f"MIND_TURN seat={seat} task={task_id} offset={end_offset}",
                 flush=True,
             )
-        _append_transcript(
-            seat,
-            {
-                "role": "user",
-                "content": prompt,
-                "taskId": task_id,
-                "contextId": context_id,
-            },
-        )
-        _append_transcript(
-            seat,
-            {
-                "role": "assistant",
-                "content": assistant_text,
-                "format": "json",
-            },
-        )
-        if is_fleet_done_mail(raw_text):
-            save_last_fleet_done(seat, raw_text)
-        _commit_offset(seat, end_offset, dropped_at_start)
-        if task_id:
-            set_task_state(
-                STATE_DIR,
-                seat,
-                task_id,
-                "TASK_STATE_COMPLETED",
-                text=f"ACK seat={seat} task={task_id} kind=receipt",
-            )
-        print(
-            f"MIND_TURN seat={seat} task={task_id} offset={end_offset}",
-            flush=True,
-        )
-        return {
-            "consumed": 1,
-            "reason": "ok",
-            "task_id": task_id,
-            "offset": end_offset,
-        }
+            return {
+                "consumed": 1,
+                "reason": "ok",
+                "task_id": task_id,
+                "offset": end_offset,
+            }
+        finally:
+            end_mail_turn(seat)
 
     if skipped_dup:
         return {

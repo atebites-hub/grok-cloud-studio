@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import sys
 from datetime import datetime, timezone
@@ -35,9 +36,129 @@ SPAWN_WRAPPERS: tuple[tuple[str, Path], ...] = (
     ("a2a_send", Path("scripts") / "a2a" / "send.sh"),
 )
 
+# Ack is an action (Grokking Simplicity): STATUS ACK must not clobber an
+# in-flight Donald TASK in mind/mail.txt. Unique remaining vs CLOSED #81:
+# hold file is mind/mail.hold (not the closed PR's inflight filename);
+# runners may still write the same-turn wrap. Do not remint that PR's
+# sole-writer helper.
+
+_STATUS_ACK_HEAD_RE = re.compile(
+    r"^\s*(?:STATUS(?:\s+ACK)?|ACP_PING|ACK)\b",
+    re.IGNORECASE,
+)
+_MAIL_TURNS: set[str] = set()
+MAIL_HELD_ERR = "PLUGIN_ERR mail held (STATUS ACK cannot clobber TASK)"
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def is_status_ack(text: str) -> bool:
+    """True for keep-alive / protocol ACK lines that must not clobber a TASK.
+
+    Ack is an action: writing STATUS ACK onto mail.txt mutates the in-flight
+    grok --prompt-file. A Donald TASK / TASK_ASSIGN is not an ack. wrap_mind_mail
+    (A2A_TASK_ID header) is not an ack.
+    """
+    blob = (text or "").strip()
+    if not blob:
+        return False
+    head = blob.split("\n", 1)[0]
+    if _STATUS_ACK_HEAD_RE.match(head):
+        return True
+    if "STATUS/CONTINUE" in blob.upper():
+        return True
+    if re.search(r"\bSTATUS ACK\b", blob, re.IGNORECASE):
+        return True
+    if re.search(r"^ACK seat=", blob, re.MULTILINE):
+        return True
+    return False
+
+
+def mail_file(state_dir: Path, seat: str) -> Path:
+    return Path(state_dir) / seat / "mind" / "mail.txt"
+
+
+def mail_hold_file(state_dir: Path, seat: str) -> Path:
+    return Path(state_dir) / seat / "mind" / "mail.hold"
+
+
+def begin_mail_turn(seat: str) -> None:
+    _MAIL_TURNS.add(seat)
+
+
+def end_mail_turn(seat: str) -> None:
+    _MAIL_TURNS.discard(seat)
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def mail_turn_held(state_dir: Path, seat: str) -> bool:
+    """True when this process or another live pid holds mind/mail.txt."""
+    if seat in _MAIL_TURNS:
+        return True
+    path = mail_hold_file(state_dir, seat)
+    if not path.is_file():
+        return False
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip().split()[0])
+    except (ValueError, OSError, IndexError):
+        return True
+    if pid == os.getpid():
+        return False
+    return _pid_alive(pid)
+
+
+def try_write_mail(state_dir: Path, seat: str, prompt: str) -> bool:
+    """Write mind/mail.txt unless a STATUS ACK would clobber an in-flight TASK.
+
+    Same-turn wrap (A2A_TASK_ID / RESULT law around the TASK) is allowed.
+    Nested harvest is refused via mail_turn_held. Returns False when the
+    write was refused so grok --prompt-file still holds the TASK until
+    that runner exits 0.
+    """
+    mind = Path(state_dir) / seat / "mind"
+    mind.mkdir(parents=True, exist_ok=True)
+    path = mail_file(state_dir, seat)
+    hold = mail_hold_file(state_dir, seat)
+    current = ""
+    if path.is_file():
+        try:
+            current = path.read_text(encoding="utf-8")
+        except OSError:
+            current = ""
+    held = hold.is_file() or seat in _MAIL_TURNS
+    if (
+        held
+        and is_status_ack(prompt)
+        and current.strip()
+        and not is_status_ack(current)
+    ):
+        return False
+    path.write_text(prompt, encoding="utf-8")
+    hold.write_text(f"{os.getpid()}\n", encoding="utf-8")
+    return True
+
+
+def clear_mail_hold(state_dir: Path, seat: str) -> None:
+    path = mail_hold_file(state_dir, seat)
+    try:
+        path.unlink()
+    except OSError:
+        pass
 
 
 def extract_mail_text(rec: dict[str, Any]) -> str:
@@ -80,7 +201,8 @@ def prepare_mail_turn(
     mind = Path(state_dir) / seat / "mind"
     mind.mkdir(parents=True, exist_ok=True)
     mail_body = prompt if prompt.endswith("\n") else prompt + "\n"
-    (mind / "mail.txt").write_text(mail_body, encoding="utf-8")
+    if not try_write_mail(state_dir, seat, mail_body):
+        return prompt
     ts = now or _now()
     task_id = str(rec.get("taskId") or rec.get("id") or "")
     context_id = str(rec.get("contextId") or "")
