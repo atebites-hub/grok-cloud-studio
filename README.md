@@ -20,6 +20,7 @@ This repository is the public extract: A2A hub, ACP seat daemons, Extra High SDK
 | Hive (Linear LIV-62) | `docs/studio/HIVE.md` — GCS hive law. Not a copy of Hermes. |
 | Hermes gap | `docs/studio/HERMES_GAP.md` — v0.21 matrix. Do not vendor `hermes-agent`. |
 | LIV-62 remaining after #47 | `docs/studio/HERMES_REMAINING.md` — pin + stay-up as grok mind. Do not vendor `hermes-agent`. |
+| Linear free-tier purge (HOLD #45) | `scripts/linear_purge_closed.py` (Living Sky / LIV `issueDelete`; dry-run default) |
 
 Example seats (edit `docs/a2a/registry.json`): `orchestrator` (Grok Bot, ACP-skipped), `floor`, `ops`, `cloud`, plus Palemon-floor first-class `floor-ops`, `studio-ops`, `art`, `content`, `systems`, `qa-a`, `qa-b`, `audio`, `narrative`. Hub: `127.0.0.1:8732`. ACP ports: live Palemon values in the registry. Crash-safe default `GCS_ACP_SEATS=floor,studio-ops` — never auto-spawn the full registry as `grok agent serve`.
 
@@ -106,7 +107,8 @@ Tools: `a2a_list_seats`, `a2a_send`, `cloud_launch`, `cloud_status`, `cloud_resu
 
 Studio Linear is Living Sky (`linear.app/livingsky`, team **LIV**). Never Black Swan Money.
 The 200-issue cap is handled by closing stale tickets and archiving Done/Canceled
-(`scripts/linear_archive_closed.py`). Do not merge GCS #45 purge-delete. Linear MCP
+(`scripts/linear_archive_closed.py`). Do not merge GCS #45 purge-delete
+(`scripts/linear_purge_closed.py`). Occupancy HOLD. Linear MCP
 has no archive mutation.
 
 ```bash

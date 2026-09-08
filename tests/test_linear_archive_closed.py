@@ -203,9 +203,10 @@ def test_script_exists_stdlib_and_never_deletes() -> None:
     assert "issueDelete" not in MUTATION_ISSUE_UPDATE
 
 
-def test_purge_script_must_not_land() -> None:
-    assert not (ROOT / "scripts" / "linear_purge_closed.py").exists()
-    assert not (ROOT / "tests" / "test_linear_purge_closed.py").exists()
+def test_unique_remaining_purge_script_is_hold_product() -> None:
+    """GCS #45 unique remaining vs origin/main: keep linear_purge_closed.py (HOLD)."""
+    assert (ROOT / "scripts" / "linear_purge_closed.py").is_file()
+    assert (ROOT / "tests" / "test_linear_purge_closed.py").is_file()
 
 
 def test_done_canceled_duplicate_living_sky_are_archive() -> None:
@@ -463,8 +464,8 @@ def test_docs_and_wiring_are_archive_not_purge() -> None:
     assert "linear_archive_closed.py" in readme
     assert "LINEAR.md" in arch
     assert "LINEAR.md" in wipe
-    assert "linear_purge_closed.py" not in doctor
-    assert "linear_purge_closed.py" not in install
+    assert "linear_purge_closed.py" in doctor
+    assert "linear_purge_closed.py" in install
     assert "GCS_LINEAR_API_KEY" in env_ex
     assert BLACK_SWAN in env_ex
     for line in env_ex.splitlines():

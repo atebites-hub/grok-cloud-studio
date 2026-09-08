@@ -79,6 +79,7 @@ for p in \
   scripts/cloud/latest_run.py \
   scripts/cloud/webhook_receiver.py \
   scripts/mcp/gcs_mcp.py \
+  scripts/linear_purge_closed.py \
   plugins/a2a/.cursor-plugin/plugin.json \
   plugins/a2a/plugin.json \
   plugins/cursor-cloud/.cursor-plugin/plugin.json \
