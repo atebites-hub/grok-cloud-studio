@@ -189,6 +189,22 @@ class PaginatedListAPI:
                         payload["nextCursor"] = str(nxt)
                     self._send(200, payload)
                     return
+                if len(parts) == 4 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
+                    if api.runs_http != 200:
+                        self._send(api.runs_http, {"error": "run_failed"})
+                        return
+                    agent_id = parts[2]
+                    item = next(
+                        (row for row in api.list_items if str(row.get("id") or "") == agent_id),
+                        None,
+                    )
+                    run_id = str((item or {}).get("latestRunId") or "")
+                    status = api.run_status_by_id.get(run_id, "FINISHED") if run_id else "none"
+                    items = (
+                        [{"id": run_id, "status": status, "createdAt": 1_000}] if run_id else []
+                    )
+                    self._send(200, {"items": items})
+                    return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
                     if api.runs_http != 200:
                         self._send(api.runs_http, {"error": "run_failed"})
@@ -360,7 +376,8 @@ def test_empty_catalog_is_zero_occupancy_not_err() -> None:
     assert summary.listed == 0
     assert summary.pages == 1
     assert occ.format_occupancy_line(summary) == (
-        "CLOUD_OCCUPANCY running=0 leftover_active=0 creating=0 listed=0 pages=1"
+        "CLOUD_OCCUPANCY running=0 leftover_active=0 creating=0 listed=0 pages=1 "
+        "palemon=0 gcs=0 cap=8 palemon_must=1 gcs_must=1"
     )
 
 
@@ -394,7 +411,7 @@ def test_cli_paginates_hive_dump_and_counts_running_on_last_page(tmp_path: Path)
     assert listed.returncode == 0, listed.stdout + listed.stderr
     line = listed.stdout.strip().splitlines()[-1]
     assert line.startswith("CLOUD_OCCUPANCY ")
-    assert "running=1" in line
+    assert "running=2" in line
     assert "creating=1" in line
     assert "listed=439" in line
     assert "pages=5" in line

@@ -41,7 +41,7 @@ Hard rules:
 - List: scripts/cloud/list-cloud-agents.sh [--limit N] [--repo org/name]
   Each row prints status= (agent membership, often ACTIVE) and runStatus= (RUNNING vs FINISHED). Existence is not liveness. Leftover ACTIVE+FINISHED is not a live worker. REST paginates nextCursor when --limit exceeds 100. Count runStatus=RUNNING for --repo (org/name or https URL). Palemon Linear is Living Sky (LIV), not Black Swan.
 - Occupancy: scripts/cloud/occupancy-count.sh
-  Paginates Agent.list / GET /v1/agents beyond limit=100 (nextCursor). Fail-closed if a page errors (never fake running=0).
+  Paginates Agent.list / GET /v1/agents beyond limit=100 (nextCursor). Latest runStatus via listRuns (GET /v1/agents/{id}/runs collection). CREATING maps as RUNNING. Leftover ACTIVE+FINISHED is not a worker. Split Palemon vs GCS toward floor 8 per bound repo (palemon= gcs= cap= palemon_must= gcs_must=). Fail-closed if a page or listRuns errors (never fake running=0). Distinct from catalog nextCursor paginate and HOLD listRuns concurrency.
 - Fleet floor: scripts/cloud/running-count.sh
   Prints runStatus rows then CLOUD_RUNNING / CLOUD_MUST_LAUNCH. Distinct from occupancy catalog. Directors keep launching until ≥8 RUNNING per GCS_CLOUD_REPO (GCS_CLOUD_MIN_RUNNING, default 8).
 - How-to: scripts/cloud/README.md
