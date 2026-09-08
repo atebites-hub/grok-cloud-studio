@@ -146,10 +146,12 @@ REST is used when any of these is true:
 - SDK `Agent.create` retryable/unavailable (exit 75), including v1 `feature_unavailable` metadata
 - **`CURSOR_API_BASE` is set** (pytest mock and studio-box routing)
 
+`CLOUD_FORCE_REST=1` and `GCS_CLOUD_BACKEND=rest` skip `sdk/run.sh` entirely (no `Agent.create`, no double-create). `CURSOR_API_BASE` is URL routing for curl; tests may set `CLOUD_SDK_RUN` to a stub so exit **75** still REST-falls-back without treating the mock base as the only REST signal.
+
 Leave `CLOUD_ALLOW_REST_FALLBACK=1` (default) so a missing Node 22 / failed npm install still talks to the API via curl.  
 Set `CLOUD_ALLOW_REST_FALLBACK=0` to fail closed if the SDK cannot start.
 
-Optional overrides: `CURSOR_API_BASE`, `CURSOR_AGENT_ENV`.
+Optional overrides: `CURSOR_API_BASE`, `CURSOR_AGENT_ENV`, `CLOUD_SDK_RUN` (pytest stub).
 
 Fallback may print `CLOUD_SDK_FALLBACK: …` on stderr. Directors should still only call `scripts/*`. Never print keys.
 

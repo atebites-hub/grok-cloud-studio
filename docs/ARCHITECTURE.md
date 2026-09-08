@@ -74,7 +74,7 @@ Grok Bot orchestrator seats (`docs/a2a/bot-agents.json`, default seat `orchestra
 
 ## Extra High
 
-See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / `CLOUD_REPO_URL`. Auth is `CURSOR_API_KEY` (never printed). SDK-first; REST curl when `CURSOR_API_BASE` is set, `CLOUD_FORCE_REST=1`, or SDK bootstrap exits 75.
+See `scripts/cloud/README.md`. Create is fail-closed without `GCS_CLOUD_REPO` / `CLOUD_REPO_URL`. Auth is `CURSOR_API_KEY` (never printed). SDK-first; REST curl when `CLOUD_FORCE_REST=1`, `GCS_CLOUD_BACKEND=rest`, `CURSOR_API_BASE` is set, or SDK bootstrap exits 75 (no `Agent.create` double-create).
 
 MERGE_REQUEST / QA squash requires pasted `.venv/bin/pytest -q` (`N passed`) and `python3 scripts/secret_scan.py` (`secret_scan=clean`). Empty GitHub leftover-green is not a ship-gate. `scripts/cloud/pr_evidence.py judge` is the verdict. FLEET_DONE HOLDs PRs without that paste.
 
