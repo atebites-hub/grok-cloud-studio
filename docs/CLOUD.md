@@ -76,6 +76,8 @@ Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED`
 
 Launch `--name` **REFUSE**s when a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Name-matched Extra High whose latest runStatus cannot be read is fail-closed (no create). Never Bot CloudAgent.
 
+`CLOUD_API_PARKED` fail-closes Extra High create (`CLOUD_LAUNCH_ERR reason=CLOUD_API_PARKED`) when the env is truthy, `$GCS_A2A_STATE/CLOUD_API_PARKED` exists, or a hive-beats marker exists (`$GCS_HIVE_BEATS/CLOUD_API_PARKED`, `$GCS_STUDIO_ARCHIVE/hive-beats/CLOUD_API_PARKED`, or `$GCS_A2A_STATE/hive-beats/CLOUD_API_PARKED`). No `Agent.create` / REST POST. Never recommends a Bot CloudAgent path.
+
 Follow-up **REFUSE**s when the latest `runStatus` is `RUNNING` (do not stack a second run on a live Extra High). Leftover `ACTIVE`+`FINISHED` shells may be followed up. Never Bot CloudAgent.
 
 Palemon Linear is Living Sky (`LIV`), not Black Swan.

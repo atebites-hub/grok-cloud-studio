@@ -17,7 +17,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 
 | Script | Purpose |
 |---|---|
-| `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK`. **REFUSE** if a live `runStatus=RUNNING` agent already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Never Bot CloudAgent. |
+| `../launch-cloud-extra-high.sh --name NAME "prompt"` | Create Extra High agent + initial run (PR auto). Prints `CLOUD_LAUNCH_OK`. **REFUSE** if a live `runStatus=RUNNING` agent already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. `CLOUD_API_PARKED` (env, state file, or hive-beats marker) is `CLOUD_LAUNCH_ERR` with no create. Never Bot CloudAgent. |
 | `../launch-cloud-extra-high.sh "prompt" [name]` | Same, Director-footer positional form |
 | `../launch-cloud-extra-high.sh --name NAME --prompt-file PATH` | Same, prompt from a file (not stuffed on argv) |
 | `../launch-cloud-extra-high.sh --name NAME -` | Same, prompt from stdin |
@@ -61,7 +61,7 @@ RUNNING Extra High count for `GCS_CLOUD_REPO` is below 8, cloud mind MUST
 `scripts/launch-cloud-extra-high.sh`. Do not reuse
 `--name gcs-liv41-mind-must-launch`. Never Bot CloudAgent. See `docs/CLOUD.md`.
 
-`CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, missing auth, or a live `--name` twin (`runStatus=RUNNING`) prints `CLOUD_LAUNCH_ERR` and exits non-zero. Leftover `ACTIVE`+`FINISHED` with the same name does not block. Name-matched Extra High whose latest runStatus cannot be read is fail-closed (no create). Palemon Linear is Living Sky (`LIV`). Never Bot CloudAgent.
+`CLOUD_LAUNCH_OK` is printed **only** on success. REST prints it only on HTTP 200 or 201. Any other status (including other 2xx), curl failure, SDK create failure, missing auth, a live `--name` twin (`runStatus=RUNNING`), or `CLOUD_API_PARKED` (env, `$GCS_A2A_STATE/CLOUD_API_PARKED`, or a hive-beats marker) prints `CLOUD_LAUNCH_ERR` and exits non-zero. Leftover `ACTIVE`+`FINISHED` with the same name does not block. Name-matched Extra High whose latest runStatus cannot be read is fail-closed (no create). Parked create does not recommend a Bot CloudAgent path. Palemon Linear is Living Sky (`LIV`). Never Bot CloudAgent.
 
 If Cursor Cloud returns `Failed to verify existence of branch|commit` while `git ls-remote` resolved the ref, create prints `FOLLOWUP_FIRST` and exits 1 (no REST retry). Fill capacity with `followup-cloud-agent.sh` on an existing Extra High. See `docs/CLOUD.md`.
 
