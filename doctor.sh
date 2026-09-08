@@ -36,10 +36,11 @@ for p in \
   scripts/directors/mind.py \
   scripts/directors/seat-mind-loop.sh \
   scripts/directors/grok_catalog_mcp.py \
+  scripts/directors/install-grok-mcp.sh \
+  scripts/directors/seat_grok_mcp.py \
   scripts/directors/start-seat-daemon.sh \
   scripts/directors/prompt-dir.sh \
   scripts/directors/fleet-shepherd.py \
-  scripts/directors/seat_grok_mcp.py \
   docs/studio/TASKBOARD.md \
   docs/studio/MIND.md \
   docs/studio/WIPE.md \
