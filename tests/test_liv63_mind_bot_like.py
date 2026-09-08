@@ -16,6 +16,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import socket
 import stat
 import subprocess
 import sys
@@ -38,6 +39,13 @@ GITMODULES = REPO / ".gitmodules"
 MIND_DOC = REPO / "docs" / "studio" / "MIND.md"
 A2A_DOC = REPO / "docs" / "A2A.md"
 PRIVATE_GAME = "atebites-hub/" + "palemon"
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
 
 HARVEST_MARKERS = (
     "format_mail_turn",
@@ -371,6 +379,7 @@ def test_mind_bus_start_live_ticker_pid_without_daemons(tmp_path: Path) -> None:
         {
             "GCS_ROOT": str(REPO),
             "GCS_A2A_STATE": str(state),
+            "GCS_A2A_PORT": str(_free_port()),
             "GCS_MIND_SEATS": "floor",
             "GCS_START_SEAT_DAEMONS": "0",
             "GCS_ACP_STOP_WITH_BUS": "1",
