@@ -54,3 +54,15 @@ python3 scripts/linear_comment.py --issue LIV-82 --body "..."
 # Post the comment.
 python3 scripts/linear_comment.py --issue LIV-82 --body "..." --apply
 ```
+
+## LIV-82 hive stamp (STATUS evidence when Linear MCP needsAuth)
+
+When `LINEAR_API_KEY` is unset and Linear MCP is `needsAuth`, hive stamp
+is STATUS evidence only. Print `LINEAR_STAMP_FAIL` with `comment=none`
+(no comment id). Never call `mcp_auth`. Never print the key. This is not
+GraphQL leftover (`linear_comment.py`) and not leftover MCP catalog
+interpolation tests.
+
+```bash
+python3 scripts/linear_stamp.py --issue LIV-82 --mcp-status needsAuth
+```
