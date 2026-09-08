@@ -1,5 +1,6 @@
 # SDK dispatch + REST fallback for Extra High control-plane scripts.
-# Sources auth.sh. Never print API keys. Safe to source more than once.
+# Sources auth.sh. Never print API keys (including bash -x / agent.env dumps).
+# Safe to source more than once. Does not spawn Extra High agents.
 
 CLOUD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=auth.sh

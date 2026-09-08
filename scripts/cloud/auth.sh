@@ -12,7 +12,9 @@ cloud_agent_env_path() {
 }
 
 cloud_load_auth() {
-  local restore=0
+  # Keep xtrace off for the whole load: restoring set -x before the
+  # emptiness check prints CURSOR_API_KEY under `bash -x`.
+  local restore=0 have_key=0
   case "$-" in *x*) restore=1; set +x ;; esac
   if [[ -z "${CURSOR_API_KEY:-}" ]]; then
     local env_file
@@ -24,20 +26,30 @@ cloud_load_auth() {
       set +a
     fi
   fi
+  if [[ -n "${CURSOR_API_KEY:-}" ]]; then
+    have_key=1
+  fi
   if [[ "$restore" -eq 1 ]]; then set -x; fi
-  if [[ -z "${CURSOR_API_KEY:-}" ]]; then
+  if [[ "$have_key" -eq 0 ]]; then
     return 1
   fi
   return 0
 }
 
 cloud_redact_stream() {
+  # Redact the live key value and agent.env assignment dumps even when
+  # CURSOR_API_KEY is unset in this process (never print the secret).
   python3 -c '
-import os, sys
+import os, re, sys
 key = os.environ.get("CURSOR_API_KEY") or ""
 text = sys.stdin.read()
 if key:
     text = text.replace(key, "<redacted>")
+text = re.sub(
+    r"(?i)((?:export\s+)?)CURSOR_API_KEY\s*=\s*\S+",
+    r"\1CURSOR_API_KEY=<redacted>",
+    text,
+)
 sys.stdout.write(text)
 '
 }
