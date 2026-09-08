@@ -80,6 +80,21 @@ Per-invocation `GCS_CLOUD_REPO` wins over a process-global `CURSOR_CLOUD_REPO` a
 
 Auth (`scripts/cloud/_common.sh` / `auth.sh`) never prints `CURSOR_API_KEY`, including under `bash -x` and when an `agent.env` dump hits a curl/SDK error stream. `cloud_redact_stream` redacts assignment lines (`export CURSOR_API_KEY=…`). `cloud_load_auth` loads **only** the API key from `agent.env` (it does not `source` the file). Do not launch Bot CloudAgent from this path.
 
+## Optional webhook (statusChange)
+
+`FLEET_DONE` can arrive from a signed Cursor Cloud `statusChange` POST instead of waiter `get_agent_run` polling.
+
+See `scripts/cloud/README.md` (Optional Cursor Cloud webhook). Set `GCS_WEBHOOK_SECRET`, run `scripts/a2a/start-studio-bus.sh start` (or `webhook-harness.sh serve`), and point Cursor at:
+
+```
+POST /webhooks/cursor-cloud
+X-Webhook-Signature: sha256=<hex>
+```
+
+Official payload: `id`, `status`, `target.prUrl` — https://cursor.com/docs/cloud-agent/api/webhooks
+
+Waiter remains the fallback when the secret is unset. Extra High create stays v1 grok-4.6 xhigh `fast=false`.
+
 ## Followup-first when create cannot verify `main`
 
 `git ls-remote` can see `main` on the Extra High bound repo (`GCS_CLOUD_REPO`) while Cursor Cloud `Agent.create` returns `[validation_error] Failed to verify existence of branch 'main'` (SHA `startingRef` fails the same way). That is Cursor's GitHub App, not a missing branch.

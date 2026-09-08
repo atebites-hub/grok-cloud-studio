@@ -79,13 +79,16 @@ case "$cmd" in
       ID="$ID" STATUS="$STATUS" PR="$PR" python3 - <<'PY' >"$TMP"
 import json, os
 body = {
+    "event": "statusChange",
     "id": os.environ["ID"],
     "status": os.environ["STATUS"],
     "name": "simulate",
-    "url": f"https://cursor.com/agents/{os.environ['ID']}",
+    "target": {
+        "url": f"https://cursor.com/agents?id={os.environ['ID']}",
+    },
 }
 if os.environ.get("PR"):
-    body["prUrl"] = os.environ["PR"]
+    body["target"]["prUrl"] = os.environ["PR"]
 print(json.dumps(body))
 PY
     fi
