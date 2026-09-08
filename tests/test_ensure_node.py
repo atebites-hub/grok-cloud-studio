@@ -77,6 +77,8 @@ def _isolated_env(
     _stub_refuse(stub, "curl", curl_log)
     _stub_refuse(stub, "fnm", curl_log)
     _stub_refuse(stub, "volta", curl_log)
+    # Shadow /usr/bin/node so miss-path tests cannot npm-install via a host Node 22.
+    _fake_node(stub / "node", "18.20.0")
     parts = [*(str(p) for p in (extra_path or [])), str(stub), "/usr/bin", "/bin"]
     env = {
         "PATH": os.pathsep.join(parts),
