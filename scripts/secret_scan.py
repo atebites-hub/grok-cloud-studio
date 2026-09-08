@@ -42,6 +42,22 @@ SECRET_RULES: list[tuple[str, re.Pattern[str]]] = [
     ("cursor_key_assignment", re.compile(r"CURSOR_API_KEY\s*=\s*['\"]?[A-Za-z0-9_\-]{16,}")),
     ("linear_key_assignment", re.compile(r"LINEAR_API_KEY\s*=\s*['\"]?[A-Za-z0-9_\-]{16,}")),
     ("webhook_assignment", re.compile(r"GCS_WEBHOOK_SECRET\s*=\s*['\"]?[A-Za-z0-9_\-]{12,}")),
+    (
+        "sentry_dsn_literal",
+        re.compile(
+            r"https://[0-9a-fA-F]{16,}@[A-Za-z0-9._-]*ingest[A-Za-z0-9._-]*sentry\.io/\d+"
+        ),
+    ),
+    (
+        "sentry_dsn_assignment",
+        re.compile(r"(?:SENTRY_DSN|GCS_SENTRY_DSN)\s*=\s*['\"]?https://"),
+    ),
+    (
+        "higgsfield_key_assignment",
+        re.compile(
+            r"HIGGSFIELD_(?:API_KEY|TOKEN|SECRET|BEARER)\s*=\s*['\"]?[A-Za-z0-9_\-]{16,}"
+        ),
+    ),
 ]
 
 

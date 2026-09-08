@@ -1,12 +1,13 @@
 """LIV-84 art env: doctor/recover fail-closed on Cursor catalog merge / remint.
 
 Leftover #143 is argv/literal leak sentry (Higgsfield keys on MCP argv/env).
-Leftover #137 is LIV-93 catalog docs (no doctor/recover hook). This slice is
-the remaining runtime gate: Extra High Higgsfield is LIV-84 cloud-env snapshot
-login; Sentry DSN is Secrets/env. doctor.sh and recover.sh refuse when the
-Cursor catalog already contains Higgsfield/Sentry MCP even with ${VAR}
-expansions (not a leak), when `.cursor/environment.json` remints cloud-env,
-or when `cloud-env` is added as a registry seat.
+LIV-93 (#137) is the unique ART_ENV / catalogs / sentry_env.py pack. This
+slice (#152 on main) is the runtime gate beside that pack: Extra High
+Higgsfield is LIV-84 cloud-env snapshot login; Sentry DSN is Secrets/env.
+doctor.sh and recover.sh refuse when the Cursor catalog already contains
+Higgsfield/Sentry MCP even with ${VAR} expansions (not a leak), when
+`.cursor/environment.json` remints cloud-env, or when `cloud-env` is added
+as a registry seat.
 
 Grok-home Higgsfield stays grok-only and is not a Cursor merge. Never print
 secret values. Living Sky (LIV) only. Never Bot CloudAgent. Never vendor Hermes.
@@ -367,12 +368,11 @@ def test_wipe_and_agents_name_liv84_catalog_gate_not_leak_sentry() -> None:
         assert FAKE_DSN not in text
     assert "catalog" in wipe.lower() or "mcp.json" in wipe
     assert "do not remint" in (wipe + agents + studio).lower()
-    # #143 leak sentry is on main; this PR adds the catalog/remint gate beside it.
+    # #143 leak sentry + LIV-84 catalog GATE stay; LIV-93 (#137) unique pack lands beside them.
     assert (REPO / "scripts" / "studio" / "higgsfield_sentry.py").is_file()
     assert GATE.is_file()
-    # Do not clone leftover #137 ART_ENV pack.
-    assert not (REPO / "docs" / "studio" / "art" / "ART_ENV.md").exists()
-    assert not (REPO / "scripts" / "art" / "sentry_env.py").exists()
+    assert (REPO / "docs" / "studio" / "art" / "ART_ENV.md").is_file()
+    assert (REPO / "scripts" / "art" / "sentry_env.py").is_file()
     for name in ("HIGGSFIELD_API_KEY", "HIGGSFIELD_SECRET", "SENTRY_DSN", "GCS_SENTRY_DSN"):
         for line in studio.splitlines():
             stripped = line.strip()
