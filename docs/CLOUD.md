@@ -69,6 +69,8 @@ Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED`
 
 Launch `--name` **REFUSE**s when a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Name-matched Extra High whose latest runStatus cannot be read is fail-closed (no create). Never Bot CloudAgent.
 
+Follow-up **REFUSE**s when the latest `runStatus` is `RUNNING` (do not stack a second run on a live Extra High). Leftover `ACTIVE`+`FINISHED` shells may be followed up. Never Bot CloudAgent.
+
 Palemon Linear is Living Sky (`LIV`).
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
@@ -79,7 +81,7 @@ Auth (`scripts/cloud/_common.sh` / `auth.sh`) never prints `CURSOR_API_KEY`, inc
 
 `git ls-remote` can see `main` on the Extra High bound repo (`GCS_CLOUD_REPO`) while Cursor Cloud `Agent.create` returns `[validation_error] Failed to verify existence of branch 'main'` (SHA `startingRef` fails the same way). That is Cursor's GitHub App, not a missing branch.
 
-Do **not** retry `launch-cloud-extra-high.sh` create in a loop. Capacity fill: `scripts/cloud/followup-cloud-agent.sh <existing-bc-id> "prompt"` (`CLOUD_FOLLOWUP_OK`). Launch prints `FOLLOWUP_FIRST github_sha=…` on this error. Do not vendor Hermes. Model stays grok-4.6 xhigh `fast=false`. Never Bot CloudAgent.
+Do **not** retry `launch-cloud-extra-high.sh` create in a loop. Capacity fill: `scripts/cloud/followup-cloud-agent.sh <existing-bc-id> "prompt"` (`CLOUD_FOLLOWUP_OK`). Follow-up **REFUSE**s when that agent's latest `runStatus` is `RUNNING` (do not stack a second live Extra High). Launch prints `FOLLOWUP_FIRST github_sha=…` on this error. Do not vendor Hermes. Model stays grok-4.6 xhigh `fast=false`. Never Bot CloudAgent.
 
 MCP `cloud_list` (`plugins/cursor-cloud`, `scripts/cloud/list_helper.py`) prints latest-run `runStatus` (`RUNNING` vs `FINISHED`) next to agent `status`. Cursor Cloud agents stay `ACTIVE` until archive, so leftover `ACTIVE`+`FINISHED` rows are not live workers. This is independent of bash `list.sh`.
 

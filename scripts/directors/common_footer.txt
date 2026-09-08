@@ -23,6 +23,8 @@ Hard rules:
 - On FLEET_DONE / INSPECT (latest run CANCELLED, even if prUrl exists): follow-up-or-close; do not ping QA MERGE_REQUEST.
 - Status: scripts/cloud/status-cloud-agent.sh <bc-id>
 - Follow-up: scripts/cloud/followup-cloud-agent.sh <bc-id> "<prompt>"
+  Refuse if latest runStatus=RUNNING (do not stack a second live Extra High).
+  Leftover ACTIVE+FINISHED may follow up. Never Bot CloudAgent (orchestrator/donald is send.sh).
 - List: scripts/cloud/list-cloud-agents.sh [limit]
   Each row prints status= (agent membership, often ACTIVE) and runStatus= (RUNNING vs FINISHED). Existence is not liveness. Leftover ACTIVE+FINISHED is not a live worker. REST paginates nextCursor when --limit exceeds 100.
 - Occupancy: scripts/cloud/occupancy-count.sh
