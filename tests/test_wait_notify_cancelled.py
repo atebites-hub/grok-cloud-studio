@@ -4,9 +4,9 @@ When Extra High already opened a PR and the latest run is CANCELLED,
 the owning-seat ping must say INSPECT follow-up-or-close. QA must not
 squash on MERGE_REQUEST.
 
-Does not remint GCS #52 (draft) or #58 (mergeable=CONFLICTING).
-Never Bot CloudAgent. Extra High stays grok-4.6 xhigh fast=false.
-Living Sky Linear (LIV).
+Does not remint GCS #52 (draft). Occupancy HOLD. Unique remaining is GCS #58
+mergeable=CONFLICTING HOLD squash. Never Bot CloudAgent. Extra High stays
+grok-4.6 xhigh fast=false. Living Sky Linear (LIV).
 """
 from __future__ import annotations
 
@@ -129,11 +129,11 @@ def test_footer_cancelled_inspect_not_bot_cloudagent() -> None:
     assert "grok-4.6" in launch
     assert "xhigh" in launch
     assert "fast" in launch and "false" in launch
-    # Do not remint GCS #52 / #58; not occupancy; not leftover Palemon.
+    # Do not remint GCS #52; not occupancy; not leftover Palemon.
     assert "githubPrIsDraft" not in src
-    assert "githubPrMergeable" not in src
     assert "pr-draft.ts" not in src
-    assert "pr-mergeable.ts" not in src
+    assert "githubPrMergeable" in src
+    assert "pr-mergeable.ts" in src
 
 
 def _node_with_npm() -> str:
