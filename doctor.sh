@@ -11,6 +11,9 @@ bad() { printf 'ERR %s\n' "$*"; FAIL=1; }
 
 # shellcheck source=scripts/studio/no-ak.sh
 source "$ROOT/scripts/studio/no-ak.sh"
+# shellcheck source=scripts/studio/cloud_api_park.sh
+source "$ROOT/scripts/studio/cloud_api_park.sh"
+export GCS_ROOT="${GCS_ROOT:-$ROOT}"
 if ! gcs_refuse_agent_kanban "$ROOT"; then
   bad "Agent Kanban reconnect refused — board is tcarac/taskboard"
 fi
@@ -30,6 +33,7 @@ for p in \
   scripts/a2a/send.sh \
   scripts/a2a/start-studio-bus.sh \
   scripts/studio/no-ak.sh \
+  scripts/studio/cloud_api_park.sh \
   scripts/directors/acp_inject.py \
   scripts/directors/seat-prompt-acp.sh \
   scripts/directors/seat-wake-loop.sh \
@@ -129,6 +133,7 @@ fi
 # Cursor Cloud launch-plane: fail closed. Never print CURSOR_API_KEY
 # (including under `bash -x`). Existence check only for the launcher —
 # do not invoke it, do not spawn agents, do not recreate cloud-env.
+# CLOUD_API_PARKED skips Extra High spawn (still do not invoke the launcher).
 _gcs_xtrace=0
 case "$-" in *x*) _gcs_xtrace=1; set +x ;; esac
 _launch_repo_set=0
@@ -158,6 +163,12 @@ else
   bad "CURSOR_API_KEY unset (Extra High scripts need it)"
 fi
 unset _launch_repo_set _launch_key_set _launch_key_file
+
+# Honor CLOUD_API_PARKED without invoking Extra High create. Distinct from
+# the Extra High create park guard. Never print secrets.
+if gcs_cloud_api_parked; then
+  ok "CLOUD_API_PARKED (Extra High spawn skipped)"
+fi
 
 if [[ -n "${LINEAR_API_KEY:-}" ]]; then
   ok "LINEAR_API_KEY is set (value not printed)"

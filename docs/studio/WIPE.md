@@ -32,7 +32,9 @@ down pieces via `start-studio-bus.sh start` (NO `--daemons`),
 `start-taskboard.sh start`, `mcp-http.sh start`, and
 `start-tailscale-serve.sh start` when Tailscale is on PATH and
 `PALEMON_TAILSCALE_SERVE` is not `0`. Do not remint sessions.
-Do not wipe state. Do not launch Cursor Cloud. bot-bridge stays off unless
+Do not wipe state. Do not launch Cursor Cloud. `CLOUD_API_PARKED` skips
+Extra High spawn from `recover.sh` / `doctor.sh` (local DR still runs;
+distinct from the Extra High create park guard). bot-bridge stays off unless
 `GCS_BOT_BRIDGE=1`. Do not `systemctl` leftover Agent Kanban units.
 Tailscale missing is WARN, not FAIL. `HEALTH_OK` is illegal without this
 beat's APPLY line. See `docs/studio/HIVE.md`.
@@ -305,7 +307,10 @@ or if `PALEMON_AK_BRIDGE` is set to anything other than `0`/empty,
 or if Higgsfield/Sentry art MCP would leak keys (`scripts/studio/higgsfield_sentry.py`)
 or if the LIV-84 Extra High Cursor catalog is merged (Higgsfield/Sentry MCP)
 or cloud-env is reminted (`scripts/studio/liv84_art_env.py`). It never prints
-`CURSOR_API_KEY`. It does not spawn Extra High or Bot CloudAgent. `./recover.sh`
+`CURSOR_API_KEY`. It does not spawn Extra High or Bot CloudAgent. When
+`CLOUD_API_PARKED` is set (env, `studio.env`, or `$GCS_A2A_STATE/CLOUD_API_PARKED`),
+`./doctor.sh` and `./recover.sh` skip Extra High spawn (`RECOVER_CLOUD_PARKED` /
+`OK  CLOUD_API_PARKED`) and still do not invoke the launcher. `./recover.sh`
 fails closed before restarts. Do not remint LIV-84.
 `start-studio-bus.sh start` and `./recover.sh` refuse the same reconnect
 temptation (`AK_REFUSE`) and never exec leftover `ak` / AMA. Board stays

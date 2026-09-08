@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Restart ONLY down Palemon studio services via official scripts.
 # Do not remint sessions. Do not wipe state. Do not launch Cursor Cloud.
+# CLOUD_API_PARKED skips Extra High spawn (local DR still runs).
 # Do not pass --daemons. On success prints recover-ok then re-runs health_check.sh.
 set -euo pipefail
 
@@ -12,6 +13,8 @@ export GCS_ROOT="${GCS_ROOT:-$ROOT}"
 source "$ROOT/scripts/studio/health-lib.sh"
 # shellcheck source=scripts/studio/no-ak.sh
 source "$ROOT/scripts/studio/no-ak.sh"
+# shellcheck source=scripts/studio/cloud_api_park.sh
+source "$ROOT/scripts/studio/cloud_api_park.sh"
 gcs_source_studio_env
 
 usage() {
@@ -29,7 +32,10 @@ Restart only what health_check would mark down:
       -> scripts/studio/taskboard/start-tailscale-serve.sh start
 
 Does not remint sessions, wipe studio.env / inboxes / pins, reconnect
-Agent Kanban, or launch Cursor Cloud. Does not invoke leftover systemd
+Agent Kanban, or launch Cursor Cloud. CLOUD_API_PARKED=1 (or the
+$GCS_A2A_STATE/CLOUD_API_PARKED marker) skips Extra High spawn; local DR
+still runs. Distinct from the Extra High create park guard. bot-bridge
+stays off unless GCS_BOT_BRIDGE=1. Does not invoke leftover systemd
 units (including Agent Kanban). Boot hook: scripts/studio/systemd/.
 
 Fails closed (no restarts) if Higgsfield/Sentry art MCP would leak keys
@@ -78,6 +84,12 @@ fi
 if ! python3 "$ROOT/scripts/studio/liv84_art_env.py" --root "$ROOT" --state "$STATE"; then
   echo "RECOVER_ERR liv84_art_env failed (LIV-84 Cursor catalog merged or cloud-env reminted; values not printed)" >&2
   exit 1
+fi
+
+# CLOUD_API_PARKED: never spawn Extra High from recover. Local DR continues.
+# Distinct from the Extra High create park guard. Never print secrets.
+if gcs_cloud_api_parked; then
+  echo "RECOVER_CLOUD_PARKED reason=CLOUD_API_PARKED extra-high-spawn=skipped"
 fi
 
 need_bus=0
