@@ -165,9 +165,15 @@ def test_never_bot_cloudagent_as_grunt() -> None:
         for p in (CLOUD_DOC, CLOUD_README, FOOTER, A2A_DOC, LAUNCH_TS, LAUNCH_SH, COLLECT)
     )
     assert "Bot CloudAgent" in blob or "Grok Bot CloudAgent" in blob
-    launch = LAUNCH_TS.read_text(encoding="utf-8") + LAUNCH_SH.read_text(encoding="utf-8")
+    launch_ts = LAUNCH_TS.read_text(encoding="utf-8")
+    launch_sh = LAUNCH_SH.read_text(encoding="utf-8")
+    launch = launch_ts + launch_sh
     assert "Agent.create" in launch or "POST /v1/agents" in launch
-    assert "GCS_BOT_AGENT_ID" not in launch
+    assert "GCS_BOT_AGENT_ID" not in launch_sh
+    # launch.ts may skip the bound Bot id on --name twin probes; never spawn Bot.
+    if "GCS_BOT_AGENT_ID" in launch_ts:
+        assert "continue" in launch_ts
+        assert "Never Bot CloudAgent" in launch_ts
     collect = COLLECT.read_text(encoding="utf-8")
     assert "GCS_BOT_AGENT_ID" not in collect
     assert "boundRepoUrl" in collect or "repoUrl" in collect
