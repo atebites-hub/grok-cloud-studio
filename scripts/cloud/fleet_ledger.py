@@ -363,10 +363,13 @@ def ping_seat(seat: str, text: str) -> bool:
     return proc.returncode == 0
 
 
-def _already_notified_by_waiter(entry: dict[str, Any] | None) -> bool:
+def _already_notified(entry: dict[str, Any] | None) -> bool:
+    """True when a completion path already closed this ledger row."""
     if entry is None:
         return False
-    return entry.get("notified_by") == "waiter"
+    if entry.get("notified") is True:
+        return True
+    return entry.get("notified_by") in {"waiter", "webhook", "shepherd"}
 
 
 def map_github_mergeable(body: dict[str, Any]) -> str | None:
@@ -468,20 +471,24 @@ def notify_owner(
 ) -> dict[str, Any]:
     """A2A-ping the owning seat and REPORT_TO, then mark the ledger closed.
 
-    Idempotent: a second notify on a row already notified_by=waiter returns
-    that row and does not ping again (waiter+shepherd must not double-fire
-    FLEET_DONE). If any ping fails, the row stays open so fleet-shepherd
-    can retry.
+    Idempotent: a second notify on a row already closed by waiter, webhook,
+    or shepherd returns that row and does not ping again (waiter+shepherd
+    must not double-fire FLEET_DONE). After a successful ping, re-read the
+    ledger so a concurrent waiter complete is not overwritten. If any
+    ping fails, the row stays open so fleet-shepherd can retry.
     """
     hit = find_by_bc(bc_id)
     seat_name = seat or (hit[0] if hit else _seat_name())
-    if hit is not None and _already_notified_by_waiter(hit[1]):
+    if hit is not None and _already_notified(hit[1]):
         return hit[1]
     payload = resolve_mergeable(resolve_ship_gate(dict(payload)))
     text = notify_text(bc_id, payload)
     for target in notify_targets(seat_name):
         if not ping_seat(target, text):
             raise RuntimeError(f"A2A ping failed seat={target} id={bc_id}")
+    hit = find_by_bc(bc_id)
+    if hit is not None and _already_notified(hit[1]):
+        return hit[1]
     return complete(bc_id, payload, notified_by=notified_by, seat=seat_name)
 
 

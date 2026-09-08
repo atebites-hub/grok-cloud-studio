@@ -99,16 +99,16 @@ def test_webhook_receiver_does_not_poll_get_agent_run() -> None:
 def test_followup_does_not_vendor_hermes_or_retune_waiter() -> None:
     """FOLLOWUP_FIRST: keep #57 isolated. No Hermes vendor, no #35 remint.
 
-    #34 waiter skip landed on main. This PR must leave fleet_ledger.notify_owner
-    alone and skip Cursor retries at the statusChange handler instead.
+    Ledger notify skip lives in fleet_ledger (`_already_notified`). Cursor
+    statusChange retries still skip at the handler via notified.
     """
     wait = (ROOT / "scripts" / "cloud" / "sdk" / "wait-notify.ts").read_text(encoding="utf-8")
     ledger = (ROOT / "scripts" / "cloud" / "fleet_ledger.py").read_text(encoding="utf-8")
     receiver = (ROOT / "scripts" / "cloud" / "webhook_receiver.py").read_text(encoding="utf-8")
     launch = (ROOT / "scripts" / "launch-cloud-extra-high.sh").read_text(encoding="utf-8")
     assert "CLOUD_WAITER_RETRY" not in wait
-    assert "_already_notified_by_waiter" in ledger
-    assert "_already_notified_by_waiter" not in receiver
+    assert "def _already_notified(" in ledger
+    assert "_already_notified" not in receiver
     assert 'hit[1].get("notified")' in receiver
     assert "vendor/hermes" not in launch
     assert "grok-4.6" in launch
