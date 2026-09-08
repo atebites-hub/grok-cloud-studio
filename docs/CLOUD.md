@@ -75,7 +75,9 @@ Palemon Linear is Living Sky (`LIV`).
 
 Defaults: model `grok-4.6`, `effort=xhigh`, `fast=false`, `autoCreatePR=true`.
 
-Auth (`scripts/cloud/_common.sh` / `auth.sh`) never prints `CURSOR_API_KEY`, including under `bash -x` and when an `agent.env` dump hits a curl/SDK error stream. `cloud_redact_stream` redacts assignment lines (`export CURSOR_API_KEY=…`). Do not launch Bot CloudAgent from this path.
+Per-invocation `GCS_CLOUD_REPO` wins over a process-global `CURSOR_CLOUD_REPO` and over `agent.env`. Prefix the var on that command only; the launcher does not export it, so the next launch keeps the original default (studio vs Palemon). Specialists are Cursor Cloud Extra High, not a Grok Bot grunt.
+
+Auth (`scripts/cloud/_common.sh` / `auth.sh`) never prints `CURSOR_API_KEY`, including under `bash -x` and when an `agent.env` dump hits a curl/SDK error stream. `cloud_redact_stream` redacts assignment lines (`export CURSOR_API_KEY=…`). `cloud_load_auth` loads **only** the API key from `agent.env` (it does not `source` the file). Do not launch Bot CloudAgent from this path.
 
 ## Followup-first when create cannot verify `main`
 
