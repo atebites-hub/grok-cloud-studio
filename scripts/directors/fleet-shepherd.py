@@ -8,7 +8,10 @@ liveness: eviction is written to fleet.jsonl (waiter_tombstone) before the
 orphan notify. Skip leftover shells: notified closed rows and agents whose
 latest run is already FINISHED. Do not get_agent_run those; Cloud membership
 stays ACTIVE until archive, so probing leftovers burns the hourly cap and
-looks like spinning workers. Local studio. Stdlib + existing cloud scripts.
+looks like spinning workers. Each cycle also prunes closed leftover
+FINISHED/CANCELLED rows from fleet.jsonl so they are not paged as live.
+Open leftover shells stay. RUNNING is not cancelled. Local studio. Stdlib
++ existing cloud scripts.
 
 Each cycle also probes tcarac/taskboard health: the SQLite DB file plus
 `ticket list` or HTTP /mcp. Logs TASKBOARD_HEALTH_OK or TASKBOARD_HEALTH_FAIL.
@@ -36,6 +39,7 @@ from fleet_ledger import (
     load_entries,
     normalize_run_status,
     notify_owner,
+    prune_closed_leftovers,
     sweep_stale_waiters,
     write_entries,
 )
@@ -224,6 +228,15 @@ def _cycle() -> int:
                         f"WAITER_EVICT seat={seat_dir.name} id={bc_id} "
                         f"pid={pid_was} reason=dead"
                     )
+        pruned = prune_closed_leftovers(seat=seat_dir.name, state=STATE_DIR)
+        if pruned.get("pruned_count"):
+            ids = ",".join(
+                str(item.get("bc_id") or "") for item in pruned.get("pruned") or []
+            )
+            _log(
+                f"SHEPHERD_PRUNE seat={seat_dir.name} "
+                f"count={pruned['pruned_count']} ids={ids}"
+            )
         entries = load_entries(fleet_path)
         if not entries:
             continue

@@ -3,7 +3,8 @@
 Complementary to GCS #77/#36 (bot-bridge.pid tombstone). Do not import or
 touch bot-bridge.py. Distinct from GCS #32 leftover ACTIVE+FINISHED skip:
 this file plants a dead waiter_pid on fleet.jsonl and requires durable
-eviction so shepherd can orphan-notify once.
+eviction so shepherd can orphan-notify once. After that notify, the
+closed leftover is pruned so shepherd does not page it as live.
 """
 from __future__ import annotations
 
@@ -303,8 +304,10 @@ def test_shepherd_orphan_notifies_once_after_eviction(
     pings.clear()
     assert mod._cycle() == 0
     assert pings == []
-    again = _reload_ops(tmp_path)
-    assert again.get("notified_by") == "shepherd"
+    again_rows = fl.load_entries(tmp_path / "ops" / "fleet.jsonl")
+    assert again_rows == [], (
+        "closed leftover is pruned so shepherd does not page it as live"
+    )
 
 
 def test_orphans_cli_evicts_dead_waiter_pid(tmp_path: Path, monkeypatch) -> None:

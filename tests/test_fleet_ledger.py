@@ -173,6 +173,18 @@ def test_closed_without_terminal_run_is_not_prunable() -> None:
     assert is_closed_leftover(row) is False
 
 
+def test_closed_leftover_us_canceled_spelling_is_prunable() -> None:
+    """US CANCELED is the same terminal leftover as CANCELLED."""
+    row = _row(
+        "bc-us-canceled",
+        status="closed",
+        notified=True,
+        notified_by="waiter",
+        run_status="CANCELED",
+    )
+    assert is_closed_leftover(row) is True
+
+
 def test_prune_reread_keeps_row_registered_after_first_load(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -440,6 +452,43 @@ def test_prune_unknown_seat_exits_nonzero(
     out = json.loads(capsys.readouterr().out)
     assert out["pruned_count"] == 0
     assert out["error"] == "unknown seat=nope"
+
+
+def test_prune_explicit_state_does_not_touch_env_state(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Shepherd binds STATE_DIR; prune must use that tree, not GCS_A2A_STATE."""
+    decoy = tmp_path / "decoy"
+    live = tmp_path / "live"
+    decoy.mkdir()
+    monkeypatch.setenv("GCS_ROOT", str(ROOT))
+    monkeypatch.setenv("GCS_A2A_STATE", str(decoy))
+    write_entries(
+        live / "ops" / "fleet.jsonl",
+        [
+            _row(
+                "bc-done",
+                status="closed",
+                notified=True,
+                notified_by="waiter",
+                run_status="FINISHED",
+            ),
+            _row("bc-live", status="open", notified=False, run_status="RUNNING"),
+        ],
+    )
+    pings: list[str] = []
+    monkeypatch.setattr(
+        fleet_ledger, "ping_seat", lambda seat, text: pings.append(text) or True
+    )
+
+    result = prune_closed_leftovers(state=live)
+
+    assert result["pruned_count"] == 1
+    assert result["pruned"][0]["bc_id"] == "bc-done"
+    remaining = load_entries(live / "ops" / "fleet.jsonl")
+    assert [row["bc_id"] for row in remaining] == ["bc-live"]
+    assert pings == []
+    assert not (decoy / "ops" / "fleet.jsonl").exists()
 
 
 def _notify_env(tmp_path: Path, monkeypatch) -> None:

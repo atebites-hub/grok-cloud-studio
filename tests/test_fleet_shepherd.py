@@ -1,9 +1,11 @@
-"""fleet-shepherd leftover-shell skip and tcarac/taskboard health.
+"""fleet-shepherd leftover-shell skip, closed-leftover prune, and taskboard health.
 
 Skip ACTIVE+FINISHED leftover shells so shepherd does not get_agent_run them.
+Prune notified closed FINISHED/CANCELLED rows so they are not paged as live.
 Each cycle also probes taskboard (DB file plus ticket list or HTTP /mcp) and
 logs TASKBOARD_HEALTH_OK or TASKBOARD_HEALTH_FAIL. Does not clone occupancy
-GCS #125/#132/#154, seat stdio MCP, Agent Kanban, bot-bridge, or New Bot.
+GCS #125/#132/#154, gcs-fleet-dedupe-notify-floor1747, seat stdio MCP,
+Agent Kanban, bot-bridge, or New Bot.
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ BOT_BRIDGE = REPO / "scripts" / "a2a" / "bot-bridge.py"
 ARCH = REPO / "docs" / "ARCHITECTURE.md"
 TASKBOARD_DOC = REPO / "docs" / "studio" / "TASKBOARD.md"
 CLOUD_README = REPO / "scripts" / "cloud" / "README.md"
+PRUNE_FEATURE = REPO / "tests" / "features" / "fleet_ledger_prune_closed.feature"
 
 
 def _load(name: str | None = None) -> ModuleType:
@@ -57,6 +60,21 @@ def _plant(seat_dir: Path, rows: list[dict[str, Any]]) -> None:
     seat_dir.mkdir(parents=True, exist_ok=True)
     text = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
     (seat_dir / "fleet.jsonl").write_text(text, encoding="utf-8")
+
+
+def _load_jsonl(seat_dir: Path) -> list[dict[str, Any]]:
+    path = seat_dir / "fleet.jsonl"
+    if not path.is_file():
+        return []
+    out: list[dict[str, Any]] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+        rec = json.loads(raw)
+        if isinstance(rec, dict):
+            out.append(rec)
+    return out
 
 
 def _base_env(monkeypatch, tmp_path: Path) -> Path:
@@ -547,10 +565,155 @@ def test_shepherd_skips_leftovers_while_probing_live_orphan(tmp_path: Path) -> N
     assert probes == ["bc-live"]
 
 
+def test_shepherd_prunes_closed_finished_and_cancelled_keeps_running(
+    tmp_path: Path,
+) -> None:
+    """Closed terminal leftovers leave the ledger; RUNNING is not cancelled."""
+    mod = _load()
+    _bind(mod, tmp_path)
+    _plant(
+        tmp_path / "ops",
+        [
+            {
+                "bc_id": "bc-closed-finished",
+                "seat": "ops",
+                "status": "closed",
+                "notified": True,
+                "notified_by": "waiter",
+                "run_status": "FINISHED",
+                "waiter_pid": None,
+            },
+            {
+                "bc_id": "bc-closed-cancelled",
+                "seat": "ops",
+                "status": "closed",
+                "notified": True,
+                "notified_by": "shepherd",
+                "run_status": "CANCELLED",
+                "waiter_pid": None,
+            },
+            {
+                "bc_id": "bc-us-canceled",
+                "seat": "ops",
+                "status": "closed",
+                "notified": True,
+                "notified_by": "webhook",
+                "run_status": "CANCELED",
+                "waiter_pid": None,
+            },
+            {
+                "bc_id": "bc-leftover",
+                "seat": "ops",
+                "status": "open",
+                "notified": False,
+                "run_status": "FINISHED",
+                "agent_status": "ACTIVE",
+                "waiter_pid": None,
+            },
+            {
+                "bc_id": "bc-running",
+                "seat": "ops",
+                "status": "open",
+                "notified": False,
+                "run_status": "RUNNING",
+                "waiter_pid": None,
+            },
+        ],
+    )
+    probes: list[str] = []
+    notifies: list[str] = []
+    cancels: list[str] = []
+
+    def _probe(bc_id: str) -> dict[str, Any]:
+        probes.append(bc_id)
+        return {
+            "runStatus": "RUNNING",
+            "agentStatus": "ACTIVE",
+            "status": "RUNNING",
+        }
+
+    def _notify(bc_id: str, payload: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        notifies.append(bc_id)
+        raise AssertionError("shepherd must not page closed leftovers as live")
+
+    mod._probe = _probe  # type: ignore[assignment]
+    mod.notify_owner = _notify  # type: ignore[assignment]
+    mod.cancel_agent = lambda bc_id: cancels.append(bc_id)  # type: ignore[attr-defined]
+
+    assert mod._cycle() == 0
+    remaining = {row["bc_id"] for row in _load_jsonl(tmp_path / "ops")}
+    assert remaining == {"bc-leftover", "bc-running"}
+    assert "bc-closed-finished" not in remaining
+    assert "bc-closed-cancelled" not in remaining
+    assert "bc-us-canceled" not in remaining
+    assert probes == ["bc-running"]
+    assert notifies == []
+    assert cancels == []
+    log = _log_text(mod)
+    assert "SHEPHERD_PRUNE" in log
+    assert "bc-closed-finished" in log
+    assert "bc-closed-cancelled" in log
+    assert "Bot CloudAgent" not in log
+    assert "Emerald" not in log
+
+
+def test_shepherd_does_not_probe_notified_closed_after_prune(
+    tmp_path: Path,
+) -> None:
+    """Closed leftovers are gone after one cycle — not skipped as live pages."""
+    mod = _load()
+    _bind(mod, tmp_path)
+    _plant(
+        tmp_path / "ops",
+        [
+            {
+                "bc_id": "bc-closed",
+                "seat": "ops",
+                "status": "closed",
+                "notified": True,
+                "notified_by": "waiter",
+                "run_status": "FINISHED",
+                "waiter_pid": None,
+            }
+        ],
+    )
+    probes: list[str] = []
+
+    def _probe(bc_id: str) -> dict[str, Any]:
+        probes.append(bc_id)
+        return {
+            "runStatus": "FINISHED",
+            "agentStatus": "ACTIVE",
+            "status": "FINISHED",
+        }
+
+    def _no_notify(bc_id: str, payload: dict[str, Any], **kwargs: Any) -> dict[str, Any]:
+        raise AssertionError("closed leftover must not be notified")
+
+    mod._probe = _probe  # type: ignore[assignment]
+    mod.notify_owner = _no_notify  # type: ignore[assignment]
+
+    assert mod._cycle() == 0
+    assert probes == []
+    assert _load_jsonl(tmp_path / "ops") == []
+
+
+def test_prune_feature_binds_shepherd_and_ledger() -> None:
+    text = PRUNE_FEATURE.read_text(encoding="utf-8")
+    assert "prune closed leftover" in text
+    assert "FINISHED" in text
+    assert "CANCELLED" in text
+    assert "RUNNING" in text
+    assert "gcs-fleet-dedupe-notify-floor1747" in text
+    assert "Bot CloudAgent" in text
+
+
 def test_scope_does_not_clone_siblings_or_reconnect_ak() -> None:
     text = SHEPHERD.read_text(encoding="utf-8")
     assert "is_leftover_shell" in text
     assert "SHEPHERD_SKIP leftover" in text
+    assert "prune_closed_leftovers" in text
+    assert "SHEPHERD_PRUNE" in text
     assert "agent-kanban" not in text
     assert "ak start" not in text
     assert "Black Swan" not in text
@@ -577,6 +740,8 @@ def test_docs_name_taskboard_health_tokens() -> None:
     assert "fleet-shepherd" in blob.lower() or "fleet-shepherd.py" in blob
     assert "skip ACTIVE+FINISHED leftovers" in arch
     assert "does not `get_agent_run`" in cloud
+    assert "paged as live" in (arch + "\n" + cloud).lower()
+    assert "prune_closed_leftovers" in cloud
     assert "ak start" not in board or "do not" in board.lower()
     if "Black Swan" in blob:
         assert "never" in blob.lower()
