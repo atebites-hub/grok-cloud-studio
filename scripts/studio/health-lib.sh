@@ -81,3 +81,11 @@ gcs_health_mind_ok() {
 gcs_health_tailscale_ok() {
   command -v tailscale >/dev/null 2>&1
 }
+
+gcs_apply_log_py() {
+  printf '%s\n' "$GCS_KIT_ROOT/scripts/studio/apply_log.py"
+}
+
+gcs_health_apply_log_ok() {
+  python3 "$(gcs_apply_log_py)" check
+}

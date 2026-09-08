@@ -53,6 +53,7 @@ chmod +x \
   "$ROOT"/scripts/studio/taskboard/ticket \
   "$ROOT"/scripts/studio/taskboard/tb \
   "$ROOT"/scripts/studio/systemd/*.sh \
+  "$ROOT"/scripts/studio/apply_log.py \
   "$ROOT"/scripts/host/cursor-grok \
   2>/dev/null || true
 

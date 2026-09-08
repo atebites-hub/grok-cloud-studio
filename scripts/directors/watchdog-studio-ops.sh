@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Watchdog: keep A2A bus up, opted-in seat ACP daemons up, GROW wake loops up,
-# and the host ticker alive. Loop every 10 minutes. Logs under .a2a-state/<seat>/.
+# and the host ticker alive. Loop every 10 minutes. Each beat MUST append one
+# Manning apply-log line (docs/studio/HIVE.md, LIV-71). Logs under .a2a-state/<seat>/.
 # Clock is host-ticker.py / host-clock-ticker.sh (inbox ACP_PING STATUS/CONTINUE).
 # Not ACP inject. Tools allowed. Do not emit a LAUNCH kind.
 # If serve dies: restart serve (start-seat-daemon.sh). Never grok --resume.
@@ -20,6 +21,7 @@ WAKE_LOOP="$ROOT/scripts/directors/seat-wake-loop.sh"
 START_DAEMON="$ROOT/scripts/directors/start-seat-daemon.sh"
 TICKER_PY="$ROOT/scripts/a2a/host-ticker.py"
 LIB_PY="$ROOT/scripts/a2a/lib.py"
+APPLY_LOG_PY="$ROOT/scripts/studio/apply_log.py"
 
 mkdir -p "$LOG_DIR" "$STATE_DIR/$SEAT"
 
@@ -29,6 +31,8 @@ if [[ -f "$STATE_DIR/studio.env" ]]; then
   source "$STATE_DIR/studio.env"
   set +a
 fi
+
+BEAT_SEC="${GCS_TICKER_SEC:-600}"
 
 echo $$ >"$PIDFILE"
 
@@ -70,12 +74,18 @@ ticker_alive() {
   pid_alive "$tp"
 }
 
-log "WATCHDOG_START pid=$$ root=$ROOT seat=$SEAT grow=serve+wake-loop+ticker"
+log "WATCHDOG_START pid=$$ root=$ROOT seat=$SEAT grow=serve+wake-loop+ticker beat=${BEAT_SEC}s"
 
 while true; do
+  bus_status=fail
+  serve_status=down
+  wake_status=down
+  ticker_status=down
+
   if ! bash "$BUS" start >>"$LOG" 2>&1; then
     log "BUS_START_FAIL"
   else
+    bus_status=ok
     log "BUS_OK"
   fi
 
@@ -105,11 +115,13 @@ while true; do
   fi
 
   if serve_alive; then
+    serve_status=ok
     log "SERVE_ALIVE $SEAT daemon.pid"
   else
     log "SERVE_DOWN ensuring $SEAT grok agent serve"
     if [[ -f "$START_DAEMON" ]]; then
       if bash "$START_DAEMON" "$SEAT" >>"$LOG" 2>&1; then
+        serve_status=ok
         log "SERVE_START seat=$SEAT pid=$(read_pid "$STATE_DIR/$SEAT/daemon.pid")"
       else
         log "SERVE_START_FAIL seat=$SEAT"
@@ -118,6 +130,7 @@ while true; do
   fi
 
   if seat_alive; then
+    wake_status=ok
     log "SEAT_ALIVE $SEAT wake.pid"
   else
     log "SEAT_DOWN ensuring $SEAT seat-wake-loop"
@@ -125,20 +138,33 @@ while true; do
     if [[ -f "$WAKE_LOOP" ]]; then
       nohup bash "$WAKE_LOOP" "$SEAT" >>"$STATE_DIR/$SEAT/wake.log" 2>&1 &
       echo $! >"$STATE_DIR/$SEAT/wake.pid"
+      wake_status=ok
       log "WAKE_START seat=$SEAT pid=$(read_pid "$STATE_DIR/$SEAT/wake.pid")"
     fi
   fi
 
   if ticker_alive; then
+    ticker_status=ok
     log "TICKER_ALIVE"
   else
     log "TICKER_DOWN restarting host-ticker"
     if [[ -f "$TICKER_PY" ]]; then
       nohup python3 "$TICKER_PY" >>"$STATE_DIR/host-ticker.log" 2>&1 &
       echo $! >"$STATE_DIR/host-ticker.pid"
+      ticker_status=ok
       log "TICKER_START pid=$(read_pid "$STATE_DIR/host-ticker.pid")"
     fi
   fi
 
-  sleep 600
+  change="IaC: health_check.sh apply_log.py bus=${bus_status} serve=${serve_status} wake=${wake_status} ticker=${ticker_status}; Palemon: no game code"
+  if [[ -f "$APPLY_LOG_PY" ]] && python3 "$APPLY_LOG_PY" beat --change "$change" --seat "$SEAT" >>"$LOG" 2>&1; then
+    log "APPLY_LOG_OK"
+  else
+    log "APPLY_LOG_FAIL"
+  fi
+
+  if [[ "${GCS_WATCHDOG_ONCE:-0}" == "1" ]]; then
+    break
+  fi
+  sleep "$BEAT_SEC"
 done
