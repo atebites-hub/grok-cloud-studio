@@ -265,7 +265,14 @@ def test_http_error_body_redacts_agent_env_dump(tmp_path: Path) -> None:
     blob = proc.stdout + proc.stderr
     assert proc.returncode != 0, blob
     _assert_key_absent(blob)
-    assert "CURSOR_API_KEY=<redacted>" in blob or "CURSOR_API_KEY=[redacted]" in blob
+    # REST pagination fail-closed prints `error: list failed (http=500)`
+    # without echoing the 500 body. That is still never-print. Pre-pagination
+    # REST echoed the dump through cloud_redact_stream.
+    assert (
+        "CURSOR_API_KEY=<redacted>" in blob
+        or "CURSOR_API_KEY=[redacted]" in blob
+        or "error: list failed" in blob
+    )
 
 
 def test_docs_cover_auth_redact_not_doctor_remint() -> None:
