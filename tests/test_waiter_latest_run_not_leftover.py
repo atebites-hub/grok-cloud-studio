@@ -36,7 +36,6 @@ CLOUD_README = ROOT / "scripts" / "cloud" / "README.md"
 ARCH = ROOT / "docs" / "ARCHITECTURE.md"
 FAKE_KEY = "test-cursor-api-key-waiter-latest"
 LIV67 = ROOT / "tests" / "test_liv67_leftover_finished_not_live.py"
-OCCUPANCY = ROOT / "scripts" / "cloud" / "occupancy-count.sh"
 
 
 def leftover_finished() -> dict[str, Any]:
@@ -65,7 +64,12 @@ def test_feature_binds_waiter_latest_not_occupancy_or_catalog() -> None:
     assert "paginated-catalog" in fold or "paginated catalog" in fold
     assert "liv-67" in fold or "do not clone liv-67" in fold
     assert WAIT_NOTIFY.is_file()
-    assert not OCCUPANCY.is_file(), "this beat is not occupancy #132"
+    wait_src = WAIT_NOTIFY.read_text(encoding="utf-8")
+    assert "occupancy-count" not in wait_src
+    assert "CLOUD_OCCUPANCY" not in wait_src
+    assert "paginated-catalog" not in wait_src.lower()
+    # Occupancy catalog (PR #142 / beat1849) may exist on this tree after rebase.
+    # Wait-notify still must not implement occupancy-count. Distinct from leftover #132.
 
 
 def test_does_not_clone_liv67_list_printers() -> None:

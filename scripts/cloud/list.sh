@@ -2,6 +2,7 @@
 # List Cursor Cloud agents (newest first). SDK-first; REST fallback.
 # Usage: list.sh [--limit N]   or   list.sh [N]
 # Each row prints agent status and latest-run runStatus. Never prints API keys.
+# REST walks nextCursor when --limit exceeds the API page cap (100).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -45,16 +46,6 @@ if cloud_sdk_exec list "$limit"; then
   exit "$CLOUD_SDK_RC"
 fi
 
-if ! cloud_http_request GET "/v1/agents?limit=${limit}"; then
-  echo "error: curl failed http=${CLOUD_HTTP_CODE:-000}" >&2
-  exit 1
-fi
-if ! cloud_http_is_2xx; then
-  echo "error: list failed http=${CLOUD_HTTP_CODE}" >&2
-  cloud_redact_stream <"$CLOUD_HTTP_BODY" >&2 || true
-  exit 1
-fi
-
-# Agent.status stays ACTIVE after the latest run is terminal (stale membership).
-# Fetch each latest run so rows show runStatus (RUNNING vs FINISHED), not only ACTIVE.
-python3 "${HERE}/list_rows.py" "$CLOUD_HTTP_BODY"
+# REST: paginate GET /v1/agents via nextCursor (API max page 100). Fail-closed
+# on a page error — never a partial list that looks like running=0.
+python3 "${HERE}/list_rows.py" --limit "$limit"

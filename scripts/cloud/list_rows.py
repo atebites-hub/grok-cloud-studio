@@ -6,7 +6,9 @@ GET /v1/agents/{id}/runs/{latestRunId}. Agent ACTIVE is membership, not
 liveness: leftover FINISHED grunts must not look like spinning workers.
 
 A missing or failed run fetch prints runStatus=none so the list still succeeds.
-Never prints API keys.
+REST ``list.sh --limit`` paginates GET /v1/agents via nextCursor (page cap 100).
+A catalog page error is fail-closed — never a partial list that looks like
+running=0. Never prints API keys.
 """
 from __future__ import annotations
 
@@ -14,9 +16,11 @@ import argparse
 import base64
 import json
 import os
+import sys
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Any
 
 _FETCH_WORKERS = 8
@@ -133,23 +137,58 @@ def format_list_lines(items: list[Any]) -> list[str]:
     return lines
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Print agent list rows with runStatus.")
-    parser.add_argument("body_json", help="Path to GET /v1/agents JSON body")
-    args = parser.parse_args(argv)
-    with open(args.body_json, encoding="utf-8") as fh:
-        data = json.load(fh)
-    if isinstance(data, dict):
-        items = data.get("items") or []
-    elif isinstance(data, list):
-        items = data
-    else:
-        items = []
-    if not isinstance(items, list):
-        items = []
-    for line in format_list_lines(items):
+def list_from_catalog(*, limit: int | None) -> int:
+    """Paginate GET /v1/agents via nextCursor, then print runStatus rows."""
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import list_catalog  # noqa: E402
+
+    wanted = limit if limit is not None and limit > 0 else 20
+    page_size = min(max(wanted, 1), list_catalog.API_PAGE_MAX)
+    try:
+        catalog = list_catalog.fetch_catalog_from_api(
+            page_size=page_size,
+            max_items=wanted,
+        )
+    except list_catalog.CatalogError as err:
+        print(f"error: list failed ({err})", file=sys.stderr)
+        return 1
+    for line in format_list_lines(catalog.items):
         print(line)
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Print agent list rows with runStatus.")
+    parser.add_argument(
+        "body_json",
+        nargs="?",
+        default="",
+        help="Optional path to a single GET /v1/agents JSON body (tests / leftover).",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Paginate GET /v1/agents via nextCursor until this many rows.",
+    )
+    args = parser.parse_args(argv)
+    if args.body_json:
+        with open(args.body_json, encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict):
+            items = data.get("items") or []
+        elif isinstance(data, list):
+            items = data
+        else:
+            items = []
+        if not isinstance(items, list):
+            items = []
+        for line in format_list_lines(items):
+            print(line)
+        return 0
+    return list_from_catalog(limit=args.limit)
 
 
 if __name__ == "__main__":
