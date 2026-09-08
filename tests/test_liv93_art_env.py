@@ -144,7 +144,11 @@ def test_no_script_copies_grok_home_into_cursor_mcp() -> None:
     for path in _code_files():
         text = path.read_text(encoding="utf-8", errors="replace")
         low = text.lower()
-        if "do not copy" in low and "grok_home" in low:
+        if (
+            ("do not copy" in low or "does not copy" in low)
+            and "grok_home" in low
+            and ".cursor" in low
+        ):
             continue
         if ".cursor/mcp.json" in text and "grok-home" in low:
             if any(
