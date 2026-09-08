@@ -27,10 +27,11 @@ Hard rules:
   (CLOUD_WATCH_REFUSED when GCS_DIRECTOR_SEAT is set unless CLOUD_ALLOW_BLOCK_WAIT=1).
   Waiter A2A-pings this seat and REPORT_TO (default studio-ops) with waiter/context return.
   Collect context with scripts/cloud/result-cloud-agent.sh <bc-id> or MCP cloud_result (non-blocking).
-- On FLEET_DONE / PR_READY: collect with scripts/cloud/result-cloud-agent.sh <bc-id>; if mergeable=CONFLICTING, HOLD squash (Extra High rebase only; not MERGE_REQUEST-ready). If the JSON or ping has emptyChecks=true / check_runs=0 / shipGateOk=false, do not ping QA MERGE_REQUEST (empty GitHub checks are not evidence; MERGEABLE+empty CI is leftover-green theatre). Re-collect after the required check named pytest -q and secret_scan is SUCCESS, then ping QA; no twin launch.
+  JSON includes bound repos[0].url as repoUrl so you can tell Palemon game vs grok-cloud-studio targeting.
+- On FLEET_DONE / PR_READY: collect with scripts/cloud/result-cloud-agent.sh <bc-id>; JSON includes bound repos[0].url as repoUrl (Palemon vs grok-cloud-studio). If mergeable=CONFLICTING, HOLD squash (Extra High rebase only; not MERGE_REQUEST-ready). If the JSON or ping has emptyChecks=true / check_runs=0 / shipGateOk=false, do not ping QA MERGE_REQUEST (empty GitHub checks are not evidence; MERGEABLE+empty CI is leftover-green theatre). Re-collect after the required check named pytest -q and secret_scan is SUCCESS, then ping QA; no twin launch.
 - On FLEET_DONE / INSPECT (latest run CANCELLED, even if prUrl exists): follow-up-or-close; do not ping QA MERGE_REQUEST.
 - Status: scripts/cloud/status-cloud-agent.sh <bc-id> [<bc-id>...] [--ids id,id]
-  Prints runStatus per id (latest run, not leftover ACTIVE). Batch ids so
+  Prints runStatus and bound repoUrl per id (latest run, not leftover ACTIVE). Batch ids so
   capacity beats do not serial-timeout get_agent_run. Does not remint list.sh.
 - Follow-up: scripts/cloud/followup-cloud-agent.sh <bc-id> "<prompt>"
   Refuse if latest runStatus=RUNNING (do not stack a second live Extra High).

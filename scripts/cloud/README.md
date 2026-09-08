@@ -25,10 +25,10 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `list.sh` / `list-cloud-agents.sh [--limit N] [--repo org/name]` | Newest agents; each row prints agent `status` and latest-run `runStatus`. `--repo` keeps one bound git remote so Directors can count `runStatus=RUNNING`. REST walks `nextCursor` when `--limit` exceeds the API page cap (100). Fail-closed if a page errors. |
 | `occupancy-count.sh` | Paginated occupancy catalog (`Agent.list` / `GET /v1/agents` via `nextCursor`, page size 100). Prints `CLOUD_OCCUPANCY running= leftover_active= creating= listed= pages=`. Fail-closed `CLOUD_OCCUPANCY_ERR reason=page` if a page errors — never fake `running=0`. |
 | `running-count.sh [--limit N]` | In-flight count for `GCS_CLOUD_REPO`; prints `runStatus` rows then `CLOUD_RUNNING` / `CLOUD_MUST_LAUNCH`. Distinct from occupancy catalog. |
-| `status.sh` / `status-cloud-agent.sh <bc-id> [<bc-id>…] [--ids id,id]` | Compact **runStatus** per id (parallel; not leftover ACTIVE) |
+| `status.sh` / `status-cloud-agent.sh <bc-id> [<bc-id>…] [--ids id,id]` | Compact **runStatus** + **repoUrl** per id (parallel; not leftover ACTIVE) |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` (`reason=director-no-block-wait`) unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run. **REFUSE** if latest `runStatus=RUNNING` (do not stack a second live Extra High). Leftover `ACTIVE`+`FINISHED` may follow up. Never Bot CloudAgent. |
-| `result-cloud-agent.sh <bc-id>` | Non-blocking result/context JSON |
+| `result-cloud-agent.sh <bc-id>` | Non-blocking result/context JSON (`repoUrl` = bound `repos[0].url`) |
 | `pr_evidence.py judge` | MERGE_REQUEST paste gate: leftover-green empty GitHub checks are not ship-gate; require pasted `pytest -q` (`N passed`) + `secret_scan=clean`. CONFLICTING/DIRTY never squash. Verdict JSON only (never prints tokens). |
 | `webhook-harness.sh serve \| simulate` | Signed webhook receiver / local POST |
 
@@ -45,6 +45,12 @@ Hard-wired Extra High create (SDK `Agent.create` / REST `POST /v1/agents`):
 - `repos[0].url` from **`GCS_CLOUD_REPO` or `CLOUD_REPO_URL`** (required; fail closed)
 - `repos[0].startingRef` from `GCS_CLOUD_REF` / `CLOUD_REPO_REF` / `CURSOR_CLOUD_REF` (default `main`)
 - `autoCreatePR = true`
+
+Collect (`result-cloud-agent.sh` / `collect.ts`) echoes that bound `repos[0].url`
+as `repoUrl` so Directors can see **game vs studio** targeting (Palemon vs
+`grok-cloud-studio`). Compact status prints `repoUrl`. Palemon Linear is
+**Living Sky** (`LIV`), not Black Swan. Never launch a Grok Bot CloudAgent;
+Extra High is the grunt.
 
 Prompt sources (exactly one): argv text, stdin `-`, or `--prompt-file PATH` (readable file; empty/whitespace is `CLOUD_LAUNCH_ERR`). Mixing `--prompt-file` with argv text or stdin `-` is `CLOUD_LAUNCH_ERR`.
 
@@ -161,7 +167,8 @@ scripts/cloud/status-cloud-agent.sh --ids bc-a,bc-b,bc-c
 
 # 3) On FLEET_DONE / PR_READY
 scripts/cloud/result-cloud-agent.sh bc-…
-# JSON includes emptyChecks / shipGateOk / checkRuns when prUrl is a GitHub pull.
+# JSON includes repoUrl (bound repos[0].url) plus emptyChecks / shipGateOk / checkRuns
+# when prUrl is a GitHub pull. emptyChecks=true is not MERGE_REQUEST evidence.
 # emptyChecks=true is not MERGE_REQUEST evidence (MERGEABLE+empty CI is leftover-green theatre).
 # HOLD MERGE_REQUEST until the Extra High RESULT / PR body pastes
 # .venv/bin/pytest -q (N passed) and python3 scripts/secret_scan.py

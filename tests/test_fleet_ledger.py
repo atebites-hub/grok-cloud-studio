@@ -65,6 +65,21 @@ def test_not_orphan_after_waiter_notify(tmp_path: Path, monkeypatch) -> None:
     assert is_orphan(row) is False
 
 
+def test_notify_text_includes_bound_repo() -> None:
+    text = notify_text(
+        "bc-done",
+        {
+            "runStatus": "FINISHED",
+            "prUrl": "https://github.com/atebites-hub/grok-cloud-studio/pull/1",
+            "name": "demo",
+            "url": "https://cursor.com/agents/bc-done",
+            "repoUrl": "https://github.com/atebites-hub/grok-cloud-studio",
+        },
+    )
+    assert "repo=https://github.com/atebites-hub/grok-cloud-studio" in text
+    assert "FLEET_DONE" in text
+
+
 def test_not_orphan_after_webhook(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("GCS_ROOT", str(ROOT))
     monkeypatch.setenv("GCS_A2A_STATE", str(tmp_path))

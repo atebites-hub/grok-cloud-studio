@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Parallel REST status for one or more Cursor Cloud bc-ids.
 
-Prints runStatus per id on the same line as id=. Used by status.sh when the
-SDK is not selected (CURSOR_API_BASE / CLOUD_FORCE_REST). Capacity beats pass
+Prints runStatus and bound repoUrl per id on the same line as id=. Used by
+status.sh when the SDK is not selected (CURSOR_API_BASE / CLOUD_FORCE_REST). Capacity beats pass
 many ids in one process so they do not serial-timeout get_agent_run.
 
 Never prints API keys.
@@ -18,6 +18,8 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
+
+from result_payload import bound_repo_url, bound_repos
 
 Row = dict[str, Any]
 
@@ -53,6 +55,8 @@ def empty_row(agent_id: str) -> Row:
         "agentStatus": "unknown",
         "runStatus": "none",
         "status": "none",
+        "repoUrl": None,
+        "repos": [],
     }
 
 
@@ -108,6 +112,7 @@ def fetch_one(agent_id: str, timeout: float) -> Row:
         return empty_row(agent_id)
     run_id = str(agent.get("latestRunId") or "")
     run_status = "none"
+    run: dict[str, Any] = {}
     if run_id:
         rcode, run_payload = http_get(f"/v1/agents/{agent_id}/runs/{run_id}", timeout)
         run = unwrap(run_payload, "run")
@@ -123,6 +128,8 @@ def fetch_one(agent_id: str, timeout: float) -> Row:
         "agentStatus": str(agent.get("status") or "unknown"),
         "runStatus": run_status,
         "status": run_status,
+        "repoUrl": bound_repo_url(agent, run),
+        "repos": bound_repos(agent),
     }
 
 
@@ -149,6 +156,7 @@ def format_line(row: Row) -> str:
         f"id={row.get('id') or ''} "
         f"agentStatus={row.get('agentStatus') or 'unknown'} "
         f"runStatus={row.get('runStatus') or 'none'} "
+        f"repoUrl={row.get('repoUrl') or 'none'} "
         f"url={row.get('url') or ''} "
         f"latestRunId={row.get('latestRunId') or ''}"
     )

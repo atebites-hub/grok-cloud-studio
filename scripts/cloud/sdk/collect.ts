@@ -1,11 +1,14 @@
 import { Agent, type Run } from "@cursor/sdk";
 import {
   agentUrl,
+  boundRepoUrl,
+  boundRepos,
   loadApiKey,
   mapAgentStatus,
   mapRunStatus,
   pickGit,
   runErrorPayload,
+  type BoundRepo,
 } from "./common.ts";
 import { attachShipGate } from "./pr-checks.ts";
 
@@ -23,6 +26,8 @@ export type DirectorResult = {
   summary: string | null;
   result: string | null;
   error: { message: string; code?: string } | null;
+  repoUrl: string | null;
+  repos: BoundRepo[];
   emptyChecks?: boolean;
   checkRuns?: number;
   mergeableState?: string | null;
@@ -67,5 +72,7 @@ export async function collectResult(agentId: string, runId?: string): Promise<Di
     summary: info.summary || null,
     result: run?.result ?? null,
     error: runErrorPayload(run?.error),
+    repoUrl: boundRepoUrl(info, run),
+    repos: boundRepos(info),
   });
 }
