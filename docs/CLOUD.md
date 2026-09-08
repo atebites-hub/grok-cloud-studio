@@ -54,6 +54,11 @@ Details: `docs/studio/art/ART_ENV.md`.
 
 ## Launch
 
+Seat identity (`install_seat_cloud_cli`) puts `cloud_launch`, `cloud_list`,
+`cloud_status`, `cloud_followup`, and `cloud_result` on `$GROK_HOME/bin` and
+`~/.grok/bin`. Wrappers exec the bash scripts. Do not wrap `watch`. Do not copy
+GROK_HOME MCP into checkout `.cursor/mcp.json` (Linear + taskboard only).
+
 ```bash
 scripts/launch-cloud-extra-high.sh "Implement X. Open a PR." "short-name"
 scripts/launch-cloud-extra-high.sh --name short-name --prompt-file /path/to/prompt.txt
