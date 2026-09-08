@@ -85,6 +85,7 @@ def _base_env(
         "GCS_BOT_BIND_OPTIONAL": "1",
         "LC_ALL": "C",
         "TERM": "dumb",
+        "GCS_CLOUD_REPO": "https://github.com/example/control-plane",
         "CURSOR_API_KEY": FAKE_KEY,
     }
 

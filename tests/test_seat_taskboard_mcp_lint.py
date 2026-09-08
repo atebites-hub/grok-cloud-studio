@@ -28,15 +28,23 @@ def _mod():
 
 
 def _doctor_env(tmp_path: Path) -> dict[str, str]:
+    home = tmp_path / "home"
+    home.mkdir(parents=True, exist_ok=True)
     env = {
         **os.environ,
+        "HOME": str(home),
         "GCS_ROOT": str(REPO),
         "GCS_A2A_STATE": str(tmp_path / "a2a-state"),
         "GCS_BOT_BIND_OPTIONAL": "1",
+        "GCS_CLOUD_REPO": "https://github.com/example/control-plane",
+        "CURSOR_API_KEY": "test-cursor-api-key-mcp-lint-doctor-not-leaked",
         "LC_ALL": "C",
         "TERM": "dumb",
     }
     env.pop("GROK_HOME", None)
+    env.pop("CLOUD_REPO_URL", None)
+    env.pop("CURSOR_CLOUD_REPO", None)
+    env.pop("CURSOR_AGENT_ENV", None)
     return env
 
 

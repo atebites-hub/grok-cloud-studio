@@ -29,7 +29,7 @@ One-command deploy (idempotent). Disaster recovery entrypoint with cleanup.sh.
   6. Start scripts/a2a/start-studio-bus.sh start   (NO --daemons)
   7. Optional Tailscale Serve (scripts/studio/taskboard/start-tailscale-serve.sh start).
      Skip if PALEMON_TAILSCALE_SERVE=0, tailscale missing, or not joined.
-  8. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if Agent Kanban returns)
+  8. Run ./doctor.sh (WARN if grok/agent/taskboard missing; FAIL if launch-plane missing or Agent Kanban returns)
   9. Print SETUP_OK with hub/board ports and mind seat list.
  10. Run ./health_check.sh (HEALTH_OK / HEALTH_DEGRADED / HEALTH_DOWN).
 
