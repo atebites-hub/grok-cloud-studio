@@ -35,6 +35,8 @@ Hard rules:
   capacity beats do not serial-timeout get_agent_run. Does not remint list.sh.
 - Follow-up: scripts/cloud/followup-cloud-agent.sh <bc-id> "<prompt>"
   Refuse if latest runStatus=RUNNING (do not stack a second live Extra High).
+  HTTP 409 / agent_busy → CLOUD_FOLLOWUP_ERR; do not launch a unique --name twin
+  (distinct from leftover waiter 429 backoff).
   Leftover ACTIVE+FINISHED may follow up. Never Bot CloudAgent (orchestrator/donald is send.sh).
 - List: scripts/cloud/list-cloud-agents.sh [--limit N] [--repo org/name]
   Each row prints status= (agent membership, often ACTIVE) and runStatus= (RUNNING vs FINISHED). Existence is not liveness. Leftover ACTIVE+FINISHED is not a live worker. REST paginates nextCursor when --limit exceeds 100. Count runStatus=RUNNING for --repo (org/name or https URL). Palemon Linear is Living Sky (LIV), not Black Swan.

@@ -27,7 +27,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `running-count.sh [--limit N]` | In-flight count for `GCS_CLOUD_REPO`; prints `runStatus` rows then `CLOUD_RUNNING` / `CLOUD_MUST_LAUNCH`. Distinct from occupancy catalog. |
 | `status.sh` / `status-cloud-agent.sh <bc-id> [<bc-id>…] [--ids id,id]` | Compact **runStatus** + **repoUrl** per id (parallel; not leftover ACTIVE) |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` (`reason=director-no-block-wait`) unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
-| `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run. **REFUSE** if latest `runStatus=RUNNING` (do not stack a second live Extra High). Leftover `ACTIVE`+`FINISHED` may follow up. Never Bot CloudAgent. |
+| `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run. **REFUSE** if latest `runStatus=RUNNING` (do not stack a second live Extra High). HTTP **409** / `agent_busy` → `CLOUD_FOLLOWUP_ERR` (do not launch a unique `--name` twin; distinct from waiter 429 backoff). Leftover `ACTIVE`+`FINISHED` may follow up. Never Bot CloudAgent. |
 | `result-cloud-agent.sh <bc-id>` | Non-blocking result/context JSON (`repoUrl` = bound `repos[0].url`) |
 | `pr_evidence.py judge` | MERGE_REQUEST paste gate: leftover-green empty GitHub checks are not ship-gate; require pasted `pytest -q` (`N passed`) + `secret_scan=clean`. CONFLICTING/DIRTY never squash. Verdict JSON only (never prints tokens). |
 | `webhook-harness.sh serve \| simulate` | Signed webhook receiver / local POST |
@@ -181,6 +181,8 @@ scripts/cloud/result-cloud-agent.sh bc-…
 
 # 4) Follow-up if the latest run is idle (leftover ACTIVE+FINISHED).
 #    REFUSE if runStatus=RUNNING — do not stack a second run on a live Extra High.
+#    HTTP 409 / agent_busy → CLOUD_FOLLOWUP_ERR; do not launch a unique --name twin
+#    (distinct from leftover waiter 429 backoff).
 #    Never Bot CloudAgent (orchestrator/donald is send.sh).
 scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check."
 ```
