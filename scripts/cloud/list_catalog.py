@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -34,6 +35,19 @@ class CatalogError(RuntimeError):
     def __init__(self, message: str, reason: str = "page") -> None:
         super().__init__(message)
         self.reason = reason
+
+
+_KEY_ASSIGN_RE = re.compile(
+    r"(?i)((?:export\s+)?)CURSOR_API_KEY\s*=\s*\S+",
+)
+
+
+def redact_secret(text: str) -> str:
+    """Never print CURSOR_API_KEY from an HTTP error body."""
+    key = os.environ.get("CURSOR_API_KEY") or ""
+    if key:
+        text = text.replace(key, "<redacted>")
+    return _KEY_ASSIGN_RE.sub(r"\1CURSOR_API_KEY=<redacted>", text)
 
 
 @dataclass(frozen=True)
@@ -166,6 +180,14 @@ def api_get_page(path: str, timeout: float) -> dict[str, Any]:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as err:
+        raw = ""
+        try:
+            raw = err.read().decode("utf-8", "replace")
+        except Exception:
+            raw = ""
+        snippet = redact_secret(raw).strip()
+        if snippet:
+            raise CatalogError(f"http={err.code} {snippet}", "page") from err
         raise CatalogError(f"http={err.code}", "page") from err
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError, ValueError) as err:
         reason = "page"
