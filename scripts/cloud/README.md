@@ -24,6 +24,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
 | `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus`. REST walks `nextCursor` when `--limit` exceeds the API page cap (100). Fail-closed if a page errors. |
 | `occupancy-count.sh` | Paginated occupancy catalog (`Agent.list` / `GET /v1/agents` via `nextCursor`, page size 100). Prints `CLOUD_OCCUPANCY running= leftover_active= creating= listed= pages=`. Fail-closed `CLOUD_OCCUPANCY_ERR reason=page` if a page errors — never fake `running=0`. |
+| `running-count.sh [--limit N]` | In-flight count for `GCS_CLOUD_REPO`; prints `runStatus` rows then `CLOUD_RUNNING` / `CLOUD_MUST_LAUNCH`. Distinct from occupancy catalog. |
 | `status.sh` / `status-cloud-agent.sh <bc-id> [<bc-id>…] [--ids id,id]` | Compact **runStatus** per id (parallel; not leftover ACTIVE) |
 | `watch.sh` / `watch-cloud-agent.sh <bc-id>` | Operator poll until terminal. Directors (`GCS_DIRECTOR_SEAT` set) get `CLOUD_WATCH_REFUSED` (`reason=director-no-block-wait`) unless `CLOUD_ALLOW_BLOCK_WAIT=1` |
 | `followup.sh` / `followup-cloud-agent.sh <bc-id> "prompt"` | Resume + send a new run. **REFUSE** if latest `runStatus=RUNNING` (do not stack a second live Extra High). Leftover `ACTIVE`+`FINISHED` may follow up. Never Bot CloudAgent. |
@@ -166,6 +167,15 @@ Live workers are `runStatus=RUNNING`. Leftover `status=ACTIVE` + `runStatus=FINI
 REST `list.sh --limit` uses the same paginator (`list_catalog.py` / `max_items`) so Directors who count `runStatus=RUNNING` from list rows also see workers past page 1. Occupancy-count remains the one-line capacity path.
 
 `scripts/cloud/occupancy-count.sh` is the occupancy path (SDK `occupancy.ts` / REST `occupancy_count.py`). It prints `CLOUD_OCCUPANCY running=N leftover_active=N creating=N listed=N pages=N`. If any catalog page errors, it prints `CLOUD_OCCUPANCY_ERR reason=page` and exits non-zero — **never** a fake `running=0` from a partial list. Skip `GCS_BOT_AGENT_ID`. Distinct from leftover occupancy GCS #132 (do not rebase).
+
+## Fleet floor (running-count)
+
+Directors must `cloud_launch` until ≥8 in-flight runs per `GCS_CLOUD_REPO`
+(`GCS_CLOUD_MIN_RUNNING`, default 8). Count `runStatus` (`RUNNING`/`CREATING`),
+not leftover `ACTIVE`+`FINISHED`. `list.sh` and batch `status.sh` already print
+`runStatus`. Check the floor with `scripts/cloud/running-count.sh`
+(`CLOUD_MUST_LAUNCH`). Never Bot CloudAgent.
+This is not occupancy remint (#125 / #132 / #154).
 
 ## Rules
 

@@ -20,7 +20,7 @@ Grok Cloud Studio is a **local control plane**:
    plus first-class `audio` and `narrative` (aliases: audio-director,
    audio-lead, narrative-director, narrative-lead). Do not add 49 specialists.
    Spawn specialists only via `scripts/launch-cloud-extra-high.sh`.
-2. **Extra High grunts** are Cursor Cloud agents (`grok-4.6`, `effort=xhigh`) that open PRs against `GCS_CLOUD_REPO` / `CLOUD_REPO_URL`.
+2. **Extra High grunts** are Cursor Cloud agents (`grok-4.6`, `effort=xhigh`) that open PRs against `GCS_CLOUD_REPO` / `CLOUD_REPO_URL`. Directors `cloud_launch` until ≥8 `runStatus=RUNNING` (plus `CREATING`) per repo. Leftover `ACTIVE`+`FINISHED` is not a worker. Never Bot CloudAgent.
 3. **A2A** is seat-to-seat. **MCP** is agent-to-tool.
 
 ```
