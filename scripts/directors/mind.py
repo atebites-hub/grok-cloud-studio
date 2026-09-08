@@ -969,6 +969,35 @@ def persist_mind_runner(seat: str, runner: str) -> None:
     tmp.replace(path)
 
 
+def mind_switch_offset_file(seat: str) -> Path:
+    return mind_dir(seat) / "switch-offset"
+
+
+def load_mind_switch_offset(seat: str) -> int | None:
+    path = mind_switch_offset_file(seat)
+    if not path.is_file():
+        return None
+    try:
+        return max(0, int(path.read_text(encoding="utf-8").strip() or "0"))
+    except (OSError, ValueError):
+        return None
+
+
+def persist_mind_switch_offset(seat: str, offset: int) -> None:
+    path = mind_switch_offset_file(seat)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(str(int(offset)) + "\n", encoding="utf-8")
+    tmp.replace(path)
+
+
+def clear_mind_switch_offset(seat: str) -> None:
+    path = mind_switch_offset_file(seat)
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
 def mind_runner_mode() -> str:
     raw = (os.environ.get("GCS_MIND_RUNNER") or "auto").strip().lower()
     if raw in ("grok", "cursor", "auto"):
@@ -1199,7 +1228,11 @@ def _invoke_mind_backend(
 
 
 def mind_turn_runner(prompt: str, *, seat: str = "", **kwargs: Any) -> dict[str, Any]:
-    """Use persisted mind/runner. Switch once on quota. Forced env does not flip."""
+    """Use persisted mind/runner. Switch once on quota. Forced env does not flip.
+
+    One MIND_SWITCH per unconsumed mail line (inbox offset). A 2s runner-fail
+    tick must not flip back and probe grok again for the same queued line.
+    """
     mode = mind_runner_mode()
     forced = mode in MIND_RUNNERS
     current = mode if forced else (load_persisted_mind_runner(seat) or "grok")
@@ -1208,8 +1241,13 @@ def mind_turn_runner(prompt: str, *, seat: str = "", **kwargs: Any) -> dict[str,
     if rc == 0:
         if not forced:
             persist_mind_runner(seat, current)
+        clear_mind_switch_offset(seat)
         return result
     if forced or not grok_usage_exhausted(text, stderr):
+        return result
+    offset = _read_offset(seat)
+    already = load_mind_switch_offset(seat)
+    if already is not None and already == offset:
         return result
     nxt = other_mind_runner(current)
     print(
@@ -1217,7 +1255,12 @@ def mind_turn_runner(prompt: str, *, seat: str = "", **kwargs: Any) -> dict[str,
         flush=True,
     )
     persist_mind_runner(seat, nxt)
-    return _invoke_mind_backend(nxt, prompt, seat=seat, **kwargs)
+    persist_mind_switch_offset(seat, offset)
+    retry = _invoke_mind_backend(nxt, prompt, seat=seat, **kwargs)
+    _, retry_rc, _ = _runner_payload(retry)
+    if retry_rc == 0:
+        clear_mind_switch_offset(seat)
+    return retry
 
 
 DEFAULT_RUNNER: Callable[..., Any] = mind_turn_runner

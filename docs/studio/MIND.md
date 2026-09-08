@@ -5,7 +5,9 @@ This is the **Bot-equivalent mind** for Grok Cloud Studio Directors. ACP inject 
 Python is **mailbox + pin + stay-up**. Default `GCS_MIND_RUNNER=auto` persists
 `$GCS_A2A_STATE/<seat>/mind/runner` (`grok` or `cursor`). Each mail line uses
 that file. On HTTP 402 / `usage balance exhausted`, flip the file and retry
-**that same mail line** once on the other runner (`MIND_SWITCH`). Forced
+**that same mail line** once on the other runner (`MIND_SWITCH`). Do not
+ping-pong that unconsumed line on the next harvest tick (`mind/switch-offset`).
+Forced
 `GCS_MIND_RUNNER=grok` or `cursor` does not flip. Cursor CLI uses a **separate**
 chat pin. The switch is still one turn, not a second Python tool loop.
 
@@ -55,6 +57,7 @@ Under `$GCS_A2A_STATE/<seat>/mind/` (`GCS_A2A_STATE` defaults to `$GCS_ROOT/.a2a
 | `offset` | Byte offset into that seat’s `inbox.jsonl` (runner exit 0, or duplicate `FLEET_DONE` skip) |
 | `pid` | Live mind process |
 | `runner` | Persisted `grok` or `cursor` for `GCS_MIND_RUNNER=auto`. Missing file means grok. Forced env does not rewrite this file. |
+| `switch-offset` | Inbox byte offset of the mail line that already received its one-shot `MIND_SWITCH`. Stops ping-pong across 2s runner-fail ticks of the same unconsumed line. Cleared on runner exit 0. |
 
 Grok home: `$GCS_A2A_STATE/<seat>/grok-home` (`GROK_HOME`, `GROK_MEMORY=1`). Process cwd is `$GCS_ROOT`. Cursor runner does **not** set `GROK_HOME`.
 
@@ -146,7 +149,10 @@ probe grok every line after a 402.
 
 On quota / HTTP 402 / `usage balance exhausted`, flip the file and retry
 **that same mail line once** on the other runner. Offset advances only on
-exit 0. Log:
+exit 0. Stamp `mind/switch-offset` so a later harvest of that **same
+unconsumed** line (run_forever 2s runner-fail sleep) does **not** flip back
+and probe grok again. A later mail after offset advances may switch once.
+Log:
 
 ```text
 MIND_SWITCH seat=floor from=grok to=cursor reason=quota-exhausted
