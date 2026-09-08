@@ -8,13 +8,14 @@ Each owning seat keeps `.a2a-state/<seat>/fleet.jsonl` rows:
 The per-launch waiter is the primary completion path. fleet-shepherd is an
 orphan-only safety net (no live waiter_pid, never notified_by=waiter).
 
-FLEET_DONE HOLDs GitHub PRs with empty checks (MERGEABLE+empty CI is
-leftover-green theatre; required check is pytest -q and secret_scan) and
-until Extra High RESULT / MERGE_REQUEST pastes `.venv/bin/pytest -q`
-(`N passed`) and `secret_scan=clean`. Empty leftover-green GitHub checks
-are not a ship-gate. REST `mergeable_state=dirty` is GraphQL
-`mergeable=CONFLICTING`: the ping includes `mergeable=CONFLICTING` and QA
-HOLD squash (Extra High rebase only; not MERGE_REQUEST-ready).
+FLEET_DONE HOLDs GitHub draft PRs (`draft=true`, not MERGE_REQUEST-ready)
+and PRs with empty checks (MERGEABLE+empty CI is leftover-green theatre;
+required check is pytest -q and secret_scan) and until Extra High RESULT
+/ MERGE_REQUEST pastes `.venv/bin/pytest -q` (`N passed`) and
+`secret_scan=clean`. Empty leftover-green GitHub checks are not a
+ship-gate. GitHub drafts are never squash-ready. REST `mergeable_state=dirty`
+is GraphQL `mergeable=CONFLICTING`: the ping includes `mergeable=CONFLICTING`
+and QA HOLD squash (Extra High rebase only; not MERGE_REQUEST-ready).
 
 Presence of waiter_pid is not liveness. A pid that names a dead process is
 evicted durably (waiter_pid null, waiter_tombstone) so a reused pid cannot
@@ -391,10 +392,10 @@ def map_github_mergeable(body: dict[str, Any]) -> str | None:
     return "UNKNOWN"
 
 
-def github_pr_mergeable(pr_url: object) -> str | None:
-    """GET GitHub pulls API. CONFLICTING/MERGEABLE/UNKNOWN, or None on lookup miss.
+def _github_pull_json(pr_url: object) -> dict[str, Any] | None:
+    """One-shot GET of GitHub pulls API. None if not a PR or lookup failed.
 
-    One-shot. Do not reuse Extra High get_agent_run 429 backoff (GCS #35).
+    Do not reuse Extra High get_agent_run 429 backoff (GCS #35).
     Never prints GH_TOKEN / GITHUB_TOKEN.
     """
     parsed = parse_github_pull_url(pr_url)
@@ -420,7 +421,28 @@ def github_pr_mergeable(pr_url: object) -> str | None:
         return None
     if not isinstance(body, dict):
         return None
+    return body
+
+
+def github_pr_mergeable(pr_url: object) -> str | None:
+    """GET GitHub pulls API. CONFLICTING/MERGEABLE/UNKNOWN, or None on lookup miss."""
+    body = _github_pull_json(pr_url)
+    if body is None:
+        return None
     return map_github_mergeable(body)
+
+
+def github_pr_is_draft(pr_url: object) -> bool | None:
+    """GET GitHub pulls API. True/False when known; None if not a PR or lookup failed."""
+    body = _github_pull_json(pr_url)
+    if body is None:
+        return None
+    draft = body.get("draft")
+    if draft is True:
+        return True
+    if draft is False:
+        return False
+    return None
 
 
 def payload_mergeable(payload: dict[str, Any]) -> str | None:
@@ -459,6 +481,25 @@ def resolve_mergeable(payload: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def payload_is_draft(payload: dict[str, Any]) -> bool:
+    value = payload.get("draft")
+    if value is True:
+        return True
+    if isinstance(value, str) and value.strip().lower() in {"true", "1", "yes"}:
+        return True
+    return False
+
+
+def resolve_draft(payload: dict[str, Any]) -> dict[str, Any]:
+    """Honor waiter-supplied draft; otherwise look up GitHub when prUrl is a pull."""
+    if payload.get("draft") is not None:
+        return payload
+    flag = github_pr_is_draft(payload.get("prUrl"))
+    if flag is not None:
+        payload["draft"] = flag
+    return payload
+
+
 def notify_owner(
     bc_id: str,
     payload: dict[str, Any],
@@ -477,7 +518,8 @@ def notify_owner(
     seat_name = seat or (hit[0] if hit else _seat_name())
     if hit is not None and _already_notified_by_waiter(hit[1]):
         return hit[1]
-    payload = resolve_mergeable(resolve_ship_gate(dict(payload)))
+    payload = resolve_draft(dict(payload))
+    payload = resolve_mergeable(resolve_ship_gate(payload))
     text = notify_text(bc_id, payload)
     for target in notify_targets(seat_name):
         if not ping_seat(target, text):
@@ -506,6 +548,14 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
             f"follow-up-or-close; do not ignore. RESULT."
         )
     if run_status == "FINISHED":
+        if payload_is_draft(payload):
+            return (
+                f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
+                f"runStatus=FINISHED pr={pr} repo={repo} draft=true{merge_tag} url={url}.{extra} "
+                f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
+                f"GitHub PR is draft: do not ping QA MERGE_REQUEST; do not squash. "
+                f"RESULT with bc-id + pr."
+            )
         if mergeable == "CONFLICTING":
             return (
                 f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "
@@ -607,6 +657,8 @@ def complete(
     mergeable = payload_mergeable(payload)
     if mergeable is not None:
         row["mergeable"] = mergeable
+    if payload.get("draft") is not None:
+        row["draft"] = payload_is_draft(payload)
     snip = context_snippet(payload)
     if snip:
         row["context"] = snip
