@@ -140,7 +140,7 @@ scripts/cloud/list.sh --repo https://github.com/ORG/REPO
 
 Wait-notify (`scripts/cloud/sdk/wait-notify.ts`) GETs `GET /v1/agents/{id}/runs` and A2A-pings `FLEET_DONE` only when the **latest** run is terminal, including waiter/context return from `result`. Leftover `FINISHED` while a newer run is `CREATING`/`RUNNING` is not done. Distinct from occupancy listRuns counts and paginated agent catalog. Never Bot CloudAgent.
 
-Occupancy catalog (`scripts/cloud/occupancy-count.sh`) paginates `Agent.list` / REST `GET /v1/agents` via `nextCursor` beyond the API **limit=100** page cap (hive dump was **439**). `count-running` / occupancy-count **fail-closed** if a page errors — never fake `running=0` from a partial catalog. Existence ACTIVE is not liveness. Palemon Linear is Living Sky (`LIV`).
+Occupancy catalog (`scripts/cloud/occupancy-count.sh`) paginates `Agent.list` / REST `GET /v1/agents` via `nextCursor` beyond the API **limit=100** page cap (hive dump was **439**). Latest **`runStatus`** comes from **listRuns** (`GET /v1/agents/{id}/runs` / SDK `Agent.listRuns`); a stale catalog `latestRunId` leftover `FINISHED` is not the worker while a newer run is `CREATING`/`RUNNING`. **`CREATING` maps as `RUNNING`** toward floor 8. Leftover `ACTIVE`+`FINISHED` is not a worker. Split **Palemon vs GCS** (`palemon=` / `gcs=` / `cap=` / `palemon_must=` / `gcs_must=`) per bound repo. Occupancy-count **fail-closed** if a page or listRuns errors — never fake `running=0` from a partial catalog. Distinct from catalog nextCursor paginate (#142) and HOLD listRuns concurrency (#132). Existence ACTIVE is not liveness. Palemon Linear is Living Sky (`LIV`). Never Bot CloudAgent.
 
 ## Directors-spawn law (LIV-41)
 
