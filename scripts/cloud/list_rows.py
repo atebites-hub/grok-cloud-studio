@@ -7,6 +7,8 @@ liveness: leftover FINISHED grunts must not look like spinning workers.
 
 A missing or failed run fetch prints runStatus=none so the list still succeeds.
 REST ``list.sh --limit`` paginates GET /v1/agents via nextCursor (page cap 100).
+Optional ``--repo`` keeps one bound git remote so Directors can count
+runStatus=RUNNING per repo (list items omit repos; load GET /v1/agents/{id}).
 A catalog page error is fail-closed — never a partial list that looks like
 running=0. Never prints API keys.
 """
@@ -22,6 +24,8 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
+
+import list_format
 
 _FETCH_WORKERS = 8
 _FETCH_TIMEOUT_CAP_SEC = 15.0
@@ -48,11 +52,15 @@ def format_list_row(
     name: str,
     url: str,
     run_id: str,
+    repo_url: str = "",
 ) -> str:
-    return (
+    row = (
         f"id={agent_id} status={agent_status} runStatus={run_status} "
         f"name={name} url={url} latestRunId={run_id}"
     )
+    if repo_url:
+        return f"{row} repo={repo_url}"
+    return row
 
 
 def _run_fetch_timeout() -> float:
@@ -98,7 +106,61 @@ def _agent_fields(item: Any) -> tuple[str, str, str, str, str]:
     )
 
 
-def format_list_lines(items: list[Any]) -> list[str]:
+def _filtered_row(item: Any, wanted: str) -> str | None:
+    """Load agent + run detail and keep the row only when --repo matches."""
+    raw = item if isinstance(item, dict) else {}
+    agent_id, agent_status, name, url, run_id = _agent_fields(raw)
+    agent: dict[str, Any] = dict(raw)
+    if agent_id:
+        detail = list_format.fetch_agent(agent_id)
+        if detail:
+            agent = {**raw, **detail}
+            agent_status = str(agent.get("status") or agent_status)
+            name = str(agent.get("name") or name)
+            url = str(agent.get("url") or url)
+            if not run_id:
+                run_id = str(agent.get("latestRunId") or "")
+    run: dict[str, Any] = {}
+    if agent_id and run_id:
+        run = list_format.fetch_run(agent_id, run_id)
+    if not list_format.matches_repo(agent, run, wanted):
+        return None
+    run_status = normalize_run_status(run.get("status") if run else "")
+    if not run_id:
+        run_status = "none"
+    elif not run:
+        run_status = "none"
+    urls = list_format.agent_repo_urls(agent, run)
+    return format_list_row(
+        agent_id=str(agent.get("id") or agent_id),
+        agent_status=agent_status,
+        run_status=run_status,
+        name=name,
+        url=url,
+        run_id=run_id,
+        repo_url=urls[0] if urls else "",
+    )
+
+
+def format_list_lines(items: list[Any], repo: str = "") -> list[str]:
+    wanted = (repo or "").strip()
+    if wanted:
+        parsed_items = list(items)
+        lines_by_index: list[str | None] = [None] * len(parsed_items)
+        if parsed_items:
+            workers = min(_FETCH_WORKERS, len(parsed_items))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                pending = {
+                    pool.submit(_filtered_row, item, wanted): idx
+                    for idx, item in enumerate(parsed_items)
+                }
+                for fut in as_completed(pending):
+                    idx = pending[fut]
+                    try:
+                        lines_by_index[idx] = fut.result()
+                    except Exception:
+                        lines_by_index[idx] = None
+        return [line for line in lines_by_index if line]
     base = (os.environ.get("CURSOR_API_BASE") or "https://api.cursor.com").rstrip("/")
     key = os.environ.get("CURSOR_API_KEY") or ""
     timeout = _run_fetch_timeout()
@@ -137,7 +199,7 @@ def format_list_lines(items: list[Any]) -> list[str]:
     return lines
 
 
-def list_from_catalog(*, limit: int | None) -> int:
+def list_from_catalog(*, limit: int | None, repo: str = "") -> int:
     """Paginate GET /v1/agents via nextCursor, then print runStatus rows."""
     here = str(Path(__file__).resolve().parent)
     if here not in sys.path:
@@ -154,7 +216,7 @@ def list_from_catalog(*, limit: int | None) -> int:
     except list_catalog.CatalogError as err:
         print(f"error: list failed ({err})", file=sys.stderr)
         return 1
-    for line in format_list_lines(catalog.items):
+    for line in format_list_lines(catalog.items, repo=repo):
         print(line)
     return 0
 
@@ -173,6 +235,11 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Paginate GET /v1/agents via nextCursor until this many rows.",
     )
+    parser.add_argument(
+        "--repo",
+        default="",
+        help="Keep agents bound to org/name or https://github.com/org/name.",
+    )
     args = parser.parse_args(argv)
     if args.body_json:
         with open(args.body_json, encoding="utf-8") as fh:
@@ -185,10 +252,10 @@ def main(argv: list[str] | None = None) -> int:
             items = []
         if not isinstance(items, list):
             items = []
-        for line in format_list_lines(items):
+        for line in format_list_lines(items, repo=args.repo):
             print(line)
         return 0
-    return list_from_catalog(limit=args.limit)
+    return list_from_catalog(limit=args.limit, repo=args.repo)
 
 
 if __name__ == "__main__":

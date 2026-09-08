@@ -145,9 +145,14 @@ class MockCursorAPI:
                     if api.list_http != 200:
                         self._send(api.list_http, {"error": "list_failed"})
                         return
+                    # Real GET /v1/agents omits repos; details live on GET /v1/agents/{id}.
                     items = []
                     for raw in api.list_items:
-                        item = {k: v for k, v in raw.items() if k != "detailLatestRunId"}
+                        item = {
+                            k: v
+                            for k, v in raw.items()
+                            if k not in ("repos", "runGit", "detailLatestRunId")
+                        }
                         items.append(item)
                     self._send(200, {"items": items})
                     return
@@ -199,14 +204,22 @@ class MockCursorAPI:
                             api._run_i += 1
                         else:
                             status = seq[-1]
-                    self._send(
-                        200,
-                        {
-                            "id": run_id,
-                            "agentId": parts[2],
-                            "status": status,
-                        },
+                    run: dict[str, Any] = {
+                        "id": run_id,
+                        "agentId": parts[2],
+                        "status": status,
+                    }
+                    listed = next(
+                        (
+                            row
+                            for row in api.list_items
+                            if str(row.get("id") or row.get("agentId") or "") == parts[2]
+                        ),
+                        None,
                     )
+                    if listed is not None and listed.get("runGit") is not None:
+                        run["git"] = listed["runGit"]
+                    self._send(200, run)
                     return
                 self._send(404, {"error": "not_found"})
 

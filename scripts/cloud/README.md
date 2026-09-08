@@ -22,7 +22,7 @@ Directors keep calling these bash entrypoints. They route through `scripts/cloud
 | `../launch-cloud-extra-high.sh --name NAME --prompt-file PATH` | Same, prompt from a file (not stuffed on argv) |
 | `../launch-cloud-extra-high.sh --name NAME -` | Same, prompt from stdin |
 | `spawn-waiter.sh --id bc-…` | Register ledger + detached `wait-notify` (auto after launch) |
-| `list.sh` / `list-cloud-agents.sh [limit=20]` | Newest agents; each row prints agent `status` and latest-run `runStatus`. REST walks `nextCursor` when `--limit` exceeds the API page cap (100). Fail-closed if a page errors. |
+| `list.sh` / `list-cloud-agents.sh [--limit N] [--repo org/name]` | Newest agents; each row prints agent `status` and latest-run `runStatus`. `--repo` keeps one bound git remote so Directors can count `runStatus=RUNNING`. REST walks `nextCursor` when `--limit` exceeds the API page cap (100). Fail-closed if a page errors. |
 | `occupancy-count.sh` | Paginated occupancy catalog (`Agent.list` / `GET /v1/agents` via `nextCursor`, page size 100). Prints `CLOUD_OCCUPANCY running= leftover_active= creating= listed= pages=`. Fail-closed `CLOUD_OCCUPANCY_ERR reason=page` if a page errors — never fake `running=0`. |
 | `running-count.sh [--limit N]` | In-flight count for `GCS_CLOUD_REPO`; prints `runStatus` rows then `CLOUD_RUNNING` / `CLOUD_MUST_LAUNCH`. Distinct from occupancy catalog. |
 | `status.sh` / `status-cloud-agent.sh <bc-id> [<bc-id>…] [--ids id,id]` | Compact **runStatus** per id (parallel; not leftover ACTIVE) |
@@ -137,6 +137,25 @@ scripts/cloud/result-cloud-agent.sh bc-…
 #    Never Bot CloudAgent (orchestrator/donald is send.sh).
 scripts/cloud/followup-cloud-agent.sh bc-… "Keep the PR; fix the failing check."
 ```
+
+## List rows: `--repo` and runStatus
+
+Cloud agents stay `ACTIVE` until archive. Execution state lives on the latest
+run. Directors count **live** workers with `runStatus=RUNNING` for the bound
+repo — leftover `ACTIVE`+`FINISHED` is not capacity.
+
+```bash
+scripts/cloud/list-cloud-agents.sh --repo org/name
+scripts/cloud/list.sh --repo https://github.com/org/name
+```
+
+`--repo` accepts `org/name`, `https://github.com/org/name`, a `.git` suffix, or
+`git@github.com:org/name.git`. List items omit `repos`; the filter loads
+`GET /v1/agents/{id}` (and the latest run, including `git.branches[].repoUrl`
+when the agent record has no repos). Unbound agents are dropped when
+`--repo` is set.
+
+Palemon Linear is **Living Sky** (`LIV`), not Black Swan. Never Bot CloudAgent.
 
 ## Terminal run statuses
 
