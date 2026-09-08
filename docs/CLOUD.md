@@ -120,3 +120,8 @@ Palemon Linear is **Living Sky** (`LIV`), never Black Swan.
 Helper: `scripts/cloud/directors_spawn.py` (`cloud_mind_spawn_if_required`).
 
 `status.sh` / `status-cloud-agent.sh` take multiple bc-ids or `--ids a,b,c` and print **`runStatus`** on the same line as `id=` (latest run, not leftover agent `ACTIVE`). Fetches run in parallel so capacity beats do not serial-timeout `get_agent_run`. Does not remint `list.sh` (runStatus already on main). Never Bot CloudAgent.
+
+Fleet floor check (distinct from occupancy catalog #125/#132/#154):
+`scripts/cloud/running-count.sh` prints list `runStatus` rows then
+`CLOUD_RUNNING` / `CLOUD_MUST_LAUNCH`. Directors must `cloud_launch` until
+the target repo has **≥8** in-flight runs (`GCS_CLOUD_MIN_RUNNING`, default 8).

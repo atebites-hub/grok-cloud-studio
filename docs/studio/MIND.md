@@ -134,6 +134,7 @@ PONG is a bug. PONG is not a RESULT line. A2A_REPLY is a duplex caller ping — 
 launch a Cursor Cloud agent or Bot CloudAgent for it. Extra High spawn execs
 `cloud_launch` or `scripts/launch-cloud-extra-high.sh`. Never grok --resume for Cloud create.
 Extra High stays **grok-4.6 xhigh**, `fast=false`.
+Directors must `cloud_launch` until ≥8 in-flight runs per `GCS_CLOUD_REPO` (`GCS_CLOUD_MIN_RUNNING`, default 8). Count latest-run **`runStatus`** (`RUNNING`/`CREATING`). Leftover agent `ACTIVE`+`FINISHED` is not a worker. `list`/`status` print `runStatus`. Check: `scripts/cloud/running-count.sh`. Never Bot CloudAgent.
 
 No ACP WebSocket. No `session/prompt`. No leftover pin-session / HANDOFF regex / 600s no-accept.
 

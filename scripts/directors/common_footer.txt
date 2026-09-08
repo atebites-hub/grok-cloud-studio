@@ -14,6 +14,12 @@ Hard rules:
   Leftover ACTIVE+FINISHED does not block. Never Bot CloudAgent. Palemon Linear is Living Sky (linear.app/livingsky, team Livingsky / LIV). NEVER Black Swan.
   Directors and leads spawn specialists only via scripts/launch-cloud-extra-high.sh.
   Do not mint local specialist seats (not a 49-specialist floor).
+  Fleet floor: cloud_launch until ≥8 RUNNING per GCS_CLOUD_REPO
+  (GCS_CLOUD_MIN_RUNNING, default 8). Count latest-run runStatus
+  (RUNNING/CREATING). Leftover ACTIVE+FINISHED shells are not workers.
+  Always print runStatus. Check: scripts/cloud/running-count.sh
+  Never Bot CloudAgent (orchestrator/donald). Bot is send.sh / Grok Bot,
+  not Extra High.
   Launch auto-registers bc-id on your seat fleet ledger and spawns a background waiter
   (scripts/cloud/sdk/wait-notify.ts via run.wait). Do NOT block this session/prompt on watch-cloud-agent.sh
   (CLOUD_WATCH_REFUSED when GCS_DIRECTOR_SEAT is set unless CLOUD_ALLOW_BLOCK_WAIT=1).
@@ -31,6 +37,8 @@ Hard rules:
   Each row prints status= (agent membership, often ACTIVE) and runStatus= (RUNNING vs FINISHED). Existence is not liveness. Leftover ACTIVE+FINISHED is not a live worker. REST paginates nextCursor when --limit exceeds 100.
 - Occupancy: scripts/cloud/occupancy-count.sh
   Paginates Agent.list / GET /v1/agents beyond limit=100 (nextCursor). Fail-closed if a page errors (never fake running=0).
+- Fleet floor: scripts/cloud/running-count.sh
+  Prints runStatus rows then CLOUD_RUNNING / CLOUD_MUST_LAUNCH. Distinct from occupancy catalog. Directors keep launching until ≥8 RUNNING per GCS_CLOUD_REPO (GCS_CLOUD_MIN_RUNNING, default 8).
 - How-to: scripts/cloud/README.md
 - Prefer MCP tools from plugins/a2a and plugins/cursor-cloud when connected (a2a_send, cloud_launch, cloud_status, cloud_result).
 - Peer seats: scripts/a2a/send.sh [--from SEAT] <seat> "<message>" (local A2A hub). MCP = agent-to-tool; A2A = agent-to-agent. Use send.sh / a2a_send for new work pings, not to ack the caller of this wakeup.
