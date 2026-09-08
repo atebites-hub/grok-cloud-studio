@@ -22,10 +22,13 @@ usage() {
 Usage: recover.sh [--help]
 
 Restart only what health_check would mark down:
-  hub or mind pid down -> scripts/a2a/start-studio-bus.sh start   (NO --daemons;
+  hub /health down -> scripts/a2a/start-studio-bus.sh start   (NO --daemons;
                          bot-bridge stays off unless GCS_BOT_BRIDGE=1.
                          leftover live bot-bridge.pid is evicted; ALREADY
-                         is not a default start)
+                         is not a default start.
+                         When hub /health is already up: do not start the bus
+                         (keep leftover dispatch; bot-bridge stays off).
+                         Down minds stay HEALTH_DEGRADED.)
   taskboard :3010 down -> scripts/studio/taskboard/start-taskboard.sh start
   mcp-http :3011 down  -> scripts/studio/taskboard/mcp-http.sh start
   tailscale on PATH and PALEMON_TAILSCALE_SERVE != 0
@@ -100,12 +103,11 @@ need_ts=0
 if ! gcs_health_hub_ok; then
   need_bus=1
 fi
-while read -r seat; do
-  [[ -z "$seat" ]] && continue
-  if ! gcs_health_mind_ok "$seat"; then
-    need_bus=1
-  fi
-done < <(gcs_health_mind_seats)
+# PAL-25 beat1610: when hub /health is already up, do not start the bus
+# for down minds. start-studio-bus would recycle leftover dispatch when
+# dispatch.mind-seats differs from studio.env (live Palemon layout
+# GCS_A2A_STATE=/workspace/palemon/.a2a-state; never hard-require that path).
+# Bot-bridge stays off (spare). Down minds stay HEALTH_DEGRADED.
 
 if ! gcs_health_taskboard_ok; then
   need_tb=1

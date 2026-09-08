@@ -28,7 +28,10 @@ bash scripts/studio/systemd/install-systemd.sh   # optional boot timer -> recove
 to be up: probe live hub `/health`, taskboard `:3010`, mcp-http `:3011`,
 each `GCS_MIND_SEATS` mind pid, and this beat's Manning apply-log
 (`studio-archive/log/YYYY-MM-DD.md`, hive law LIV-71); restart only the
-down pieces via `start-studio-bus.sh start` (NO `--daemons`),
+down pieces. When hub `/health` is already up, `recover.sh` does **not**
+call `start-studio-bus.sh start` (keep leftover dispatch on live
+`GCS_A2A_STATE=/workspace/palemon/.a2a-state`; bot-bridge stays off). Hub
+`/health` down still starts the bus (NO `--daemons`), plus
 `start-taskboard.sh start`, `mcp-http.sh start`, and
 `start-tailscale-serve.sh start` when Tailscale is on PATH and
 `PALEMON_TAILSCALE_SERVE` is not `0`. Do not remint sessions.

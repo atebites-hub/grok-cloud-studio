@@ -213,7 +213,7 @@ A missing binary returns an error string from the MCP tool. Plugin output is red
 
 Leftover dispatch skips a live `mind/pid` and current `GCS_MIND_SEATS` (`DISPATCH_SKIP reason=mind-owns-inbox`) and does not steal `mind/offset`. On skip it still rotates a huge `inbox.jsonl` from existing `mind/offset` / `wake.offset` so a later leftover harvest cannot reread megabyte consumed tails. It re-reads `mind_seats()` on each poll (does not freeze the set at import), so a long-lived process still skips a newly staffed mind seat even before a bounce.
 
-`start-studio-bus.sh start` recycles leftover dispatch **only** when `.a2a-state/dispatch.mind-seats` differs from the current env / `studio.env` set (missing file is the empty set). Matching keeps `STUDIO_BUS_DISPATCH_ALREADY`. Recycle does not kill hub, fleet-shepherd, seat minds, host ticker, or `grok agent serve`. Default-off `start` / `recover.sh` evict leftover live `bot-bridge.pid` (`ALREADY` only when `GCS_BOT_BRIDGE=1`; do not remint). `start` / `recover.sh` do not start bot-bridge unless `GCS_BOT_BRIDGE=1`.
+`start-studio-bus.sh start` recycles leftover dispatch **only** when `.a2a-state/dispatch.mind-seats` differs from the current env / `studio.env` set (missing file is the empty set). Matching keeps `STUDIO_BUS_DISPATCH_ALREADY`. Recycle does not kill hub, fleet-shepherd, seat minds, host ticker, or `grok agent serve`. Default-off `start` / `recover.sh` evict leftover live `bot-bridge.pid` (`ALREADY` only when `GCS_BOT_BRIDGE=1`; do not remint). `start` / `recover.sh` do not start bot-bridge unless `GCS_BOT_BRIDGE=1`. When hub `/health` is already up, `recover.sh` does not call `start-studio-bus.sh start` (keep leftover dispatch; bot-bridge stays off).
 
 ## Leftover ACP
 
