@@ -58,6 +58,7 @@ scripts/launch-cloud-extra-high.sh "Implement X. Open a PR." "short-name"
 scripts/launch-cloud-extra-high.sh --name short-name --prompt-file /path/to/prompt.txt
 # CLOUD_LAUNCH_OK — do not watch. The SDK waiter A2A-pings the owning seat
 # and REPORT_TO (default studio-ops). Collect on FLEET_DONE:
+scripts/cloud/status-cloud-agent.sh --ids bc-...,bc-...
 scripts/cloud/result-cloud-agent.sh bc-...
 ```
 
@@ -117,3 +118,5 @@ RUNNING. Pick a new Extra High name.
 Palemon Linear is **Living Sky** (`LIV`), never Black Swan.
 
 Helper: `scripts/cloud/directors_spawn.py` (`cloud_mind_spawn_if_required`).
+
+`status.sh` / `status-cloud-agent.sh` take multiple bc-ids or `--ids a,b,c` and print **`runStatus`** on the same line as `id=` (latest run, not leftover agent `ACTIVE`). Fetches run in parallel so capacity beats do not serial-timeout `get_agent_run`. Does not remint `list.sh` (runStatus already on main). Never Bot CloudAgent.

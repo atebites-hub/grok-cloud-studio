@@ -31,7 +31,7 @@ python3 plugins/a2a/server.py
 |---|---|
 | `cloud_launch` | Extra High spawn. Returns after `CLOUD_LAUNCH_OK`; SDK waiter pings with context. Directors never block-wait. |
 | `cloud_list` | `scripts/cloud/list_helper.py` — agent `status` plus latest-run `runStatus` (`RUNNING` vs `FINISHED`). ACTIVE+FINISHED leftovers are not workers |
-| `cloud_status` | `scripts/cloud/status-cloud-agent.sh` |
+| `cloud_status` | `scripts/cloud/status-cloud-agent.sh` (id and/or ids; runStatus per id; non-blocking) |
 | `cloud_result` | `scripts/cloud/result-cloud-agent.sh` (non-blocking context JSON; do not watch) |
 
 ```bash

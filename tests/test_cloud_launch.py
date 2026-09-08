@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import threading
+import time
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -46,7 +47,13 @@ def _script_env(home: Path, base: str, **extra: str) -> dict[str, str]:
     return env
 
 
-def _run(path: Path, args: list[str], env: dict[str, str], stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+def _run(
+    path: Path,
+    args: list[str],
+    env: dict[str, str],
+    stdin: str | None = None,
+    timeout: float = 20,
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", str(path), *args],
         cwd=str(REPO),
@@ -54,7 +61,7 @@ def _run(path: Path, args: list[str], env: dict[str, str], stdin: str | None = N
         text=True,
         env=env,
         input=stdin,
-        timeout=20,
+        timeout=timeout,
     )
 
 
@@ -96,6 +103,7 @@ class MockCursorAPI:
     run_statuses: list[str] = field(default_factory=lambda: ["FINISHED"])
     run_status_by_id: dict[str, str] = field(default_factory=dict)
     run_not_found_ids: set[str] = field(default_factory=set)
+    run_delay_sec: float = 0.0
     followup_http: int = 201
     list_http: int = 200
     posts: list[dict[str, Any]] = field(default_factory=list)
@@ -171,11 +179,14 @@ class MockCursorAPI:
                             "status": (listed or {}).get("status") or "ACTIVE",
                             "url": (listed or {}).get("url") or f"https://cursor.com/agents/{agent_id}",
                             "latestRunId": latest,
+                            "repos": (listed or {}).get("repos") or [],
                         },
                     )
                     return
                 if len(parts) == 5 and parts[:2] == ["v1", "agents"] and parts[3] == "runs":
                     run_id = parts[4]
+                    if api.run_delay_sec > 0:
+                        time.sleep(api.run_delay_sec)
                     if run_id in api.run_not_found_ids:
                         self._send(404, {"error": "not_found"})
                         return
