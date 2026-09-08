@@ -29,6 +29,7 @@ ARCH = REPO / "docs" / "ARCHITECTURE.md"
 TASKBOARD_DOC = REPO / "docs" / "studio" / "TASKBOARD.md"
 CLOUD_README = REPO / "scripts" / "cloud" / "README.md"
 PRUNE_FEATURE = REPO / "tests" / "features" / "fleet_ledger_prune_closed.feature"
+FEATURE = REPO / "tests" / "features" / "shepherd_health_leftover_active.feature"
 
 
 def _load(name: str | None = None) -> ModuleType:
@@ -708,10 +709,125 @@ def test_prune_feature_binds_shepherd_and_ledger() -> None:
     assert "Bot CloudAgent" in text
 
 
+
+def test_health_ok_does_not_treat_leftover_active_finished_as_running(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """TASKBOARD_HEALTH_OK must not make leftover ACTIVE+FINISHED look RUNNING."""
+    state = _base_env(monkeypatch, tmp_path)
+    db = state / "taskboard" / "taskboard.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    db.write_bytes(b"")
+    binary, argv = _fake_taskboard(tmp_path, rc=0)
+    monkeypatch.setenv("TASKBOARD_BIN", str(binary))
+    _plant(
+        state / "ops",
+        [
+            {
+                "bc_id": "bc-leftover-health",
+                "seat": "ops",
+                "status": "open",
+                "notified": False,
+                "run_status": "FINISHED",
+                "agent_status": "ACTIVE",
+                "waiter_pid": None,
+            },
+            {
+                "bc_id": "bc-live-health",
+                "seat": "ops",
+                "status": "open",
+                "notified": False,
+                "waiter_pid": None,
+            },
+        ],
+    )
+    probes: list[str] = []
+
+    def _probe(bc_id: str) -> dict[str, Any]:
+        probes.append(bc_id)
+        return {
+            "runStatus": "RUNNING",
+            "agentStatus": "ACTIVE",
+            "status": "RUNNING",
+        }
+
+    def _no_notify(*_a: Any, **_k: Any) -> None:
+        raise AssertionError("must not notify leftover ACTIVE+FINISHED or live RUNNING")
+
+    mod = _load()
+    _bind(mod, state)
+    mod._probe = _probe  # type: ignore[assignment]
+    mod.notify_owner = _no_notify  # type: ignore[assignment]
+    n = mod._cycle()
+    blob = _log_text(mod)
+    recorded = argv.read_text(encoding="utf-8") if argv.is_file() else ""
+    leftover = json.loads(
+        (state / "ops" / "fleet.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert n == 0
+    assert "TASKBOARD_HEALTH_OK" in blob
+    assert "TASKBOARD_HEALTH_FAIL" not in blob
+    assert "SHEPHERD_SKIP leftover" in blob
+    assert "bc-leftover-health" in blob
+    assert probes == ["bc-live-health"]
+    assert leftover.get("run_status") == "FINISHED"
+    assert leftover.get("run_status") != "RUNNING"
+    assert leftover.get("agent_status") == "ACTIVE"
+    assert f"--db {db} ticket list" in recorded
+    assert "test-cursor-api-key-shepherd-health-not-leaked" not in blob
+
+
+def test_membership_active_payload_is_not_persisted_as_running(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """status=ACTIVE without runStatus is membership, not a live RUNNING run."""
+    state = _base_env(monkeypatch, tmp_path)
+    db = state / "taskboard" / "taskboard.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    db.write_bytes(b"")
+    binary, _argv = _fake_taskboard(tmp_path, rc=0)
+    monkeypatch.setenv("TASKBOARD_BIN", str(binary))
+    _plant(
+        state / "ops",
+        [
+            {
+                "bc_id": "bc-membership",
+                "seat": "ops",
+                "status": "open",
+                "notified": False,
+                "waiter_pid": None,
+            }
+        ],
+    )
+    probes: list[str] = []
+    notifies: list[str] = []
+
+    def _probe(bc_id: str) -> dict[str, Any]:
+        probes.append(bc_id)
+        return {"status": "ACTIVE", "agentStatus": "ACTIVE"}
+
+    mod = _load()
+    _bind(mod, state)
+    mod._probe = _probe  # type: ignore[assignment]
+    mod.notify_owner = lambda bc_id, payload, **kwargs: notifies.append(bc_id)  # type: ignore[assignment]
+    n = mod._cycle()
+    blob = _log_text(mod)
+    row = json.loads((state / "ops" / "fleet.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert n == 0
+    assert probes == ["bc-membership"]
+    assert notifies == []
+    assert "TASKBOARD_HEALTH_OK" in blob
+    assert row.get("run_status") != "RUNNING"
+    assert row.get("run_status") != "ACTIVE"
+    assert row.get("agent_status") == "ACTIVE"
+
+
 def test_scope_does_not_clone_siblings_or_reconnect_ak() -> None:
     text = SHEPHERD.read_text(encoding="utf-8")
     assert "is_leftover_shell" in text
     assert "SHEPHERD_SKIP leftover" in text
+    assert "run_status_from_payload" in text
+    assert "MEMBERSHIP_NOT_LIVENESS" in text
     assert "prune_closed_leftovers" in text
     assert "SHEPHERD_PRUNE" in text
     assert "agent-kanban" not in text
@@ -733,6 +849,9 @@ def test_docs_name_taskboard_health_tokens() -> None:
     board = TASKBOARD_DOC.read_text(encoding="utf-8")
     cloud = CLOUD_README.read_text(encoding="utf-8")
     blob = arch + "\n" + board + "\n" + cloud
+    fold = " ".join(blob.lower().split())
+    feature = FEATURE.read_text(encoding="utf-8")
+    assert FEATURE.is_file()
     assert "TASKBOARD_HEALTH_OK" in blob
     assert "TASKBOARD_HEALTH_FAIL" in blob
     assert "ticket list" in blob
@@ -742,6 +861,9 @@ def test_docs_name_taskboard_health_tokens() -> None:
     assert "does not `get_agent_run`" in cloud
     assert "paged as live" in (arch + "\n" + cloud).lower()
     assert "prune_closed_leftovers" in cloud
+    assert "not live running" in fold or "not a live running" in fold
+    assert "leftover ACTIVE" in feature or "leftover ACTIVE+FINISHED" in feature
+    assert "not live RUNNING" in feature
     assert "ak start" not in board or "do not" in board.lower()
     if "Black Swan" in blob:
         assert "never" in blob.lower()

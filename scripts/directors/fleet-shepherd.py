@@ -16,6 +16,8 @@ Open leftover shells stay. RUNNING is not cancelled. Local studio. Stdlib
 Each cycle also probes tcarac/taskboard health: the SQLite DB file plus
 `ticket list` or HTTP /mcp. Logs TASKBOARD_HEALTH_OK or TASKBOARD_HEALTH_FAIL.
 Does not start the board, install seat MCP, or reconnect Agent Kanban.
+Leftover ACTIVE+FINISHED Extra High is not live RUNNING: agent membership
+ACTIVE is not runStatus. Health OK does not get_agent_run those leftovers.
 """
 from __future__ import annotations
 
@@ -34,12 +36,13 @@ _CLOUD = Path(__file__).resolve().parents[1] / "cloud"
 if str(_CLOUD) not in sys.path:
     sys.path.insert(0, str(_CLOUD))
 from fleet_ledger import (
+    MEMBERSHIP_NOT_LIVENESS,
     is_leftover_shell,
     is_orphan,
     load_entries,
-    normalize_run_status,
     notify_owner,
     prune_closed_leftovers,
+    run_status_from_payload,
     sweep_stale_waiters,
     write_entries,
 )
@@ -266,9 +269,14 @@ def _cycle() -> int:
                 dirty = True
                 _log(f"SHEPHERD_ORPHAN_EMPTY seat={seat_dir.name} id={bc_id}")
                 continue
-            run_status = normalize_run_status(payload.get("runStatus") or payload.get("status") or "")
+            run_status = run_status_from_payload(payload)
             e["run_status"] = run_status
-            e["agent_status"] = payload.get("agentStatus")
+            agent_status = payload.get("agentStatus")
+            if not agent_status:
+                membership = str(payload.get("status") or "").strip().upper()
+                if membership in MEMBERSHIP_NOT_LIVENESS:
+                    agent_status = membership
+            e["agent_status"] = agent_status
             e["pr_url"] = payload.get("prUrl")
             e["last_probe"] = _now()
             dirty = True

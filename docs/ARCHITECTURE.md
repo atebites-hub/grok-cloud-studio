@@ -90,7 +90,9 @@ Each shepherd cycle also probes tcarac/taskboard: the SQLite DB file
 `TASKBOARD_HEALTH_OK` or `TASKBOARD_HEALTH_FAIL`. GET `/health` alone is
 not enough. The health probe does not start the board, install seat
 stdio MCP, or reconnect Agent Kanban. The orphan cycle skips leftover
-`ACTIVE`+`FINISHED` shells and does not `get_agent_run` them. It also
+`ACTIVE`+`FINISHED` shells and does not `get_agent_run` them. Leftover
+`ACTIVE`+`FINISHED` Extra High is not live RUNNING: agent membership
+`ACTIVE` is not `runStatus`. It also
 prunes closed leftover `FINISHED`/`CANCELLED` rows from `fleet.jsonl`
 so they are not paged as live. Open leftover shells stay. `RUNNING` is
 not cancelled.

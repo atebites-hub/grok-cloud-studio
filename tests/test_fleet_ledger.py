@@ -35,6 +35,7 @@ from fleet_ledger import (  # noqa: E402
     register,
     resolve_draft,
     resolve_mergeable,
+    run_status_from_payload,
     waiter_alive,
     write_entries,
 )
@@ -960,4 +961,23 @@ def test_active_running_orphan_is_not_leftover() -> None:
     assert is_leftover_shell(row) is False
     assert is_leftover_shell(row, {"agentStatus": "ACTIVE", "runStatus": "RUNNING"}) is False
     assert is_orphan(row) is True
+
+
+def test_run_status_from_payload_ignores_membership_active() -> None:
+    """Agent status=ACTIVE is membership, not latest-run liveness."""
+    leftover = {"status": "ACTIVE", "agentStatus": "ACTIVE", "runStatus": "FINISHED"}
+    membership_only = {"status": "ACTIVE", "agentStatus": "ACTIVE"}
+    live = {"status": "ACTIVE", "agentStatus": "ACTIVE", "runStatus": "RUNNING"}
+    mixed = {"status": "RUNNING", "runStatus": "FINISHED"}
+    assert run_status_from_payload(leftover) == "FINISHED"
+    assert run_status_from_payload(leftover) != "RUNNING"
+    assert run_status_from_payload(membership_only) == "unknown"
+    assert run_status_from_payload(membership_only) != "RUNNING"
+    assert run_status_from_payload(membership_only) != "ACTIVE"
+    assert run_status_from_payload(live) == "RUNNING"
+    assert run_status_from_payload(mixed) == "FINISHED"
+    row = {"bc_id": "bc-mem", "status": "open", "notified": False}
+    assert is_leftover_shell(row, leftover) is True
+    assert is_leftover_shell(row, membership_only) is False
+    assert is_leftover_shell(row, live) is False
 
