@@ -1,5 +1,8 @@
 # Architecture
 
+Hive narrative (Living Sky LIV-62 Linear document):
+[`docs/studio/HIVE.md`](studio/HIVE.md). Hermes v0.21 gap analysis (do not
+vendor, not a copy of Hermes): [`docs/studio/HERMES_GAP.md`](studio/HERMES_GAP.md).
 LIV-62 remaining after GCS PR #47 (Hermes pin + stay-up as grok mind, not a
 vendor): [`docs/studio/HERMES_REMAINING.md`](studio/HERMES_REMAINING.md).
 BDD: [`tests/features/liv62_hermes_pin_stay_up.feature`](../tests/features/liv62_hermes_pin_stay_up.feature).
