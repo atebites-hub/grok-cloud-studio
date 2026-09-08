@@ -110,7 +110,10 @@ archive Done/Canceled via GraphQL `scripts/linear_archive_closed.py`. Do **not**
 delete (`issueDelete` / GCS #45 purge is the wrong mechanic). Linear MCP has no
 archive mutation. LIV-82 director comments use GraphQL `commentCreate` in
 `scripts/linear_comment.py` (`linear_key.py` / `$GCS_A2A_STATE/linear.env`;
-dry-run default; Living Sky only). Never Black Swan Money. Operator notes:
+dry-run default; Living Sky only). When `LINEAR_API_KEY` is unset and Linear
+MCP is `needsAuth`, hive stamp is STATUS evidence only:
+`scripts/linear_stamp.py` prints `LINEAR_STAMP_FAIL` with no comment id and
+never calls `mcp_auth`. Never Black Swan Money. Operator notes:
 `docs/studio/LINEAR.md`.
 
 ## Prompts

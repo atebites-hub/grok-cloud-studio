@@ -120,6 +120,9 @@ python3 scripts/linear_archive_closed.py --apply  # close stale, then issueArchi
 # LIV-82: director GraphQL commentCreate (dry-run default; Living Sky only)
 python3 scripts/linear_comment.py --issue LIV-82 --body "..."
 python3 scripts/linear_comment.py --issue LIV-82 --body "..." --apply
+
+# LIV-82: hive stamp is STATUS evidence when LINEAR_API_KEY unset + MCP needsAuth
+python3 scripts/linear_stamp.py --issue LIV-82 --mcp-status needsAuth
 ```
 
 Details: [docs/studio/LINEAR.md](docs/studio/LINEAR.md).

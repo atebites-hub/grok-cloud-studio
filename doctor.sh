@@ -52,6 +52,7 @@ for p in \
   docs/studio/LINEAR.md \
   scripts/linear_archive_closed.py \
   scripts/linear_comment.py \
+  scripts/linear_stamp.py \
   studio.env.example \
   setup.sh \
   cleanup.sh \
