@@ -39,3 +39,18 @@ skips any non-Living-Sky team even if Done. The unique remaining purge script
 does **not** call `issueArchive`. It never deletes issues whose workflow type is
 triage / backlog / unstarted / started, and it never deletes a non-Living-Sky
 team.
+
+## LIV-82 GraphQL comment (directors)
+
+Directors stamp Living Sky issues via GraphQL `commentCreate` in
+`scripts/linear_comment.py`. This is not Linear MCP leftover. Auth is
+`scripts/directors/linear_key.py` (`$GCS_A2A_STATE/linear.env`). Never print
+the key. Refuse non-Living-Sky teams. Dry-run is the default.
+
+```bash
+# Look up LIV-82 and print would-comment. Does not mutate.
+python3 scripts/linear_comment.py --issue LIV-82 --body "..."
+
+# Post the comment.
+python3 scripts/linear_comment.py --issue LIV-82 --body "..." --apply
+```

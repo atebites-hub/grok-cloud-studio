@@ -116,6 +116,10 @@ has no archive mutation.
 ```bash
 python3 scripts/linear_archive_closed.py          # dry-run
 python3 scripts/linear_archive_closed.py --apply  # close stale, then issueArchive
+
+# LIV-82: director GraphQL commentCreate (dry-run default; Living Sky only)
+python3 scripts/linear_comment.py --issue LIV-82 --body "..."
+python3 scripts/linear_comment.py --issue LIV-82 --body "..." --apply
 ```
 
 Details: [docs/studio/LINEAR.md](docs/studio/LINEAR.md).
