@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Minimal local A2A HTTP+JSON hub for Grok Cloud Studio seats.
 
-Stdlib only. Serves Agent Cards, Send Message, Get/List/Cancel Task.
-This hub is the enqueue bus: it appends per-seat inbox JSONL and
-returns TASK_STATE_SUBMITTED. Mail stays queued until the Grok Build
-mind harvests that line and the runner exits 0 (then COMPLETED).
-Enqueue is not done. Do not treat send as a fake ACP HANDOFF.
-Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not mind-turn done.
-send.sh binds kind=receipt from the receipt artifact; that ACK is not
-MIND_TURN. Mail is consumed only after grok/cursor runner exit 0.
+Stdlib plus scripts/a2a/lib.py (canonical_seat). Serves Agent Cards,
+Send Message, Get/List/Cancel Task. This hub is the enqueue bus: it
+appends per-seat inbox JSONL and returns TASK_STATE_SUBMITTED. Mail stays
+queued until the Grok Build mind harvests that line and the runner exits
+0 (then COMPLETED). Enqueue is not done. Do not treat send as a fake ACP
+HANDOFF. Hub TASK_STATE_COMPLETED / A2A ACK is a receipt, not mind-turn
+done. send.sh binds kind=receipt from the receipt artifact; that ACK is
+not MIND_TURN. Mail is consumed only after grok/cursor runner exit 0.
+Seat aliases (donald → orchestrator Bot) resolve before card lookup so
+skipSeats back-compat names still land mail.
+
 
 Auto-wake of Grok Build Director seats is handled separately by
 scripts/a2a/dispatch.py (standing inbox poller) and

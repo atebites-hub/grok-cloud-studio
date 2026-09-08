@@ -1,8 +1,10 @@
 """FAT: duplex A2A_REPLY must succeed after Director RESULT.
 
-skipSeat donald has no shipped Agent Card — hub POST /a2a/donald/message:send
-404s. Duplex must remap A2A_REPLY to floor-ops (then orchestrator) so notify
-does not 404, and must not fail the working-seat task reply if ping is skipped.
+skipSeat donald has no shipped Agent Card. send.sh donald / hub POST
+alias onto orchestrator so Bot capacity ACK lands. Duplex must still
+remap A2A_REPLY to floor-ops (then orchestrator) so notify does not
+target the donald token, and must not fail the working-seat task reply
+if ping is skipped.
 
 Living Sky LIV. Distinct from leftover GCS #133/#99 (do not rebase).
 Not LIV-85 / LIV-67 / LIV-41. Never Bot CloudAgent. Never vendor Hermes.
@@ -292,22 +294,25 @@ def test_duplex_send_fail_does_not_fail_task_reply(tmp_path: Path) -> None:
     assert "director-result" in json.dumps(tasks)
 
 
-def test_hub_donald_404s_but_duplex_notify_uses_floor_ops(
+def test_hub_donald_aliases_orchestrator_but_duplex_notify_uses_floor_ops(
     hub: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Hub has no donald card (404). Duplex A2A_REPLY must land on floor-ops."""
+    """send.sh donald lands on orchestrator. Duplex A2A_REPLY still uses floor-ops."""
     env = hub["env"]
     proc = subprocess.run(
-        ["bash", str(SEND_SH), "--from", "duplex", "donald", "should-404"],
+        ["bash", str(SEND_SH), "--from", "duplex", "donald", "CAPACITY_ACK alias"],
         cwd=str(REPO),
         env=env,
         capture_output=True,
         text=True,
         timeout=10,
     )
-    assert proc.returncode != 0
-    assert "404" in proc.stderr or "unknown seat" in proc.stderr
-    assert "A2A_SEND_OK" not in proc.stdout
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "A2A_SEND_OK" in proc.stdout
+    assert "seat=orchestrator" in proc.stdout
+    orch_inbox = Path(hub["state"]) / "orchestrator" / "inbox.jsonl"
+    assert orch_inbox.is_file()
+    assert not (Path(hub["state"]) / "donald" / "inbox.jsonl").exists()
 
     duplex = _load(DUPLEX_PY, "gcs_duplex_skip_hub")
     monkeypatch.setenv("GCS_A2A_HUB", hub["url"])

@@ -50,6 +50,8 @@ if [[ -z "$SEAT" || -z "$TEXT" ]]; then
 fi
 
 export GCS_ROOT="${GCS_ROOT:-$ROOT}"
+# donald → orchestrator (Bot) when donald is skipSeats-only. First-class
+# registry names still win. Capacity ACK must land in the Bot inbox.
 SEAT="$(python3 "$ROOT/scripts/a2a/lib.py" canonical "$SEAT")"
 if [[ -n "$FROM_SEAT" ]]; then
   FROM_SEAT="$(python3 "$ROOT/scripts/a2a/lib.py" canonical "$FROM_SEAT")"
