@@ -57,6 +57,9 @@ for p in \
   scripts/studio/liv84_art_env.py \
   scripts/studio/apply_log.py \
   docs/studio/HIVE.md \
+  docs/studio/PYTEST.md \
+  scripts/gcs_pytest_isolate.py \
+  tests/conftest.py \
   .gitmodules \
   .cursor/mcp.json \
   scripts/studio/taskboard/run-mcp.sh \
@@ -208,6 +211,16 @@ if python3 "$ROOT/scripts/secret_scan.py" --root "$ROOT"; then
   ok "secret_scan=clean"
 else
   bad "secret_scan failed"
+fi
+
+_iso_py=python3
+if [[ -x "$ROOT/.venv/bin/python" ]]; then
+  _iso_py="$ROOT/.venv/bin/python"
+fi
+if "$_iso_py" "$ROOT/scripts/gcs_pytest_isolate.py" --check --root "$ROOT"; then
+  ok "pytest live-bus isolation"
+else
+  bad "pytest live-bus isolation (plugin/conftest/ship-gate unset; see docs/studio/PYTEST.md)"
 fi
 
 # Isolated GROK_HOME does not inherit ~/.grok/config.toml. Cursor

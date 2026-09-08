@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import socket
 import stat
 import subprocess
 import sys
@@ -30,6 +31,12 @@ AGENTS_DOC = REPO / "AGENTS.md"
 A2A_DOC = REPO / "docs" / "A2A.md"
 ARCH_DOC = REPO / "docs" / "ARCHITECTURE.md"
 PLUGIN_DIR = REPO / "plugins" / "studio-mind"
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 def _load(path: Path, name: str) -> ModuleType:
@@ -1065,6 +1072,7 @@ def _bus_env(state: Path, extra: dict[str, str] | None = None) -> dict[str, str]
         {
             "GCS_ROOT": str(REPO),
             "GCS_A2A_STATE": str(state),
+            "GCS_A2A_PORT": str(_free_port()),
             "GCS_START_SEAT_DAEMONS": "0",
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "LC_ALL": "C",

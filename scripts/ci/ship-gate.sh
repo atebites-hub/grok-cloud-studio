@@ -16,6 +16,11 @@ if [[ ! -f scripts/secret_scan.py ]]; then
   exit 1
 fi
 
+# Isolated pytest must not inherit the live Palemon bus (docs/studio/PYTEST.md).
+# Do not talk to :8732. Do not start the live bus from this gate.
+unset GCS_ACP_SEATS GCS_MIND_SEATS GCS_A2A_STATE GCS_A2A_REGISTRY GCS_TASKBOARD_DB
+unset PALEMON_A2A_STATE TASKBOARD_DB
+
 # Capture pytest so we can require N passed.
 set +e
 pytest_out="$(.venv/bin/pytest -q 2>&1)"

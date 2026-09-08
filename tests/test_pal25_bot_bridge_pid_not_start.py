@@ -68,6 +68,7 @@ def _base_env(tmp_path: Path, state: Path) -> dict[str, str]:
         "HOME": str(home),
         "GCS_ROOT": str(REPO),
         "GCS_A2A_STATE": str(state),
+        "GCS_A2A_PORT": str(_free_port()),
         "GCS_MIND_SEATS": "",
         "GCS_BOT_BIND_OPTIONAL": "1",
         "GCS_START_SEAT_DAEMONS": "0",

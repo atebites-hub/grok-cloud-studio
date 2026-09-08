@@ -126,6 +126,9 @@ Details: [docs/studio/LINEAR.md](docs/studio/LINEAR.md).
 
 ## Tests + secret scan
 
+Isolated pytest must not inherit the live Palemon bus (`GCS_A2A_STATE`,
+`:8732`). Required plugin: [`docs/studio/PYTEST.md`](docs/studio/PYTEST.md).
+
 ```bash
 .venv/bin/pytest -q
 python3 scripts/secret_scan.py

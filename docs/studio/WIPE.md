@@ -293,6 +293,9 @@ purge-delete. See `docs/studio/LINEAR.md`. Do not merge GCS #45.
 python3 scripts/secret_scan.py
 ```
 
+Isolated pytest unsets live Palemon bus env and refuses `:8732` (see
+[`PYTEST.md`](PYTEST.md)). Do not run pytest against the live hub.
+
 `./doctor.sh` **WARN**s (does not FAIL) if `grok`, `agent`/`cursor-grok`, or
 `taskboard` is missing. It **FAIL**s if Cursor Cloud launch-plane is missing
 (`GCS_CLOUD_REPO` / `CLOUD_REPO_URL`, `CURSOR_API_KEY` set boolean-only via

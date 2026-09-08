@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -31,6 +32,13 @@ A2A_DOC = REPO / "docs" / "A2A.md"
 MIND_DOC = REPO / "docs" / "studio" / "MIND.md"
 SPAWN = REPO / "scripts" / "cloud" / "directors_spawn.py"
 PRIVATE_GAME = "atebites-hub/" + "palemon"
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
 
 CCGS_LEAD_ALIASES = {
     "producer": "floor-ops",
@@ -299,6 +307,7 @@ def test_bus_start_does_not_mint_unmapped_specialist_dirs(tmp_path: Path) -> Non
         {
             "GCS_ROOT": str(REPO),
             "GCS_A2A_STATE": str(state),
+            "GCS_A2A_PORT": str(_free_port()),
             "GCS_MIND_SEATS": "audio,narrative,producer,composer,narrative-designer",
             "GCS_GROW_SEATS": "floor,composer,sound-designer",
             "GCS_ACP_SEATS": "floor,studio-ops",
