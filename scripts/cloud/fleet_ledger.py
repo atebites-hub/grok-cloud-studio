@@ -25,8 +25,10 @@ evicted durably (waiter_pid null, waiter_tombstone) so a reused pid cannot
 look live and shepherd can orphan-notify once.
 
 Closed leftover rows (notified, status=closed, latest run
-FINISHED/ERROR/CANCELLED/EXPIRED) can be dropped with
-`python3 scripts/cloud/fleet_ledger.py prune`.
+FINISHED/ERROR/CANCELLED/EXPIRED; US CANCELED maps to CANCELLED) can be
+dropped with `python3 scripts/cloud/fleet_ledger.py prune`. fleet-shepherd
+prunes those rows each cycle so they are not paged as live. Open leftover
+shells stay. RUNNING is not cancelled.
 """
 from __future__ import annotations
 
@@ -269,7 +271,9 @@ def is_orphan(entry: dict[str, Any]) -> bool:
 
 
 def _latest_run_status(entry: dict[str, Any]) -> str:
-    return str(entry.get("run_status") or entry.get("runStatus") or "").strip().upper()
+    return normalize_run_status(
+        entry.get("run_status") or entry.get("runStatus") or ""
+    )
 
 
 def is_leftover_shell(
@@ -297,9 +301,9 @@ def is_closed_leftover(entry: dict[str, Any]) -> bool:
     """True when a leftover fleet.jsonl row is already closed.
 
     Closed leftover: notified, ledger status closed, and latest run is
-    FINISHED/ERROR/CANCELLED/EXPIRED. Open leftover shells (ACTIVE +
-    FINISHED, not yet notified) stay on the ledger. Ledger fields only;
-    this does not probe Cursor Cloud or A2A-ping.
+    FINISHED/ERROR/CANCELLED/EXPIRED (US CANCELED → CANCELLED). Open leftover
+    shells (ACTIVE + FINISHED, not yet notified) stay on the ledger. Ledger
+    fields only; this does not probe Cursor Cloud, cancel a run, or A2A-ping.
     """
     if not entry.get("notified"):
         return False
@@ -316,16 +320,16 @@ def _prune_record(seat: str, entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _seat_dirs(seat: str | None = None) -> list[Path]:
-    state = _state()
+def _seat_dirs(seat: str | None = None, *, state: Path | None = None) -> list[Path]:
+    root = state or _state()
     if seat:
-        path = state / seat
+        path = root / seat
         return [path] if path.is_dir() else []
-    if not state.is_dir():
+    if not root.is_dir():
         return []
     return [
         path
-        for path in sorted(state.iterdir())
+        for path in sorted(root.iterdir())
         if path.is_dir() and not path.name.startswith(".")
     ]
 
@@ -334,6 +338,7 @@ def prune_closed_leftovers(
     *,
     seat: str | None = None,
     dry_run: bool = False,
+    state: Path | None = None,
 ) -> dict[str, Any]:
     """Drop closed leftover rows from fleet.jsonl. Ledger-only; no API probe."""
     empty: dict[str, Any] = {
@@ -342,13 +347,14 @@ def prune_closed_leftovers(
         "kept_count": 0,
         "pruned": [],
     }
+    root = state or _state()
     if seat:
-        seat_path = _state() / seat
+        seat_path = root / seat
         if not seat_path.is_dir():
             return {**empty, "error": f"unknown seat={seat}"}
     pruned: list[dict[str, Any]] = []
     kept_count = 0
-    for seat_dir in _seat_dirs(seat):
+    for seat_dir in _seat_dirs(seat, state=root):
         path = seat_dir / "fleet.jsonl"
         entries = load_entries(path)
         if not entries:

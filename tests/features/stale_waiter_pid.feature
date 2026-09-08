@@ -54,3 +54,4 @@ Feature: stale Extra High waiter_pid is not liveness
     And notified_by is shepherd
     When fleet-shepherd.py --once runs again
     Then no second ping
+    And the closed leftover is pruned from fleet.jsonl
