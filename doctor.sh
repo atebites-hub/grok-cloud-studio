@@ -47,6 +47,7 @@ for p in \
   docs/studio/WIPE.md \
   docs/studio/LINEAR.md \
   scripts/linear_archive_closed.py \
+  scripts/linear_comment.py \
   studio.env.example \
   setup.sh \
   cleanup.sh \

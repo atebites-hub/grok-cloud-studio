@@ -100,7 +100,10 @@ does not A2A-ping again. The webhook path does not call `get_agent_run`.
 Free-tier **200**-issue cap (LIV-76): close stale Living Sky tickets and
 archive Done/Canceled via GraphQL `scripts/linear_archive_closed.py`. Do **not**
 delete (`issueDelete` / GCS #45 purge is the wrong mechanic). Linear MCP has no
-archive mutation. Never Black Swan Money. Operator notes: `docs/studio/LINEAR.md`.
+archive mutation. LIV-82 director comments use GraphQL `commentCreate` in
+`scripts/linear_comment.py` (`linear_key.py` / `$GCS_A2A_STATE/linear.env`;
+dry-run default; Living Sky only). Never Black Swan Money. Operator notes:
+`docs/studio/LINEAR.md`.
 
 ## Prompts
 
