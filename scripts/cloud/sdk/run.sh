@@ -36,8 +36,10 @@ if ! NODE_BIN="$("$ENSURE")"; then
   echo "CLOUD_SDK_ERR: Node >= 22.13 required for @cursor/sdk (see scripts/cloud/README.md)" >&2
   exit 75
 fi
-NODE_HOME="$(cd "$(dirname "$NODE_BIN")/.." && pwd)"
-export PATH="${NODE_HOME}/bin:${PATH}"
+# Prepend the resolved binary's directory so GCS_NODE works even when it is
+# not named .../bin/node (official tarball cache still lives under bin/).
+NODE_BIN_DIR="$(cd "$(dirname "$NODE_BIN")" && pwd)"
+export PATH="${NODE_BIN_DIR}:${PATH}"
 export NODE_NO_WARNINGS="${NODE_NO_WARNINGS:-1}"
 
 if [[ ! -d "$SDK_DIR/node_modules/@cursor/sdk" ]]; then
