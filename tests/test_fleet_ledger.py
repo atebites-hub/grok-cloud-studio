@@ -1,5 +1,6 @@
-"""Fleet ledger orphan predicate, closed-leftover prune, notify idempotency,
-FLEET_DONE mergeable=CONFLICTING HOLD squash, and FLEET_DONE draft PR ping.
+"""Fleet ledger orphan predicate, leftover-shell skip, closed-leftover prune,
+notify idempotency, FLEET_DONE mergeable=CONFLICTING HOLD squash, and
+FLEET_DONE draft PR ping.
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from fleet_ledger import (  # noqa: E402
     github_pr_is_draft,
     github_pr_mergeable,
     is_closed_leftover,
+    is_leftover_shell,
     is_orphan,
     load_entries,
     map_github_mergeable,
@@ -135,6 +137,7 @@ def test_closed_leftover_when_notified_and_terminal() -> None:
             run_status=run_status,
         )
         assert is_closed_leftover(row) is True, run_status
+        assert is_leftover_shell(row) is True, run_status
 
 
 def test_open_finished_shell_is_not_closed_leftover() -> None:
@@ -148,11 +151,15 @@ def test_open_finished_shell_is_not_closed_leftover() -> None:
     )
     assert is_orphan(row) is True
     assert is_closed_leftover(row) is False
+    assert is_leftover_shell(row) is True
+    assert is_leftover_shell(row, {"agentStatus": "ACTIVE", "runStatus": "FINISHED"}) is True
 
 
 def test_running_row_is_not_closed_leftover() -> None:
     row = _row("bc-running", status="open", notified=False, run_status="RUNNING")
     assert is_closed_leftover(row) is False
+    assert is_leftover_shell(row) is False
+    assert is_leftover_shell(row, {"agentStatus": "ACTIVE", "runStatus": "RUNNING"}) is False
 
 
 def test_closed_without_terminal_run_is_not_prunable() -> None:
@@ -863,4 +870,45 @@ def test_notify_owner_draft_ping_skips_merge_request(tmp_path: Path, monkeypatch
     assert "draft=true" in text
     assert MERGE_READY not in text
     assert row.get("draft") is True
+
+
+def test_leftover_shell_notified_closed() -> None:
+    row = {
+        "bc_id": "bc-closed",
+        "status": "closed",
+        "notified": True,
+        "notified_by": "waiter",
+        "run_status": "FINISHED",
+    }
+    assert is_leftover_shell(row) is True
+    assert is_orphan(row) is False
+
+
+def test_leftover_shell_latest_run_finished_is_not_a_live_worker() -> None:
+    """ACTIVE membership + FINISHED run is leftover even if the ledger row is still open."""
+    row = {
+        "bc_id": "bc-left",
+        "status": "open",
+        "notified": False,
+        "run_status": "FINISHED",
+        "agent_status": "ACTIVE",
+        "waiter_pid": None,
+    }
+    assert is_orphan(row) is True
+    assert is_leftover_shell(row) is True
+    assert is_leftover_shell(row, {"agentStatus": "ACTIVE", "runStatus": "FINISHED"}) is True
+
+
+def test_active_running_orphan_is_not_leftover() -> None:
+    row = {
+        "bc_id": "bc-live",
+        "status": "open",
+        "notified": False,
+        "run_status": "RUNNING",
+        "agent_status": "ACTIVE",
+        "waiter_pid": None,
+    }
+    assert is_leftover_shell(row) is False
+    assert is_leftover_shell(row, {"agentStatus": "ACTIVE", "runStatus": "RUNNING"}) is False
+    assert is_orphan(row) is True
 

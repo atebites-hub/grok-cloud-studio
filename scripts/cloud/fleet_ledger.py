@@ -6,7 +6,10 @@ Each owning seat keeps `.a2a-state/<seat>/fleet.jsonl` rows:
   {bc_id, seat, run_id, name, status, notified, waiter_pid, notified_by, ...}
 
 The per-launch waiter is the primary completion path. fleet-shepherd is an
-orphan-only safety net (no live waiter_pid, never notified_by=waiter).
+orphan-only safety net (no live waiter_pid, never notified_by=waiter). It
+skips leftover shells: notified closed rows, and agents whose latest run is
+already FINISHED (Cursor Cloud membership stays ACTIVE until archive).
+Probing those with get_agent_run burns the hourly cap and looks like spinning.
 
 FLEET_DONE HOLDs GitHub draft PRs (`draft=true`, not MERGE_REQUEST-ready)
 and PRs with empty checks (MERGEABLE+empty CI is leftover-green theatre;
@@ -256,6 +259,27 @@ def is_orphan(entry: dict[str, Any]) -> bool:
 
 def _latest_run_status(entry: dict[str, Any]) -> str:
     return str(entry.get("run_status") or entry.get("runStatus") or "").strip().upper()
+
+
+def is_leftover_shell(
+    entry: dict[str, Any],
+    payload: dict[str, Any] | None = None,
+) -> bool:
+    """Skip ACTIVE+FINISHED leftover Cloud membership, not a live worker.
+
+    Agent ``status`` stays ACTIVE until archive. A notified closed ledger
+    row, or a row whose latest run is already FINISHED, must not be probed
+    with get_agent_run (hourly cap + looks like spinning workers). Open
+    leftover shells stay on the ledger; is_closed_leftover prune is separate.
+    """
+    if entry.get("notified") and entry.get("status") == "closed":
+        return True
+    run_status = ""
+    if payload is not None:
+        run_status = str(payload.get("runStatus") or "").strip()
+    if not run_status:
+        run_status = _latest_run_status(entry)
+    return run_status.upper() == "FINISHED"
 
 
 def is_closed_leftover(entry: dict[str, Any]) -> bool:
