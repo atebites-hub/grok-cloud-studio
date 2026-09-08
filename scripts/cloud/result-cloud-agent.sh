@@ -2,6 +2,8 @@
 # Print result/context JSON for a Cursor Cloud agent.
 # Canonical: @cursor/sdk. REST curl = fallback (CURSOR_API_BASE / CLOUD_FORCE_REST).
 # JSON includes bound repos[0].url as repoUrl (game vs studio targeting).
+# prUrl URL vs none: FINISHED + prUrl none → directorAction=CLOSE
+# (leftover of merged shard is CLOSE; no MERGE_REQUEST, no twin Extra High).
 # Usage: result-cloud-agent.sh <bc-id>
 set -euo pipefail
 

@@ -11,6 +11,7 @@ import {
   type BoundRepo,
 } from "./common.ts";
 import { attachShipGate } from "./pr-checks.ts";
+import { attachDirectorAction } from "./collect-close.ts";
 
 export type DirectorResult = {
   agentId: string;
@@ -32,6 +33,7 @@ export type DirectorResult = {
   checkRuns?: number;
   mergeableState?: string | null;
   shipGateOk?: boolean;
+  directorAction?: "CLOSE" | null;
 };
 
 async function latestRun(
@@ -58,21 +60,24 @@ export async function collectResult(agentId: string, runId?: string): Promise<Di
     .map((b) => b.branch)
     .filter((b): b is string => Boolean(b));
   const runStatus = run ? mapRunStatus(run.status) : null;
-  return attachShipGate({
-    agentId: info.agentId || agentId,
-    name: info.name || "",
-    url: agentUrl(info.agentId || agentId),
-    runId: run?.id ?? null,
-    status: runStatus,
-    agentStatus: mapAgentStatus(info.status),
-    runStatus,
-    prUrl: git.prUrl || null,
-    branches,
-    branch: git.branch || null,
-    summary: info.summary || null,
-    result: run?.result ?? null,
-    error: runErrorPayload(run?.error),
-    repoUrl: boundRepoUrl(info, run),
-    repos: boundRepos(info),
-  });
+  // prUrl none + FINISHED → directorAction CLOSE (leftover of merged shard).
+  return attachShipGate(
+    attachDirectorAction({
+      agentId: info.agentId || agentId,
+      name: info.name || "",
+      url: agentUrl(info.agentId || agentId),
+      runId: run?.id ?? null,
+      status: runStatus,
+      agentStatus: mapAgentStatus(info.status),
+      runStatus,
+      prUrl: git.prUrl || null,
+      branches,
+      branch: git.branch || null,
+      summary: info.summary || null,
+      result: run?.result ?? null,
+      error: runErrorPayload(run?.error),
+      repoUrl: boundRepoUrl(info, run),
+      repos: boundRepos(info),
+    }),
+  );
 }

@@ -39,6 +39,8 @@ launch-cloud-extra-high.sh → @cursor/sdk Agent.create
                            → A2A ping owning seat + REPORT_TO (default studio-ops) with context
                            leftover FINISHED is not done while a newer run is CREATING/RUNNING
                            CANCELLED latest + prUrl → FLEET_DONE / INSPECT (not MERGE_REQUEST)
+                           collect prUrl URL vs none; FINISHED + prUrl none → CLOSE
+                           (leftover of merged shard is CLOSE; no MERGE_REQUEST, no twin)
                            Directors never block-wait; collect via result-cloud-agent.sh.
 
 fleet-shepherd.py = orphan-only Extra High safety net (no live waiter_pid; dead waiter_pid is evicted;
@@ -80,7 +82,7 @@ MERGE_REQUEST / QA squash requires pasted `.venv/bin/pytest -q` (`N passed`) and
 
 | Path | When |
 |---|---|
-| Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`). GitHub draft PRs ping `draft=true` (not MERGE_REQUEST-ready). GitHub CONFLICTING PRs ping `mergeable=CONFLICTING` (QA HOLD squash). Empty GitHub checks (`check_runs=0`) are not MERGE_REQUEST-ready. MERGEABLE+empty CI is leftover-green theatre. Latest run `CANCELLED` with `prUrl` pings `INSPECT follow-up-or-close` (not MERGE_REQUEST). |
+| Waiter | Default after launch (`GCS_SPAWN_WAITER` not `0`). GitHub draft PRs ping `draft=true` (not MERGE_REQUEST-ready). GitHub CONFLICTING PRs ping `mergeable=CONFLICTING` (QA HOLD squash). Empty GitHub checks (`check_runs=0`) are not MERGE_REQUEST-ready. MERGEABLE+empty CI is leftover-green theatre. Latest run `CANCELLED` with `prUrl` pings `INSPECT follow-up-or-close` (not MERGE_REQUEST). Collect `prUrl` URL vs none: `FINISHED` + prUrl none → CLOSE (leftover of merged shard is CLOSE; no MERGE_REQUEST, no twin Extra High). |
 | Webhook | `GCS_WEBHOOK_SECRET` set; bus starts `webhook_receiver.py`; Cursor `statusChange` POST (or `webhook-harness.sh serve`) |
 | Shepherd | Ledger row is an **orphan** (no live waiter, never notified by waiter/webhook). Dead `waiter_pid` is evicted on `fleet.jsonl` before notify-once. Skip leftover `ACTIVE`+`FINISHED` shells (no `get_agent_run`). Prune closed leftover `FINISHED`/`CANCELLED` rows so they are not paged as live. |
 

@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Agent, type Run } from "@cursor/sdk";
 import { collectResult, type DirectorResult } from "./collect.ts";
+import { attachDirectorAction } from "./collect-close.ts";
 import {
   boundRepoUrl,
   boundRepos,
@@ -150,7 +151,7 @@ function directorResultFromRest(
   const git = (runRaw.git || {}) as { branches?: Array<{ prUrl?: string; branch?: string }> };
   const withPr = (git.branches || []).find((b) => b.prUrl);
   const resultText = typeof runRaw.result === "string" ? runRaw.result : null;
-  return {
+  return attachDirectorAction({
     agentId: String(agentRaw.id || agentId),
     name: String(agentRaw.name || ""),
     url: String(agentRaw.url || `https://cursor.com/agents/${agentId}`),
@@ -166,7 +167,7 @@ function directorResultFromRest(
     error: null,
     repoUrl: boundRepoUrl(agentRaw, runRaw),
     repos: boundRepos(agentRaw),
-  };
+  });
 }
 
 async function restPoll(agentId: string, runId: string, apiKey: string): Promise<DirectorResult> {
