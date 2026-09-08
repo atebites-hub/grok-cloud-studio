@@ -7,6 +7,8 @@
 # Palemon Linear is Living Sky (LIV). Does not remint GCS #49 followup-refuse.
 # Per-invocation GCS_CLOUD_REPO wins over process-global CURSOR_CLOUD_REPO and over
 # GCS_CLOUD_REPO in agent.env; this launch does not export the resolved repo.
+# CLOUD_API_PARKED (env, $GCS_A2A_STATE/CLOUD_API_PARKED, or hive-beats marker)
+# fail-closes CLOUD_LAUNCH_ERR without Extra High create. Never Bot CloudAgent.
 # Prints CLOUD_LAUNCH_OK only on HTTP 200/201 (REST) or SDK create success.
 # Otherwise CLOUD_LAUNCH_ERR. Never prints API keys. Specialists are Cursor Cloud Extra High.
 set -euo pipefail
@@ -36,6 +38,10 @@ Prompt is exactly one of: command-line text, stdin `-`, or --prompt-file PATH.
 (no twin remint). Leftover ACTIVE+FINISHED does not block.
 Name-matched Extra High whose latest runStatus cannot be read is fail-closed.
 Never Bot CloudAgent. Palemon Linear is Living Sky (LIV).
+
+CLOUD_API_PARKED (env, state file, or hive-beats marker) prints
+CLOUD_LAUNCH_ERR reason=CLOUD_API_PARKED and does not create Extra High.
+Never recommends a Bot CloudAgent path.
 
 REST fallback (CLOUD_FORCE_REST=1, GCS_CLOUD_BACKEND=rest,
 SDK bootstrap fail, or CURSOR_API_BASE set): POST /v1/agents
@@ -161,6 +167,27 @@ fi
 LIB_PY="${SCRIPT_DIR}/a2a/lib.py"
 if [[ -n "$name" ]] && ! python3 "$LIB_PY" cloudagent-ok "$name"; then
   fail_launch "error: never Bot CloudAgent"
+fi
+
+# Parked Cloud API: fail closed before auth/SDK/REST. Never Bot CloudAgent.
+park_out=""
+park_rc=0
+set +e
+park_out="$(python3 "${SCRIPT_DIR}/cloud/api_parked.py")"
+park_rc=$?
+set -e
+if [[ "$park_rc" -eq 0 ]]; then
+  park_src="unknown"
+  if [[ "$park_out" == CLOUD_API_PARKED\ source=* ]]; then
+    park_src="${park_out#CLOUD_API_PARKED source=}"
+    park_src="${park_src%%$'\n'*}"
+  fi
+  printf '%s\n' "CLOUD_LAUNCH_ERR reason=CLOUD_API_PARKED"
+  printf '%s\n' "error: CLOUD_API_PARKED source=${park_src:-unknown}; Extra High create refused; never Bot CloudAgent" >&2
+  exit 1
+fi
+if [[ "$park_rc" -ge 2 ]]; then
+  fail_launch "error: CLOUD_API_PARKED probe failed rc=${park_rc}"
 fi
 
 if ! cloud_load_auth; then
