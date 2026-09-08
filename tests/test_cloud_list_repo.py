@@ -289,10 +289,14 @@ def test_never_bot_cloudagent_as_grunt() -> None:
         for p in (CLOUD_DOC, CLOUD_README, FOOTER, A2A_DOC, LIST_SH, LIST_LONG, LIST_TS)
     )
     assert "Bot CloudAgent" in blob or "Grok Bot CloudAgent" in blob
-    launch = LAUNCH_TS.read_text(encoding="utf-8") + LAUNCH_SH.read_text(encoding="utf-8")
-    assert "GCS_BOT_AGENT_ID" not in launch
+    launch_ts = LAUNCH_TS.read_text(encoding="utf-8")
+    launch_sh = LAUNCH_SH.read_text(encoding="utf-8")
+    # Extra High skips the bound Grok Bot id (name-twin probe). Leave New Bot
+    # alone — do not treat GCS_BOT_AGENT_ID as a grunt runtime.
+    assert "botId && id === botId" in launch_ts
     assert "GCS_BOT_AGENT_ID" not in LIST_SH.read_text(encoding="utf-8")
     assert "GCS_BOT_AGENT_ID" not in LIST_TS.read_text(encoding="utf-8")
+    assert "GCS_BOT_AGENT_ID" not in launch_sh
 
 
 def test_list_scripts_do_not_remint_must_launch_floor() -> None:
