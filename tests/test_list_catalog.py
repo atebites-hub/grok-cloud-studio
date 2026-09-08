@@ -549,7 +549,8 @@ def test_sdk_and_docs_paginate_agent_list_not_cap_at_100() -> None:
     assert "100" in cloud or "439" in cloud
     assert "fail-closed" in cloud.lower() or "fail closed" in cloud.lower()
     assert "Living Sky" in cloud or "LIV" in cloud
-    assert "Black Swan" not in footer
+    assert "NEVER Black Swan" in footer
+    assert "linear.app/blackswan" not in footer.lower()
     # REST list.sh remaining slice: page nextCursor (not a single GET ?limit=).
     assert "list_catalog" in list_rows
     assert "max_items" in catalog_py
