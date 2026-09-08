@@ -63,7 +63,8 @@ GROK_HOME MCP into checkout `.cursor/mcp.json` (Linear + taskboard only).
 scripts/launch-cloud-extra-high.sh "Implement X. Open a PR." "short-name"
 scripts/launch-cloud-extra-high.sh --name short-name --prompt-file /path/to/prompt.txt
 # CLOUD_LAUNCH_OK — do not watch. The SDK waiter A2A-pings the owning seat
-# and REPORT_TO (default studio-ops). Collect on FLEET_DONE:
+# (GCS_DIRECTOR_SEAT, example cloud — not a silent floor default) and
+# REPORT_TO (default studio-ops). Collect on FLEET_DONE:
 scripts/cloud/status-cloud-agent.sh --ids bc-...,bc-...
 scripts/cloud/result-cloud-agent.sh bc-...
 ```

@@ -16,14 +16,27 @@ import {
   sdkCreateFailExitCode,
 } from "./common.ts";
 
+function ownerSeat(): string {
+  return (process.env.GCS_DIRECTOR_SEAT || process.env.CLOUD_OWNER_SEAT || "").trim();
+}
+
 function spawnWaiter(agentId: string, runId: string, name: string): void {
   const raw = (process.env.GCS_SPAWN_WAITER || process.env.CLOUD_SPAWN_WAITER || "1").trim();
   if (raw === "0" || raw === "false" || raw === "no") return;
   const here = dirname(fileURLToPath(import.meta.url));
   const script = resolve(here, "..", "spawn-waiter.sh");
+  const seat = ownerSeat();
   const child = spawn(
     "bash",
-    [script, "--id", agentId, "--run", runId, ...(name ? ["--name", name] : [])],
+    [
+      script,
+      "--id",
+      agentId,
+      "--run",
+      runId,
+      ...(seat ? ["--seat", seat] : []),
+      ...(name ? ["--name", name] : []),
+    ],
     {
       detached: true,
       stdio: "ignore",
