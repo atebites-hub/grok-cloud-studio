@@ -5,7 +5,17 @@
 CLOUD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=auth.sh
 source "${CLOUD_SCRIPT_DIR}/auth.sh"
-CLOUD_SDK_RUN="${CLOUD_SCRIPT_DIR}/sdk/run.sh"
+# Honor an explicit CLOUD_SDK_RUN stub (pytest) even when CURSOR_API_BASE is set
+# so exit-75 REST fallback is testable. Safe to source more than once.
+if [[ -z "${_GCS_CLOUD_SDK_RUN_INIT:-}" ]]; then
+  _GCS_CLOUD_SDK_RUN_INIT=1
+  if [[ -n "${CLOUD_SDK_RUN:-}" ]]; then
+    CLOUD_SDK_EXPLICIT=1
+  else
+    CLOUD_SDK_EXPLICIT=0
+    CLOUD_SDK_RUN="${CLOUD_SCRIPT_DIR}/sdk/run.sh"
+  fi
+fi
 
 # REST when Directors force it, SDK cannot start, or tests set CURSOR_API_BASE.
 cloud_prefer_rest() {
@@ -29,8 +39,14 @@ _cloud_sdk_try() {
   if cloud_prefer_rest; then
     if [[ "${CLOUD_FORCE_REST:-0}" == "1" || "${GCS_CLOUD_BACKEND:-}" == "rest" ]]; then
       echo "CLOUD_SDK_FALLBACK: REST requested (CLOUD_FORCE_REST or GCS_CLOUD_BACKEND=rest)" >&2
+      return 1
     fi
-    return 1
+    # CURSOR_API_BASE is mock/proxy routing. An explicit CLOUD_SDK_RUN stub is
+    # still invoked so run.sh exit 75 can REST-fall-back. FORCE_REST / backend=rest
+    # already returned — never Agent.create (no double-create).
+    if [[ "${CLOUD_SDK_EXPLICIT:-0}" != "1" ]]; then
+      return 1
+    fi
   fi
   if [[ ! -x "$CLOUD_SDK_RUN" ]]; then
     if [[ "${CLOUD_ALLOW_REST_FALLBACK:-1}" == "1" ]]; then
