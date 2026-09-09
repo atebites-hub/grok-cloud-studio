@@ -10,8 +10,26 @@ CACHE_ROOT="${GCS_NODE_CACHE:-$HOME/.cache/gcs-node}"
 
 node_ok() {
   local bin="$1"
-  [[ -x "$bin" ]] || return 1
-  "$bin" -e 'const [maj,min]=process.versions.node.split(".").map(Number); process.exit(maj>22|| (maj===22 && min>=13) ? 0 : 1)' 2>/dev/null
+  local raw line maj min rest
+  [[ -x "$bin" && -f "$bin" ]] || return 1
+  # Parse `node -v` so GCS_NODE / cache / PATH fakes work without a JS engine.
+  # Unit tests must not download tarballs.
+  raw="$("$bin" -v 2>/dev/null || true)"
+  if [[ -z "$raw" ]]; then
+    raw="$("$bin" --version 2>/dev/null || true)"
+  fi
+  line="${raw##*$'\n'}"
+  line="${line#"${line%%[![:space:]]*}"}"
+  line="${line%"${line##*[![:space:]]}"}"
+  line="${line#v}"
+  maj="${line%%.*}"
+  rest="${line#*.}"
+  min="${rest%%.*}"
+  [[ "$maj" =~ ^[0-9]+$ && "$min" =~ ^[0-9]+$ ]] || return 1
+  if (( maj > NEED_MAJOR || (maj == NEED_MAJOR && min >= NEED_MINOR) )); then
+    return 0
+  fi
+  return 1
 }
 
 emit() {

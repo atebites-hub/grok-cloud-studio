@@ -132,7 +132,9 @@ Optional signed webhooks (`scripts/cloud/webhook_receiver.py`) are the other com
 4. `fnm` / `nvm` / `volta` if already installed
 5. Download official `node-v22.14.0-<plat>-<cpu>.tar.gz` into that cache
 
-Override cache with `GCS_NODE_CACHE` / version with `GCS_NODE_DIST_VER`. First `run.sh` also `npm install`s `@cursor/sdk` under `scripts/cloud/sdk/` (gitignored `node_modules/`).
+Override cache with `GCS_NODE_CACHE` / version with `GCS_NODE_DIST_VER`. First `run.sh` also `npm install`s `@cursor/sdk` under `scripts/cloud/sdk/` (gitignored `node_modules/`). `run.sh` prepends the resolved binary's directory to `PATH`. Version is read from `node -v`.
+
+Unit tests (`tests/test_ensure_node.py`) cover GCS_NODE / PATH / `GCS_NODE_CACHE` with fake bins and a stub `curl`; they must not download tarballs. This slice does not restack `CLOUD_FORCE_REST` fallback.
 
 ## REST fallback
 
