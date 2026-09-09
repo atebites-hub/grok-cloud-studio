@@ -50,6 +50,7 @@ if str(_CLOUD_DIR) not in sys.path:
 if str(_LIB_DIR) not in sys.path:
     sys.path.insert(0, str(_LIB_DIR))
 from lib import env_first, pid_alive, repo_root, state_root  # noqa: E402
+from collect_close import pr_url_or_none  # noqa: E402
 from pr_evidence import has_paste_evidence, paste_from_payload  # noqa: E402
 from ship_gate_evidence import (  # noqa: E402
     parse_github_pull_url,
@@ -616,6 +617,16 @@ def notify_text(bc_id: str, payload: dict[str, Any]) -> str:
             f"follow-up-or-close; do not ignore. RESULT."
         )
     if run_status == "FINISHED":
+        if pr_url_or_none(payload.get("prUrl")) is None:
+            # Collect JSON prUrl none: leftover of merged shard is CLOSE.
+            # No MERGE_REQUEST. No twin Extra High.
+            return (
+                f"FLEET_DONE / CLOSE: Extra High {bc_id} ({name}) "
+                f"runStatus=FINISHED pr=none repo={repo}{merge_tag} url={url}.{extra} "
+                f"Collect via scripts/cloud/result-cloud-agent.sh {bc_id}. "
+                f"Directors CLOSE; leftover of merged shard is CLOSE; "
+                f"do not ping QA MERGE_REQUEST; do not launch a twin Extra High. RESULT."
+            )
         if payload_is_draft(payload):
             return (
                 f"FLEET_DONE / PR_READY: Extra High {bc_id} ({name}) "

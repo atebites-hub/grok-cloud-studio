@@ -6,6 +6,10 @@ Directors **never block-wait** on Cloud. After `CLOUD_LAUNCH_OK`, the SDK waiter
 (`scripts/cloud/sdk/wait-notify.ts` / `run.wait`) A2A-pings the owning seat
 with waiter/context return. Collect **context** with
 `scripts/cloud/result-cloud-agent.sh` (or MCP `cloud_result`).
+Collect JSON `prUrl` is a URL or none. `prUrl` null/empty on
+`runStatus=FINISHED` stamps `directorAction=CLOSE`: Directors CLOSE
+(leftover of a merged shard is CLOSE). No MERGE_REQUEST. No twin Extra
+High. Live `runStatus=RUNNING` with prUrl none is not CLOSE.
 Never launch a Grok **Bot CloudAgent**; Extra High is the grunt.
 
 ## Required env

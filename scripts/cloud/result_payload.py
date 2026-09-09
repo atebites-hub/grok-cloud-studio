@@ -6,6 +6,7 @@ import json
 import sys
 from typing import Any
 
+from collect_close import attach_director_action, pr_url_or_none
 from ship_gate_evidence import resolve_ship_gate
 
 BoundRepo = dict[str, str]
@@ -90,8 +91,9 @@ def director_result(agent: dict[str, Any] | None, run: dict[str, Any] | None = N
             continue
         if item.get("branch"):
             branches.append(str(item["branch"]))
-        if item.get("prUrl") and not pr:
-            pr = str(item["prUrl"])
+        candidate = pr_url_or_none(item.get("prUrl"))
+        if candidate and not pr:
+            pr = candidate
     status = run.get("status") or None
     repos = bound_repos(agent)
     result_text = run.get("result") or ""
@@ -99,23 +101,25 @@ def director_result(agent: dict[str, Any] | None, run: dict[str, Any] | None = N
         result_text = result_text.strip() or None
     else:
         result_text = None
-    return {
-        "agentId": agent.get("id") or "",
-        "name": agent.get("name") or "",
-        "url": agent.get("url") or "",
-        "runId": run.get("id") or agent.get("latestRunId") or None,
-        "status": status,
-        "agentStatus": agent.get("status") or None,
-        "runStatus": status,
-        "prUrl": pr,
-        "branches": branches,
-        "branch": branches[0] if branches else None,
-        "summary": None,
-        "result": result_text,
-        "error": _run_error(run.get("error")),
-        "repoUrl": bound_repo_url(agent, run),
-        "repos": repos,
-    }
+    return attach_director_action(
+        {
+            "agentId": agent.get("id") or "",
+            "name": agent.get("name") or "",
+            "url": agent.get("url") or "",
+            "runId": run.get("id") or agent.get("latestRunId") or None,
+            "status": status,
+            "agentStatus": agent.get("status") or None,
+            "runStatus": status,
+            "prUrl": pr,
+            "branches": branches,
+            "branch": branches[0] if branches else None,
+            "summary": None,
+            "result": result_text,
+            "error": _run_error(run.get("error")),
+            "repoUrl": bound_repo_url(agent, run),
+            "repos": repos,
+        }
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

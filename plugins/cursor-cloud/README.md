@@ -5,7 +5,7 @@ MCP tools wrapping the Extra High control plane:
 - `cloud_launch` — `scripts/launch-cloud-extra-high.sh`. Returns after `CLOUD_LAUNCH_OK`; SDK waiter pings with context. `--name` REFUSE if a live `runStatus=RUNNING` Extra High already has that name (no twin remint). Leftover `ACTIVE`+`FINISHED` does not block. Never Grok Bot as the grunt runtime.
 - `cloud_list` — `scripts/cloud/list_helper.py` (agent `status` plus latest-run `runStatus`; ACTIVE+FINISHED leftovers are not workers)
 - `cloud_status` — `scripts/cloud/status-cloud-agent.sh` (id and/or ids; prints runStatus and repoUrl per id; non-blocking)
-- `cloud_result` — `scripts/cloud/result-cloud-agent.sh` (non-blocking context JSON; bound `repos[0].url` as `repoUrl`)
+- `cloud_result` — `scripts/cloud/result-cloud-agent.sh` (non-blocking context JSON; bound `repos[0].url` as `repoUrl`; prUrl URL vs none: FINISHED + none is CLOSE)
 
 Directors must not watch. Extra High only — never a Grok Bot grunt runtime.
 
