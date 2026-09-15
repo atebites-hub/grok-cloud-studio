@@ -77,7 +77,7 @@ for those leads. Generic extract starts with empty `GCS_MIND_SEATS`.
 - After `CLOUD_LAUNCH_OK`, do not block on watch. The waiter A2A-pings the owning seat.
 - RESULT is duplex, not success. Hub `TASK_STATE_COMPLETED` on `message:send` is a **receipt**, not proof the mind acted.
 - Board is tcarac/taskboard. Do not reconnect Agent Kanban (`ak`).
-- Mind runner default `GCS_MIND_RUNNER=auto`. On HTTP 402, flip once and retry **that same mail line**. Forced `grok|cursor` does not flip.
+- Mind runner default `GCS_MIND_RUNNER=auto`. On HTTP 402, flip once and retry **that same mail line**. Do not ping-pong the unconsumed line on the next harvest tick. Forced `grok|cursor` does not flip.
 - Pin `mind/session` (grok UUID) and `mind/cursor-session` (Cursor chat id) separately. Do not remint because harvest was empty or because the runner switched.
 - Ship gate: `.venv/bin/pytest -q` and `python3 scripts/secret_scan.py`.
 - Studio-ops 10-minute beat writes one Manning apply-log (LIV-71). `HEALTH_OK` is illegal without that beat's APPLY.

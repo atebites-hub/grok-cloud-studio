@@ -92,6 +92,9 @@ def test_docs_and_source_keep_switch_law() -> None:
         assert "mind/runner" in blob
         assert _bot_cloudagent_is_prohibition(blob)
         assert PRIVATE_GAME not in blob
+    assert "switch-offset" in src
+    assert "switch-offset" in doc
+    assert "switch-offset" in agents
     assert "MIND_FALLBACK" not in src
     for marker in LIV85_MAIL_MARKERS:
         assert marker not in src
@@ -320,6 +323,123 @@ def test_both_402_switches_once_no_ping_pong(
     assert grok_sid not in cursor_rows[-1]["argv"]
     assert "--model" in cursor_rows[-1]["argv"]
     assert tm._flag_value(cursor_rows[-1]["argv"], "--model") == tm.CURSOR_MIND_MODEL
+
+
+def test_402_retry_uses_exact_same_wrapped_mail_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Grok --prompt-file body and cursor positional prompt are one mail line."""
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = tm._write_fake_grok(
+        tmp_path,
+        grok_log,
+        rc=1,
+        stdout="",
+        stderr="Error: HTTP 402 usage balance exhausted",
+    )
+    cursor = tm._write_fake_cursor_agent(tmp_path, cursor_log)
+    monkeypatch.setenv("CURSOR_API_KEY", "test-cursor-api-key-not-leaked")
+    mind, state = tm._prep_mind(
+        tmp_path, monkeypatch, unique="samebytes", grok=grok, cursor=cursor
+    )
+    tm._append_inbox(state, "floor", "task-same-bytes", "identical mail line")
+    result = mind.process_once("floor")
+    assert result["consumed"] == 1
+    grok_rows = tm._argv_log(grok_log)
+    assert len(grok_rows) == 1
+    grok_mail = grok_rows[0].get("prompt_file_text") or ""
+    assert grok_mail, "grok must snapshot --prompt-file contents"
+    assert "identical mail line" in grok_mail
+    cursor_rows = tm._argv_log(cursor_log)
+    turn = next(r for r in cursor_rows if r["argv"] != ["create-chat"])
+    cursor_prompt = turn["argv"][-1]
+    assert cursor_prompt == grok_mail
+    mail_on_disk = (state / "floor" / "mind" / "mail.txt").read_text(encoding="utf-8")
+    assert mail_on_disk == grok_mail
+    captured = capsys.readouterr()
+    assert captured.out.count("MIND_SWITCH") + captured.err.count("MIND_SWITCH") == 1
+    assert tm._offset(state, "floor") > 0
+    assert tm._runner_name(state, "floor") == "cursor"
+    assert not (state / "floor" / "mind" / "switch-offset").is_file()
+
+
+def test_unconsumed_402_mail_does_not_ping_pong_on_next_tick(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """run_forever 2s backoff re-harvests the same line; do not flip back to grok."""
+    grok_log = tmp_path / "grok.argv.json"
+    cursor_log = tmp_path / "cursor.argv.json"
+    grok = tm._write_fake_grok(
+        tmp_path,
+        grok_log,
+        rc=1,
+        stdout="HTTP 402",
+        stderr="usage balance exhausted",
+    )
+    cursor = tm._write_fake_cursor_agent(
+        tmp_path,
+        cursor_log,
+        rc=1,
+        stdout="",
+        stderr="Error: HTTP 402 usage balance exhausted",
+    )
+    monkeypatch.setenv("CURSOR_API_KEY", "test-cursor-api-key-not-leaked")
+    mind, state = tm._prep_mind(
+        tmp_path, monkeypatch, unique="nopong", grok=grok, cursor=cursor
+    )
+    tm._append_inbox(state, "floor", "task-no-pong", "same mail line")
+    first = mind.process_once("floor")
+    assert first["consumed"] == 0
+    assert first.get("reason") == "runner-fail"
+    assert tm._offset(state, "floor") == 0
+    assert tm._runner_name(state, "floor") == "cursor"
+    grok_n = len(tm._argv_log(grok_log))
+    assert grok_n == 1
+    cursor_n = len(tm._argv_log(cursor_log))
+    assert cursor_n >= 1
+    grok_mail = tm._argv_log(grok_log)[0].get("prompt_file_text") or ""
+    assert "same mail line" in grok_mail
+    turn = next(r for r in tm._argv_log(cursor_log) if r["argv"] != ["create-chat"])
+    assert turn["argv"][-1] == grok_mail
+    captured = capsys.readouterr()
+    assert captured.out.count("MIND_SWITCH") + captured.err.count("MIND_SWITCH") == 1
+    stamp = state / "floor" / "mind" / "switch-offset"
+    assert stamp.is_file()
+    assert stamp.read_text(encoding="utf-8").strip() == "0"
+
+    second = mind.process_once("floor")
+    assert second["consumed"] == 0
+    assert second.get("reason") == "runner-fail"
+    assert tm._offset(state, "floor") == 0
+    assert tm._runner_name(state, "floor") == "cursor"
+    assert len(tm._argv_log(grok_log)) == grok_n
+    assert len(tm._argv_log(cursor_log)) > cursor_n
+    captured2 = capsys.readouterr()
+    blob2 = captured2.out + captured2.err
+    assert "MIND_SWITCH" not in blob2
+    grok_sid = tm._session_id(state, "floor")
+    assert tm._cursor_session_id(state, "floor") != grok_sid
+    assert (state / "floor" / "mind" / "switch-offset").read_text(encoding="utf-8").strip() == "0"
+
+
+def test_seat_mind_loop_execs_mind_py_and_does_not_switch_itself() -> None:
+    """seat-mind-loop.sh sources studio.env then execs mind.py; persist is Python."""
+    loop = tm.MIND_LOOP.read_text(encoding="utf-8")
+    src = tm.MIND_PY.read_text(encoding="utf-8")
+    fold = " ".join(loop.lower().split())
+    assert "studio.env" in loop
+    assert "set -a" in loop
+    assert "exec python3" in loop
+    assert "mind.py" in loop
+    assert "session/prompt" not in loop
+    assert "acp_inject" not in loop
+    assert "MIND_SWITCH" not in loop
+    assert "persist_mind_runner" not in loop
+    assert "nousresearch/hermes-agent" not in fold
+    assert "def persist_mind_runner" in src
+    assert "MIND_SWITCH" in src
+    assert "mind/runner" in src or ' / "runner"' in src
 
 
 def test_402_in_stdout_only_still_switches(

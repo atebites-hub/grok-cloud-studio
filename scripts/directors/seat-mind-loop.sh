@@ -5,6 +5,8 @@
 # Installs grok-bot-like mind plugins (studio-mind, a2a, cursor-cloud)
 # into seat GROK_HOME via grok plugin install --trust. Not Hermes plugin.yaml.
 # No ACP WebSocket. No leftover inject. Does not start or kill grok agent serve.
+# Auto runner persist ($GCS_A2A_STATE/<seat>/mind/runner) and HTTP 402 one-shot
+# flip live in mind.py. This loop only execs that process.
 #
 # Usage: seat-mind-loop.sh <seat>
 set -euo pipefail
