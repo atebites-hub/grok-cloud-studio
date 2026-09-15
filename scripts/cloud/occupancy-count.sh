@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Occupancy catalog: paginate Agent.list / GET /v1/agents beyond limit=100.
-# Fail-closed if a page errors — never fake running=0. Existence ACTIVE is
-# not liveness. Never prints API keys.
+# Latest runStatus via listRuns (GET /v1/agents/{id}/runs). CREATING maps as
+# RUNNING. Leftover ACTIVE+FINISHED is not a worker. Split Palemon vs GCS
+# toward floor 8 per bound repo. Fail-closed if a page or listRuns errors —
+# never fake running=0. Existence ACTIVE is not liveness. Never prints API keys.
 # Usage: occupancy-count.sh
 set -euo pipefail
 
@@ -13,7 +15,9 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)
       echo "Usage: scripts/cloud/occupancy-count.sh"
-      echo "Paginated occupancy catalog (nextCursor, page size 100). Fail-closed on page error."
+      echo "Paginated occupancy catalog (nextCursor, page size 100)."
+      echo "Latest runStatus via listRuns; CREATING maps as RUNNING."
+      echo "Split Palemon vs GCS toward floor 8. Fail-closed on page or listRuns error."
       exit 0
       ;;
     *)
